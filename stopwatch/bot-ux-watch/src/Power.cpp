@@ -1,4 +1,5 @@
 #include "Power.h"
+#include "PowerPolicy.h"
 #include <M5Unified.h>
 #include <esp_sleep.h>
 #include <driver/rtc_io.h>
@@ -19,6 +20,7 @@ void Power::begin() {
 }
 
 void Power::update() {
+    _rtcHoldReady=watchpower::retainRtcPower(M5.Power.M5pm1);
     const int mv = M5.Power.getBatteryVoltage();
     if (mv >= 3000 && mv <= 4400) {
         _filteredMv = (_filteredMv == 0)

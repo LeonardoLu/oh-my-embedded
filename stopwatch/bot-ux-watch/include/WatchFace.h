@@ -15,7 +15,7 @@ public:
     void setBattery(uint8_t pct);
     void setCharging(bool v) { _charging = v; }
     void update(uint32_t nowMs);
-    void invalidate() { _drawInvalid = true; }
+    void invalidate() { _drawInvalid = true; _lastRtcReadMs = 0; }
     void draw(lgfx::LovyanGFX* target, uint16_t bg, uint16_t ink, uint16_t muted,
               uint16_t accent, uint16_t panel, uint16_t warning, float statusProgress);
     botux::BotUx& bot() { return _bot; }
@@ -38,7 +38,7 @@ private:
     uint8_t _hh = 0, _mm = 0, _ss = 0;
     int16_t _year = 2000;
     uint8_t _month = 1, _day = 1, _weekDay = 0;
-    bool _hour24 = true, _showSeconds = false;
+    bool _hour24 = true, _showSeconds = false, _clockValid = false;
     bool _swap = false, _showDescription = true;
     uint8_t _language = 0, _battery = 100;
     bool _charging = false;

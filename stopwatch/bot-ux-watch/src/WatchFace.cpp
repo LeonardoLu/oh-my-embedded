@@ -1,5 +1,6 @@
 #include "WatchFace.h"
 #include "CalendarMath.h"
+#include "RtcClock.h"
 #include "WatchEdgeGeometry.h"
 #include <UxRender.h>
 #include <UxText.h>
@@ -63,11 +64,15 @@ void WatchFace::update(uint32_t nowMs) {
     _now = nowMs;
     if (_lastRtcReadMs && nowMs - _lastRtcReadMs < 200) return;
     _lastRtcReadMs = nowMs;
-    auto dt = M5.Rtc.getDateTime();
+    _bot.setBattery(_battery); _bot.setBatteryVisible(false); _bot.setSignal(-1);
+    watchClock.refresh();
+    if(_clockValid!=watchClock.hasTime()) _drawInvalid=true;
+    _clockValid=watchClock.hasTime();
+    if(!_clockValid) return;
+    auto dt = watchClock.value();
     _hh = (uint8_t)dt.time.hours; _mm = (uint8_t)dt.time.minutes; _ss = (uint8_t)dt.time.seconds;
     _year = dt.date.year; _month = (uint8_t)dt.date.month; _day = (uint8_t)dt.date.date;
     _weekDay = watchcalendar::weekDay(_year, _month, _day);
-    _bot.setBattery(_battery); _bot.setBatteryVisible(false); _bot.setSignal(-1);
 }
 
 void WatchFace::draw(lgfx::LovyanGFX* target, uint16_t bg, uint16_t ink, uint16_t muted,
@@ -102,6 +107,11 @@ void WatchFace::draw(lgfx::LovyanGFX* target, uint16_t bg, uint16_t ink, uint16_
 }
 
 void WatchFace::_drawClock(bool top, uint16_t ink, uint16_t muted) {
+    if(!_clockValid) {
+        centered(_hud,"--:--",top?30:6,ink,ux::Latin28);
+        centered(_hud,"----/--/--",top?62:57,muted,ux::Latin24);
+        return;
+    }
     uint8_t h = _hour24 ? _hh : (_hh % 12 ? _hh % 12 : 12);
     char time[24];
     const char* suffix = (_hour24 || _language) ? "" : (_hh >= 12 ? " PM" : " AM");

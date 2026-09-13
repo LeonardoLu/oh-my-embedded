@@ -10,6 +10,7 @@
 #include "TouchAffine.h"
 #include "TouchTraceBuffer.h"
 #include "Power.h"
+#include "RtcClock.h"
 #include "PowerPolicy.h"
 #include "Settings.h"
 #include "TimedState.h"
@@ -162,6 +163,7 @@ watchpower::ScreenState _screenPowerState = watchpower::ScreenState::Active;
 watchpower::IdleScreenPolicy _idleScreenPolicy;
 bool _renderReady = false;
 bool _uiDirty = true;
+bool _rtcSaveFailed = false;
 bool _listBandOnly = false;
 bool _faceNeedsClear = true;
 uint32_t _lastFrameMs = 0;
@@ -890,33 +892,6 @@ static void applySettings() {
     _uiDirty = true;
 }
 
-static void seedRtcIfNeeded() {
-    auto dt = M5.Rtc.getDateTime();
-    bool valid = dt.date.year >= 2020 && dt.date.year <= 2099
-        && dt.date.month >= 1 && dt.date.month <= 12
-        && dt.date.date >= 1 && dt.date.date <= 31
-        && dt.time.hours >= 0 && dt.time.hours <= 23
-        && dt.time.minutes >= 0 && dt.time.minutes <= 59;
-    if (valid) return;
-
-    int year = 2026, month = 1, day = 1, hour = 0, minute = 0, second = 0;
-    char mon[4] = {};
-    sscanf(__DATE__, "%3s %d %d", mon, &day, &year);
-    const char* months = "JanFebMarAprMayJunJulAugSepOctNovDec";
-    const char* found = strstr(months, mon);
-    if (found) month = (int)((found - months) / 3 + 1);
-    sscanf(__TIME__, "%d:%d:%d", &hour, &minute, &second);
-
-    dt.date.year = (int16_t)year;
-    dt.date.month = (int8_t)month;
-    dt.date.date = (int8_t)day;
-    dt.date.weekDay = (int8_t)watchcalendar::weekDay(year, month, day);
-    dt.time.hours = (int8_t)hour;
-    dt.time.minutes = (int8_t)minute;
-    dt.time.seconds = (int8_t)second;
-    M5.Rtc.setDateTime(dt);
-}
-
 static void refreshPower(uint32_t now) {
     if (_powerKnown && now - _powerReadMs < 1000) return;
     _powerReadMs = now;
@@ -1073,6 +1048,7 @@ static void enterEditor(Editor editor, Screen parent = Screen::Settings) {
     _screen = Screen::Editor;
     pushTouchTrace(TouchTraceKind::Screen, millis(), 0, 0, (int16_t)prior, (int16_t)_screen);
     _editor = editor;
+    _rtcSaveFailed = false;
     _originalSettings = settings.data();
     _originalManualPreset = _manualPreset; _originalManualCombo = _manualCombo;
     _editorParent = parent;
@@ -1083,7 +1059,7 @@ static void enterEditor(Editor editor, Screen parent = Screen::Settings) {
         _editorScroll.setOffset(0);
     } else _editorScroll.setBounds(0,0);
     _uiDirty = true;
-    auto dt = M5.Rtc.getDateTime();
+    auto dt = watchClock.editorValue();
     _editHour = (uint8_t)dt.time.hours;
     _editMinute = (uint8_t)dt.time.minutes;
     _editYear = dt.date.year;
@@ -1093,6 +1069,7 @@ static void enterEditor(Editor editor, Screen parent = Screen::Settings) {
 }
 
 static void cancelEditor() {
+    watchClock.cancelDraft();
     resetUiPointer();
     _manualPreset = _originalManualPreset; _manualCombo = _originalManualCombo;
     settings.data() = _originalSettings;
@@ -1106,6 +1083,7 @@ static void cancelEditor() {
 }
 
 static void returnHome() {
+    watchClock.cancelDraft();
     if(_screen==Screen::Editor) {
         _manualPreset=_originalManualPreset; _manualCombo=_originalManualCombo;
         settings.data()=_originalSettings; applySettings();
@@ -1128,19 +1106,21 @@ static void saveEditor(int cause = watchcontrols::None) {
         snprintf(settings.data().botName, sizeof(settings.data().botName), "%s", _nameEditor.text());
         applySettings();
     }
-    if (_editor == Editor::Time) {
-        auto dt = M5.Rtc.getDateTime();
-        dt.time.hours = (int8_t)_editHour;
-        dt.time.minutes = (int8_t)_editMinute;
-        dt.time.seconds = 0;
-        M5.Rtc.setDateTime(dt);
-    } else if (_editor == Editor::Date) {
-        auto dt = M5.Rtc.getDateTime();
-        dt.date.year = _editYear;
-        dt.date.month = (int8_t)_editMonth;
-        dt.date.date = (int8_t)_editDay;
-        dt.date.weekDay = (int8_t)watchcalendar::weekDay(_editYear, _editMonth, _editDay);
-        M5.Rtc.setDateTime(dt);
+    if (_editor == Editor::Time || _editor == Editor::Date) {
+        auto result=_editor==Editor::Time ? watchClock.setTime(_editHour,_editMinute)
+            : watchClock.setDate(_editYear,_editMonth,_editDay);
+        if(result==RtcClock::Save::Failed) {
+            _rtcSaveFailed=true; _uiDirty=true;
+            _sounds.play(ux::sound::Cue::Error);
+            Serial.println("RTC save failed; editor retained");
+            return;
+        }
+        if(result==RtcClock::Save::Pending) {
+            // A lost clock needs both date and time, confirmed in either order.
+            enterEditor(_editor==Editor::Time?Editor::Date:Editor::Time,_editorParent);
+            return;
+        }
+        face.invalidate();
     } else {
         settings.save();
     }
@@ -1747,9 +1727,13 @@ static void drawSettingsList(bool chrome = true) {
 
         char value[40] = {};
         switch ((MenuItem)i) {
-            case MenuItem::Time: snprintf(value, sizeof(value), "%02u:%02u", face.hour(), face.minute()); break;
+            case MenuItem::Time:
+                if(watchClock.hasTime()) snprintf(value,sizeof(value),"%02u:%02u",watchClock.value().time.hours,watchClock.value().time.minutes);
+                else snprintf(value,sizeof(value),"--:--");
+                break;
             case MenuItem::Date: {
-                snprintf(value, sizeof(value), "%04d/%02u/%02u", face.year(), face.month(), face.day());
+                if(watchClock.hasTime()) snprintf(value,sizeof(value),"%04d/%02u/%02u",watchClock.value().date.year,watchClock.value().date.month,watchClock.value().date.date);
+                else snprintf(value,sizeof(value),"----/--/--");
                 break;
             }
             case MenuItem::Format: snprintf(value, sizeof(value), settings.data().hour24 ? "24 H" : "12 H"); break;
@@ -1841,6 +1825,15 @@ static void drawStepper(int16_t cx, const char* label, const char* value, bool s
     drawPill(cx - width / 2, 256, width, 52, "+", selected);
 }
 
+static void drawRtcSaveError() {
+    if(!_rtcSaveFailed) return;
+    canvas.setTextDatum(middle_center);
+    canvas.setFont(&fonts::FreeSans9pt7b);
+    canvas.setTextSize(1.0f);
+    canvas.setTextColor(settings.warning());
+    watchText(canvas,"Error",233,334);
+}
+
 static void drawTimeEditor() {
     drawTitle("SET TIME");
     char hour[4], minute[4];
@@ -1852,6 +1845,7 @@ static void drawTimeEditor() {
     canvas.setFont(&fonts::FreeSansBold18pt7b);
     canvas.setTextColor(settings.muted());
     watchText(canvas, ":", 233, 220);
+    drawRtcSaveError();
     drawFooter();
 }
 
@@ -1863,6 +1857,7 @@ static void drawDateEditor() {
     drawStepper(108,"MONTH",kMonths[_editMonth-1],_buttonNavigation&&_editField==0,86);
     drawStepper(233,"DAY",day,_buttonNavigation&&_editField==1,86);
     drawStepper(358,"YEAR",year,_buttonNavigation&&_editField==2,86);
+    drawRtcSaveError();
     drawFooter();
 }
 
@@ -2691,10 +2686,33 @@ static void handleSerialCommands() {
         else if(!strcmp(line,"trace dump")) dumpTouchTrace();
         else if(!strncmp(line,"locale ",7)) { settings.data().language=atoi(line+7)==1; applySettings(); printUiState(); }
         else if(!strcmp(line,"home")) { returnHome(); printUiState(); }
+        else if(!strcmp(line,"rtc")) {
+            bool ok=watchClock.refresh(); auto dt=watchClock.value();
+            uint8_t flags=0; auto* rtc=M5.Rtc.getRtcInstancePtr();
+            bool flagRead=rtc && rtc->readRegister(0x1d,&flags,1);
+            Serial.printf("RTC read=%u valid=%u state=%u flags_read=%u flags=%02x time=%04d-%02d-%02dT%02d:%02d:%02d hold=%u screen_power=%u\n",
+                ok,watchClock.hasTime(),(unsigned)watchClock.state(),flagRead,flags,
+                dt.date.year,dt.date.month,dt.date.date,dt.time.hours,dt.time.minutes,dt.time.seconds,
+                power.rtcHoldReady(),(unsigned)_screenPowerState);
+            Serial.flush();
+        }
+        else if(!strncmp(line,"rtc set ",8)) {
+            int year,month,day,hour,minute,second; char extra;
+            bool parsed=sscanf(line+8,"%d-%d-%dT%d:%d:%d %c",&year,&month,&day,&hour,&minute,&second,&extra)==6;
+            bool ok=false;
+            if(parsed && year>=2020 && year<=2099 && month>=1 && month<=12
+                && day>=1 && day<=31 && hour>=0 && hour<=23
+                && minute>=0 && minute<=59 && second>=0 && second<=59) {
+                m5::rtc_datetime_t dt(m5::rtc_date_t(year,month,day,0),m5::rtc_time_t(hour,minute,second));
+                ok=watchClock.set(dt);
+            }
+            face.invalidate(); _uiDirty=true;
+            Serial.printf("RTC set=%u\n",ok); Serial.flush();
+        }
         else if(!strcmp(line,"power")) {
-            uint8_t cfg=0,key=0,off=0; auto& pm=M5.Power.M5pm1;
-            bool ok=pm.readRegister(0x06,&cfg,1) && pm.readRegister(0x49,&key,1) && pm.readRegister(0x4a,&off,1);
-            Serial.printf("POWER read=%u led_ready=%u led=%u home_ready=%u key_cfg=%02x boot_key=%02x off_cfg=%02x boot_off=%02x\n",ok,power.indicatorReady(),(cfg&16)!=0,power.homeKeyReady(),key,power.bootKeyConfig(),off,power.bootOffConfig()); Serial.flush();
+            uint8_t cfg=0,key=0,off=0,hold=0; auto& pm=M5.Power.M5pm1;
+            bool ok=pm.readRegister(0x06,&cfg,1) && pm.readRegister(0x49,&key,1) && pm.readRegister(0x4a,&off,1) && pm.readRegister(0x07,&hold,1);
+            Serial.printf("POWER read=%u led_ready=%u led=%u home_ready=%u key_cfg=%02x boot_key=%02x off_cfg=%02x boot_off=%02x hold_cfg=%02x rtc_hold=%u ldo=%u\n",ok,power.indicatorReady(),(cfg&16)!=0,power.homeKeyReady(),key,power.bootKeyConfig(),off,power.bootOffConfig(),hold,power.rtcHoldReady(),(cfg&4)!=0); Serial.flush();
         } else if((line[0]=='t') && (line[1]=='d'||line[1]=='m'||line[1]=='u') && sscanf(line+2,"%d %d",&x,&y)==2) {
             if(x>=0 && x<kW && y>=0 && y<kH) handleUiPointer(line[1]=='d',line[1]!='u',line[1]=='u',x,y,millis());
             printUiState();
@@ -2731,7 +2749,9 @@ void setup() {
     _sounds.setEnabled(initialSound);
     _soundBound=_soundOutput.begin(M5.Speaker,_sounds,6,initialSound);
     power.begin();
-    seedRtcIfNeeded();
+    watchClock.refresh();
+    Serial.printf("RTC boot state=%u valid=%u hold=%u\n",
+        (unsigned)watchClock.state(),watchClock.hasTime(),power.rtcHoldReady());
 
     canvas.setColorDepth(16);
     botSprite.setColorDepth(16);

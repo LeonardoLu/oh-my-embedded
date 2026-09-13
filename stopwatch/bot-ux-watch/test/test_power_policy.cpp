@@ -9,7 +9,36 @@ using watchpower::ScreenState;
 using watchpower::OffWaitMode;
 using watchpower::WakeInputGate;
 
+struct FakePmic {
+    uint8_t regs[8]={};
+    bool failRead=false,failWrite=false,ignoreWrite=false;
+    int writes=0;
+    bool readRegister(uint8_t reg,uint8_t* out,int) {
+        if(failRead) return false;
+        *out=regs[reg]; return true;
+    }
+    bool writeRegister8(uint8_t reg,uint8_t value) {
+        ++writes;
+        if(failWrite) return false;
+        if(!ignoreWrite) regs[reg]=value;
+        return true;
+    }
+};
+
 int main() {
+    FakePmic pm;
+    pm.regs[6]=0x1b; pm.regs[7]=0x45;
+    assert(watchpower::retainRtcPower(pm));
+    assert(pm.regs[6]==0x1f && pm.regs[7]==0x65);
+    assert(watchpower::retainRtcPower(pm) && pm.writes==2);
+    pm.regs[7]=0; pm.failWrite=true;
+    assert(!watchpower::retainRtcPower(pm));
+    pm.failWrite=false; pm.ignoreWrite=true;
+    assert(!watchpower::retainRtcPower(pm));
+    pm.ignoreWrite=false;
+    assert(watchpower::retainRtcPower(pm));
+    pm.failRead=true;
+    assert(!watchpower::retainRtcPower(pm));
     assert(watchpower::kTimeoutCount == 6);
     const uint32_t expected[] = {5000, 15000, 60000, 300000, 600000, 900000};
     for (uint8_t i = 0; i < watchpower::kTimeoutCount; ++i)

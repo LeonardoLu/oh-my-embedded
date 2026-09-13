@@ -4,6 +4,19 @@
 
 namespace watchpower {
 
+// M5PM1 L1 supplies RX8130 and IMU. Retain it through double-click off,
+// preserving LED, charge, other rails and unrelated power-hold bits.
+template<class Pmic>
+bool retainRtcPower(Pmic& pm) {
+    uint8_t cfg=0,hold=0,verify=0;
+    return pm.readRegister(0x06,&cfg,1)
+        && ((cfg&0x04) || pm.writeRegister8(0x06,cfg|0x04))
+        && pm.readRegister(0x07,&hold,1)
+        && ((hold&0x20) || pm.writeRegister8(0x07,hold|0x20))
+        && pm.readRegister(0x06,&verify,1) && (verify&0x04)
+        && pm.readRegister(0x07,&verify,1) && (verify&0x20);
+}
+
 constexpr uint8_t kTimeoutCount = 6;
 
 inline uint32_t timeoutMs(uint8_t index) {

@@ -11,6 +11,7 @@ public:
     bool setIndicator(bool enabled);
     bool indicatorReady() const { return _indicatorReady; }
     bool homeKeyReady() const { return _homeKeyReady; }
+    bool rtcHoldReady() const { return _rtcHoldReady; }
     uint8_t bootKeyConfig() const { return _bootKeyCfg; }
     uint8_t bootOffConfig() const { return _bootOffCfg; }
     uint8_t batteryPct() const { return _batteryPct; }
@@ -28,6 +29,7 @@ public:
     static uint8_t levelToValue(uint8_t level);
 
 private:
+    bool _rtcHoldReady = false;
     uint16_t _filteredMv = 0;
     uint8_t _batteryPct = 100;
     bool _charging = false;

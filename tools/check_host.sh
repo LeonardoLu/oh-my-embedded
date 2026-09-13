@@ -5,6 +5,11 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 OUT="$ROOT/tmp/host-checks"
 mkdir -p "$OUT"
+c++ -std=c++11 -Wall -Wextra -Werror \
+  -Istopwatch/bot-ux-watch/test/support/rtc -Istopwatch/bot-ux-watch/include \
+  stopwatch/bot-ux-watch/test/test_rtc_clock.cpp stopwatch/bot-ux-watch/src/RtcClock.cpp \
+  -o "$OUT/test_rtc_clock"
+"$OUT/test_rtc_clock"
 for name in test_calendar_math test_input_semantics test_timed_state test_power_policy test_watch_interaction test_companion_controls test_companion_presets test_ui_controls test_touch_affine test_touch_contact test_touch_trace_buffer test_watch_strings test_watch_button_feedback test_watch_button_feedback_masks test_watch_edge_geometry test_watch_feedback_patch; do
   c++ -std=c++11 -Wall -Wextra -Werror -Istopwatch/bot-ux-watch/include -Ilib/ux-components/src \
     "stopwatch/bot-ux-watch/test/$name.cpp" -o "$OUT/$name"
