@@ -4,7 +4,7 @@ namespace watchstrings {
 struct Entry { const char* en; const char* zh; };
 static const Entry entries[] = {
     {"TIME","时间"},{"DATE","日期"},{"FORMAT","时间格式"},{"BOT","伙伴"},
-    {"DISPLAY","显示与声音"},{"LAYOUT","布局"},{"DONE","完成"},{"BACK","返回"},
+    {"DISPLAY","显示"},{"SOUND","声音"},{"POWER","省电"},{"LAYOUT","布局"},{"DONE","完成"},{"BACK","返回"},
     {"EXPRESSION","表情"},{"ACTION","动作"},{"APPEARANCE","外观"},{"COLOR","颜色"},
     {"NAME","名字"},{"LANGUAGE","语言"},{"COMBINATIONS","组合预览"},{"GAZE","视线"},
     {"INTENSITY","幅度"},{"SPEED","速度"},{"SETTINGS","设置"},{"BOT PERSONALITY","伙伴个性"},
@@ -19,8 +19,12 @@ static const Entry entries[] = {
     {"SHAPE","形状"},{"EYES","眼睛"},{"Tap arrows; tap the bot to react","轻点箭头切换，轻点伙伴互动"},
     {"MOTION","动态效果"},{"WRIST","手腕感应"},{"ON","开启"},{"OFF","关闭"},
     {"BOT COLOR","伙伴颜色"},{"USE THEME","使用主题"},{"DISPLAY & SOUND","显示与声音"},
-    {"BRIGHTNESS","亮度"},{"SOUND","声音"},{"INDICATOR","指示灯"},{"BUTTON FX","按下效果"},
-    {"DIM TIMEOUT","调暗延时"},{"SCREEN OFF","息屏延时"},{"WAKE","唤醒"},
+    {"TIME SETTINGS","时间"},{"BRIGHTNESS","亮度"},{"INDICATOR","指示灯"},{"BUTTON FX","按下效果"},
+    {"STARTUP SOUND","开机声音"},{"BUTTON SOUND","按键声音"},{"ALERT SOUND","提示声音"},
+    {"POWER SAVING","省电"},{"POWER SAVE","省电开关"},{"DIM LEVEL","调暗亮度"},
+    {"DIM AFTER","调暗延时"},{"AUTO OFF","自动息屏"},{"WAKE METHOD","唤醒方式"},
+    {"CHARGE AWAKE","充电时常亮"},{"FORCED OFF","强制息屏"},{"FROM","开始时间"},{"UNTIL","结束时间"},
+    {"DIM TIMEOUT","调暗延时"},{"SCREEN OFF","息屏延时"},{"WAKE","唤醒方式"},
     {"TOUCH + KEYS","触摸 + 按键"},{"KEYS ONLY","仅按键"},{"BOT NAME","伙伴名字"},
     {"5 S","5秒"},{"15 S","15秒"},{"1 MIN","1分钟"},{"5 MIN","5分钟"},
     {"10 MIN","10分钟"},{"15 MIN","15分钟"},

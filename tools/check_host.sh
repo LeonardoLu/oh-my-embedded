@@ -38,6 +38,20 @@ c++ -std=c++11 -Wall -Wextra -Werror -Istopwatch/bot-ux-watch/include -Ilib/ux-c
   lib/ux-components/src/FontCjk28.cpp -o "$OUT/test_watch_typography"
 "$OUT/test_watch_typography" "$OUT/watch-typography.ppm"
 echo 'PASS test_watch_typography'
+c++ -std=c++11 -Wall -Wextra -Werror -Istopwatch/bot-ux-watch/include \
+  stopwatch/bot-ux-watch/test/test_settings_icon_assets.cpp \
+  -o "$OUT/test_settings_icon_assets"
+"$OUT/test_settings_icon_assets" "$OUT/settings-icons.ppm"
+echo 'PASS test_settings_icon_assets'
+mkdir -p "$OUT/settings-carousel"
+c++ -std=c++11 -Wall -Wextra -Werror \
+  -Istopwatch/bot-ux-watch/include -Ilib/ux-components/src \
+  stopwatch/bot-ux-watch/test/test_settings_carousel_render.cpp \
+  lib/ux-components/src/FontLatin24.cpp lib/ux-components/src/FontLatin28.cpp \
+  lib/ux-components/src/FontCjk24.cpp lib/ux-components/src/FontCjk28.cpp \
+  -o "$OUT/test_settings_carousel_render"
+"$OUT/test_settings_carousel_render" "$OUT/settings-carousel"
+echo 'PASS test_settings_carousel_render'
 for name in hid_framing analog_input battery_double_tap agent_signal bottom_led_frame feedback_level fresh_reply_attention; do
   case "$name" in
     hid_framing) source=core2/bot-ux-codex-core2/src/HidFraming.cpp ;;

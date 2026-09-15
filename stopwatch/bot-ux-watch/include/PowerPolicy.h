@@ -18,6 +18,7 @@ bool retainRtcPower(Pmic& pm) {
 }
 
 constexpr uint8_t kTimeoutCount = 6;
+constexpr uint32_t kForcedWakeWindowMs = 60U * 1000U;
 
 inline uint32_t timeoutMs(uint8_t index) {
     switch (index) {
@@ -41,8 +42,52 @@ inline const char* timeoutLabel(uint8_t index) {
     }
 }
 
+inline uint8_t dimBrightnessLevel(uint8_t activeLevel, uint8_t requestedLevel) {
+    if (activeLevel < 1) activeLevel = 1;
+    if (activeLevel > 5) activeLevel = 5;
+    if (requestedLevel < 1) requestedLevel = 1;
+    if (requestedLevel > 5) requestedLevel = 5;
+    return requestedLevel < activeLevel ? requestedLevel : activeLevel;
+}
+
 enum class ScreenState : uint8_t { Active, Dimmed, Off };
 enum class OffWaitMode : uint8_t { AwakePoll, ButtonLightSleep };
+
+struct IdleConfig {
+    bool enabled = true;
+    uint8_t dimTimeout = 1;
+    uint8_t offTimeout = 2;
+    bool keepAwakeWhileExternalPower = true;
+    bool forcedSleepEnabled = false;
+    uint8_t forcedSleepStartHour = 23;
+    uint8_t forcedSleepEndHour = 7;
+};
+
+inline bool savingApplies(const IdleConfig& config, bool externalPower) {
+    return config.enabled
+        && (!externalPower || !config.keepAwakeWhileExternalPower);
+}
+
+// Equal endpoints intentionally describe an empty interval. This keeps an
+// accidentally incomplete schedule from making the watch inaccessible.
+inline bool hourInRange(uint8_t hour, uint8_t start, uint8_t end) {
+    if (hour > 23 || start > 23 || end > 23 || start == end) return false;
+    return start < end ? hour >= start && hour < end
+                       : hour >= start || hour < end;
+}
+
+inline bool forcedSleepApplies(const IdleConfig& config, bool clockReady,
+                               uint8_t hour) {
+    return config.enabled && config.forcedSleepEnabled
+        && clockReady && hourInRange(hour, config.forcedSleepStartHour,
+                                     config.forcedSleepEndHour);
+}
+
+inline bool policyApplies(const IdleConfig& config, bool externalPower,
+                          bool clockReady, uint8_t hour) {
+    return savingApplies(config, externalPower)
+        || forcedSleepApplies(config, clockReady, hour);
+}
 
 inline bool audioShouldRun(ScreenState state, bool soundEnabled) {
     return state == ScreenState::Active && soundEnabled;
@@ -53,9 +98,9 @@ inline bool audioSafeForLightSleep(ScreenState state, bool suspended) {
 }
 
 inline OffWaitMode offWaitMode(ScreenState state, bool buttonWakeOnly,
-                               bool externalPower, bool inputActive) {
+                               bool savingBypassed, bool inputActive) {
     return state == ScreenState::Off && buttonWakeOnly
-        && !externalPower && !inputActive
+        && !savingBypassed && !inputActive
         ? OffWaitMode::ButtonLightSleep : OffWaitMode::AwakePoll;
 }
 
@@ -116,30 +161,68 @@ private:
     bool _powerReleaseGrace = false;
 };
 
-// Host-independent inactivity policy. External power and held input both keep
-// the watch active. Refreshing lastActivity while externally powered means an
-// unplug always begins a new battery timeout interval.
+// Host-independent inactivity policy. A bypassed power source and held input
+// keep the watch active. Refreshing lastActivity while policy is bypassed means
+// enabling it or unplugging begins a fresh timeout interval.
 class IdleScreenPolicy {
 public:
     void begin(uint32_t now) {
         _lastActivity = now;
         _state = ScreenState::Active;
         _begun = true;
+        _forcedWakeActive = false;
+    }
+
+    ScreenState update(uint32_t now, bool externalPower, bool inputActive,
+                       bool clockReady, uint8_t hour,
+                       const IdleConfig& config) {
+        if (!_begun) begin(now);
+        if (!config.enabled) {
+            _lastActivity = now;
+            _state = ScreenState::Active;
+            _forcedWakeActive = false;
+            return _state;
+        }
+
+        const bool forced = forcedSleepApplies(config, clockReady, hour);
+        if (!forced && !savingApplies(config, externalPower)) {
+            _lastActivity = now;
+            _state = ScreenState::Active;
+            _forcedWakeActive = false;
+            return _state;
+        }
+        if (inputActive) {
+            _lastActivity = now;
+            _state = ScreenState::Active;
+            if (forced) grantForcedWake(now);
+            return _state;
+        }
+        if (forced) {
+            if (!_forcedWakeActive
+                    || (int32_t)(now - _forcedWakeUntil) >= 0) {
+                _forcedWakeActive = false;
+                _state = ScreenState::Off;
+                return _state;
+            }
+            _state = now - _lastActivity >= timeoutMs(config.dimTimeout)
+                ? ScreenState::Dimmed : ScreenState::Active;
+            return _state;
+        }
+        _forcedWakeActive = false;
+
+        const uint32_t elapsed = now - _lastActivity;
+        if (elapsed >= timeoutMs(config.offTimeout)) _state = ScreenState::Off;
+        else if (elapsed >= timeoutMs(config.dimTimeout)) _state = ScreenState::Dimmed;
+        else _state = ScreenState::Active;
+        return _state;
     }
 
     ScreenState update(uint32_t now, bool externalPower, bool inputActive,
                        uint8_t dimTimeout, uint8_t offTimeout) {
-        if (!_begun) begin(now);
-        if (externalPower || inputActive) {
-            wake(now);
-            return _state;
-        }
-
-        const uint32_t elapsed = now - _lastActivity;
-        if (elapsed >= timeoutMs(offTimeout)) _state = ScreenState::Off;
-        else if (elapsed >= timeoutMs(dimTimeout)) _state = ScreenState::Dimmed;
-        else _state = ScreenState::Active;
-        return _state;
+        IdleConfig config;
+        config.dimTimeout = dimTimeout;
+        config.offTimeout = offTimeout;
+        return update(now, externalPower, inputActive, false, 0, config);
     }
 
     void wake(uint32_t now) {
@@ -148,13 +231,30 @@ public:
         _begun = true;
     }
 
+    // A deliberate wake inside a forced interval must leave enough time to
+    // reach settings. Continued input renews the same bounded window.
+    void wakeForUser(uint32_t now) {
+        wake(now);
+        grantForcedWake(now);
+    }
+
     ScreenState state() const { return _state; }
     uint32_t lastActivity() const { return _lastActivity; }
+    bool forcedWakeActive(uint32_t now) const {
+        return _forcedWakeActive && (int32_t)(now - _forcedWakeUntil) < 0;
+    }
 
 private:
+    void grantForcedWake(uint32_t now) {
+        _forcedWakeUntil = now + kForcedWakeWindowMs;
+        _forcedWakeActive = true;
+    }
+
     uint32_t _lastActivity = 0;
+    uint32_t _forcedWakeUntil = 0;
     ScreenState _state = ScreenState::Active;
     bool _begun = false;
+    bool _forcedWakeActive = false;
 };
 
 } // namespace watchpower

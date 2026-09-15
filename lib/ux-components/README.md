@@ -44,10 +44,10 @@ Use `textWidth` to align/center and `lineHeight` to budget vertical space.
 | Latin24 | 24 / 29 px | 10,919 | 95 |
 | Latin28 | 28 / 33 px | 14,829 | 95 |
 | Clock36 | 36 / 41 px | 4,145 | 17 |
-| Cjk18 | 18 / 23 px | 43,259 | 340 |
-| Cjk22 | 22 / 27 px | 65,072 | 340 |
-| Cjk24 | 24 / 29 px | 77,399 | 340 |
-| Cjk28 | 28 / 33 px | 103,883 | 340 |
+| Cjk18 | 18 / 23 px | 46,085 | 358 |
+| Cjk22 | 22 / 27 px | 69,351 | 358 |
+| Cjk24 | 24 / 29 px | 82,403 | 358 |
+| Cjk28 | 28 / 33 px | 110,547 | 358 |
 
 Glyph records also consume approximately 16 bytes each depending on target ABI.
 Clock36 includes digits, colon, slash, space, AM/PM and fallback question mark.

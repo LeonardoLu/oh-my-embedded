@@ -38,6 +38,14 @@ const char* kDimTimeoutKey = "dimTimeout";
 // public Settings::Data::screenOffTimeout field without altering old keys.
 const char* kScreenOffTimeoutKey = "screenOffTo";
 const char* kButtonWakeOnlyKey = "buttonWake";
+const char* kWakeModeKey = "wakeMode";
+const char* kPowerSaveKey = "powerSave";
+const char* kDimBrightnessKey = "dimBright";
+const char* kChargeSaveKey = "chargeSave";
+const char* kChargeAwakeKey = "chargeAwake";
+const char* kForcedSleepKey = "forceSleep";
+const char* kForcedStartKey = "sleepStart";
+const char* kForcedEndKey = "sleepEnd";
 } // namespace
 
 void Settings::begin() {
@@ -53,15 +61,32 @@ void Settings::begin() {
     _data.hour24      = prefs.getBool("hour24", _data.hour24);
     _data.showSeconds = prefs.getBool("seconds", _data.showSeconds);
     _data.sound       = prefs.getBool("sound", _data.sound);
+    _data.startupSound = prefs.getBool("startupSound", _data.startupSound);
+    _data.buttonSound = prefs.getBool("buttonSound", _data.buttonSound);
+    _data.alertSound = prefs.getBool("alertSound", _data.alertSound);
     _data.buttonFeedback = prefs.getBool("buttonFx", _data.buttonFeedback);
     _data.theme       = prefs.getUChar("theme", _data.theme);
     _data.appearance  = prefs.getUChar("look", _data.appearance);
     _data.expression  = prefs.getUChar("expr", _data.expression);
     _data.animation   = prefs.getUChar("anim", _data.animation);
     _data.brightness  = prefs.getUChar("bright", _data.brightness);
+    _data.powerSaveEnabled = prefs.getBool(kPowerSaveKey, _data.powerSaveEnabled);
+    _data.dimBrightness = prefs.getUChar(kDimBrightnessKey, _data.dimBrightness);
     _data.dimTimeout = prefs.getUChar(kDimTimeoutKey, _data.dimTimeout);
     _data.screenOffTimeout = prefs.getUChar(kScreenOffTimeoutKey, _data.screenOffTimeout);
-    _data.buttonWakeOnly = prefs.getBool(kButtonWakeOnlyKey, _data.buttonWakeOnly);
+    const bool legacyButtonWakeOnly = prefs.getBool(kButtonWakeOnlyKey, false);
+    _data.wakeMode = prefs.getUChar(kWakeModeKey,
+        legacyButtonWakeOnly ? WAKE_KEYS_ONLY : WAKE_TOUCH_KEYS);
+    // The earlier unpublished setting expressed the inverse choice.
+    const bool legacyChargeSave = prefs.getBool(kChargeSaveKey, false);
+    _data.keepAwakeWhileCharging = prefs.getBool(kChargeAwakeKey,
+        !legacyChargeSave);
+    _data.forcedSleepEnabled = prefs.getBool(kForcedSleepKey,
+        _data.forcedSleepEnabled);
+    _data.forcedSleepStartHour = prefs.getUChar(kForcedStartKey,
+        _data.forcedSleepStartHour);
+    _data.forcedSleepEndHour = prefs.getUChar(kForcedEndKey,
+        _data.forcedSleepEndHour);
     _data.motion      = prefs.getBool("motion", _data.motion);
     _data.eyeStyle    = prefs.getUChar("eyes", _data.eyeStyle);
     _data.customColor = prefs.getBool("custom", _data.customColor);
@@ -76,9 +101,17 @@ void Settings::begin() {
     if (_data.appearance >= APPEARANCE_COUNT) _data.appearance = 0;
     if (_data.expression >= EXPRESSION_COUNT) _data.expression = 0;
     if (_data.animation >= ANIMATION_COUNT) _data.animation = 1;
-    if (_data.brightness < 1 || _data.brightness > 5) _data.brightness = 3;
+    if (_data.brightness < BRIGHTNESS_MIN || _data.brightness > BRIGHTNESS_MAX)
+        _data.brightness = 3;
+    if (_data.dimBrightness < BRIGHTNESS_MIN || _data.dimBrightness > BRIGHTNESS_MAX)
+        _data.dimBrightness = BRIGHTNESS_MIN;
+    if (_data.dimBrightness > _data.brightness)
+        _data.dimBrightness = _data.brightness;
     _data.dimTimeout = timeoutIndex(_data.dimTimeout, 1);
     _data.screenOffTimeout = timeoutIndex(_data.screenOffTimeout, 2);
+    if (_data.wakeMode >= WAKE_MODE_COUNT) _data.wakeMode = WAKE_TOUCH_KEYS;
+    if (_data.forcedSleepStartHour > 23) _data.forcedSleepStartHour = 23;
+    if (_data.forcedSleepEndHour > 23) _data.forcedSleepEndHour = 7;
     if (_data.eyeStyle >= EYE_STYLE_COUNT) _data.eyeStyle = 1;
     if (_data.colorHue > 359) _data.colorHue = 42;
     if (_data.colorSat > 100) _data.colorSat = 8;
@@ -90,6 +123,8 @@ void Settings::begin() {
 }
 
 void Settings::save() {
+    if (_data.dimBrightness > _data.brightness)
+        _data.dimBrightness = _data.brightness;
     Preferences prefs;
     prefs.begin(kNamespace, false);
     prefs.putString("botName", _data.botName);
@@ -100,6 +135,9 @@ void Settings::save() {
     prefs.putBool("hour24", _data.hour24);
     prefs.putBool("seconds", _data.showSeconds);
     prefs.putBool("sound", _data.sound);
+    prefs.putBool("startupSound", _data.startupSound);
+    prefs.putBool("buttonSound", _data.buttonSound);
+    prefs.putBool("alertSound", _data.alertSound);
     prefs.putBool("indicator", _data.indicator);
     prefs.putBool("buttonFx", _data.buttonFeedback);
     prefs.putUChar("theme", _data.theme);
@@ -107,9 +145,17 @@ void Settings::save() {
     prefs.putUChar("expr", _data.expression);
     prefs.putUChar("anim", _data.animation);
     prefs.putUChar("bright", _data.brightness);
+    prefs.putBool(kPowerSaveKey, _data.powerSaveEnabled);
+    prefs.putUChar(kDimBrightnessKey, _data.dimBrightness);
     prefs.putUChar(kDimTimeoutKey, _data.dimTimeout);
     prefs.putUChar(kScreenOffTimeoutKey, _data.screenOffTimeout);
-    prefs.putBool(kButtonWakeOnlyKey, _data.buttonWakeOnly);
+    prefs.putUChar(kWakeModeKey, _data.wakeMode);
+    prefs.putBool(kButtonWakeOnlyKey, _data.wakeMode == WAKE_KEYS_ONLY);
+    prefs.putBool(kChargeAwakeKey, _data.keepAwakeWhileCharging);
+    prefs.putBool(kChargeSaveKey, !_data.keepAwakeWhileCharging);
+    prefs.putBool(kForcedSleepKey, _data.forcedSleepEnabled);
+    prefs.putUChar(kForcedStartKey, _data.forcedSleepStartHour);
+    prefs.putUChar(kForcedEndKey, _data.forcedSleepEndHour);
     prefs.putBool("motion", _data.motion);
     prefs.putUChar("eyes", _data.eyeStyle);
     prefs.putBool("custom", _data.customColor);

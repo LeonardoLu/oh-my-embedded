@@ -16,6 +16,11 @@ public:
     static const uint8_t EXPRESSION_COUNT = 10;
     static const uint8_t ANIMATION_COUNT = 8;
     static const uint8_t TIMEOUT_COUNT = 6;
+    static const uint8_t BRIGHTNESS_MIN = 1;
+    static const uint8_t BRIGHTNESS_MAX = 5;
+    static const uint8_t WAKE_TOUCH_KEYS = 0;
+    static const uint8_t WAKE_KEYS_ONLY = 1;
+    static const uint8_t WAKE_MODE_COUNT = 2;
 
     static constexpr uint8_t timeoutIndex(uint8_t value, uint8_t fallback) {
         return value < TIMEOUT_COUNT ? value : fallback;
@@ -30,6 +35,9 @@ public:
         bool    hour24      = true;
         bool    showSeconds = false;
         bool    sound       = true;
+        bool    startupSound = true;
+        bool    buttonSound = true;
+        bool    alertSound = true;
         bool    indicator   = false;
         bool    buttonFeedback = true;
         uint8_t theme       = THEME_NIGHT;
@@ -37,9 +45,15 @@ public:
         uint8_t expression  = 0;
         uint8_t animation   = 1;
         uint8_t brightness  = 3;     // 1..5
+        bool    powerSaveEnabled = true;
+        uint8_t dimBrightness = 1;   // 1..5
         uint8_t dimTimeout = 1;      // 5 s, 15 s, 1 m, 5 m, 10 m, 15 m
         uint8_t screenOffTimeout = 2;
-        bool    buttonWakeOnly = false;
+        uint8_t wakeMode = WAKE_TOUCH_KEYS;
+        bool    keepAwakeWhileCharging = true;
+        bool    forcedSleepEnabled = false;
+        uint8_t forcedSleepStartHour = 23;
+        uint8_t forcedSleepEndHour = 7;
         bool    motion       = true;
         uint8_t eyeStyle     = 1;
         bool    customColor  = false;

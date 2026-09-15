@@ -22,6 +22,8 @@
 #include "WatchFeedbackPatch.h"
 #include "WatchUi.h"
 #include "WatchControls.h"
+#include "WatchSettingsCarousel.h"
+#include "WatchSettingsRows.h"
 #include <UxPointer.h>
 #include <UxSound.h>
 #include <UxSoundM5.h>
@@ -50,17 +52,20 @@ constexpr int16_t kPreviewY = 62;
 constexpr int16_t kMenuStep = watchcontrols::mainList().step;
 constexpr uint8_t kVisibleRows = watchcontrols::mainList().visibleRows;
 constexpr uint8_t kMenuCount=(uint8_t)MenuItem::Done;
+constexpr uint8_t kTimeCount=(uint8_t)TimeItem::Back;
 constexpr uint8_t kPersonalCount=(uint8_t)PersonalItem::Back;
 constexpr uint32_t kActiveFrameMs = 16;
 constexpr uint32_t kPreviewFrameMs = 33;
 constexpr uint32_t kDozeFrameMs = 250;
 constexpr uint8_t kLowBattery = 15;
-constexpr uint8_t kDimBrightnessLevel = 1;
 constexpr uint8_t kAudioPowerIo = 2;     // M5IOE1 G3, zero-based index.
 constexpr uint8_t kAudioAmplifierIo = 9; // M5IOE1 G10, zero-based index.
 
 const char* const kMenuLabels[(uint8_t)MenuItem::Count] = {
-    "TIME", "DATE", "FORMAT", "BOT", "DISPLAY", "LAYOUT", "DONE"
+    "TIME", "BOT", "DISPLAY", "SOUND", "POWER", "DONE"
+};
+const char* const kTimeLabels[(uint8_t)TimeItem::Count] = {
+    "TIME", "DATE", "FORMAT", "BACK"
 };
 const char* const kPersonalLabels[(uint8_t)PersonalItem::Count] = {
     "EXPRESSION", "ACTION", "APPEARANCE", "COLOR", "NAME", "LANGUAGE", "COMBINATIONS", "GAZE", "INTENSITY", "SPEED", "BACK"
@@ -96,6 +101,7 @@ constexpr size_t kButtonMasksTotal = kButtonMaskBytes
 Screen _screen = Screen::Face;
 Editor _editor = Editor::None;
 MenuItem _menu = MenuItem::Time;
+TimeItem _timeItem = TimeItem::Time;
 PersonalItem _personal = PersonalItem::Expression;
 Settings::Data _originalSettings;
 Screen _editorParent = Screen::Settings;
@@ -121,9 +127,10 @@ ux::sound::M5Output<m5::Speaker_Class> _soundOutput;
 bool _diagnosticScroll = false;
 int _namePressedKey = -1;
 watchinteraction::SettingsChord _settingsChord;
-watchinteraction::ScrollList _settingsList;
+watchcontrols::CarouselModel _settingsCarousel;
+watchinteraction::ScrollList _timeList;
 watchinteraction::ScrollList _personalList;
-ux::ScrollModel _settingsScroll, _personalScroll;
+ux::ScrollModel _timeScroll, _personalScroll;
 ux::ScrollModel _editorScroll;
 ux::NameEditor _nameEditor;
 uint32_t _scrollMs = 0;
@@ -430,13 +437,6 @@ static bool tapHit(int16_t left, int16_t top, int16_t width, int16_t height) {
         && hit(_touch.startX(), _touch.startY(), left, top, width, height);
 }
 
-static bool actualBotContains(int16_t x,int16_t y) {
-    const auto& metrics=face.bot().metrics();
-    if(metrics.bodyR<=0) return false;
-    int32_t dx=x-(kBotX+metrics.cx),dy=y-(kBotY+metrics.cy);
-    return dx*dx+dy*dy<=(int32_t)metrics.bodyR*metrics.bodyR;
-}
-
 static void directFaceGaze(int16_t x,int16_t y,uint32_t now) {
     const auto& metrics=face.bot().metrics();
     auto gaze=watchinteraction::touchGaze(x,y,kBotX+metrics.cx,kBotY+metrics.cy,metrics.bodyR);
@@ -466,6 +466,39 @@ static bool soundDesired() {
     return watchpower::audioShouldRun(_screenPowerState,settings.data().sound);
 }
 
+enum class SoundChannel : uint8_t { Startup, Button, Alert };
+
+static bool soundChannelEnabled(SoundChannel channel) {
+    if (!soundDesired()) return false;
+    switch (channel) {
+        case SoundChannel::Startup: return settings.data().startupSound;
+        case SoundChannel::Button: return settings.data().buttonSound;
+        default: return settings.data().alertSound;
+    }
+}
+
+static bool playSound(ux::sound::Cue cue, SoundChannel channel) {
+    return soundChannelEnabled(channel) && _soundOutput.ready()
+        && _sounds.play(cue);
+}
+
+static SoundChannel cueChannel(ux::sound::Cue cue) {
+    switch (cue) {
+        case ux::sound::Cue::Tap:
+        case ux::sound::Cue::Select:
+        case ux::sound::Cue::Action:
+        case ux::sound::Cue::Confirm:
+        case ux::sound::Cue::Back:
+        case ux::sound::Cue::Open:
+        case ux::sound::Cue::Close:
+            return SoundChannel::Button;
+        case ux::sound::Cue::Wake:
+            return SoundChannel::Startup;
+        default:
+            return SoundChannel::Alert;
+    }
+}
+
 static void applySoundDemand() {
     bool desired=soundDesired();
     if(desired) {
@@ -477,12 +510,34 @@ static void applySoundDemand() {
     }
 }
 
-static void clickSound()   { if(_soundOutput.ready()) _sounds.play(ux::sound::Cue::Select); }
-static void confirmSound() { if(_soundOutput.ready()) _sounds.play(ux::sound::Cue::Confirm); }
-static void pokeSound()    { if(_soundOutput.ready()) _sounds.play(ux::sound::Cue::Poke); }
+static void clickSound()   { playSound(ux::sound::Cue::Select, SoundChannel::Button); }
+static void confirmSound() { playSound(ux::sound::Cue::Confirm, SoundChannel::Button); }
+static void pokeSound()    { playSound(ux::sound::Cue::Poke, SoundChannel::Alert); }
+
+static watchpower::IdleConfig idlePowerConfig() {
+    const auto& data = settings.data();
+    watchpower::IdleConfig config;
+    config.enabled = data.powerSaveEnabled;
+    config.dimTimeout = data.dimTimeout;
+    config.offTimeout = data.screenOffTimeout;
+    config.keepAwakeWhileExternalPower = data.keepAwakeWhileCharging;
+    config.forcedSleepEnabled = data.forcedSleepEnabled;
+    config.forcedSleepStartHour = data.forcedSleepStartHour;
+    config.forcedSleepEndHour = data.forcedSleepEndHour;
+    return config;
+}
+
+static bool powerClockReady() {
+    return watchClock.hasTime() && watchClock.state() == RtcClock::State::Ready;
+}
+
+static uint8_t powerClockHour() {
+    return powerClockReady() ? (uint8_t)watchClock.value().time.hours : 0;
+}
 
 static void resetUiPointer() {
-    _faceTracking=false; _pointer.cancel(); _clickUntil=0; _settingsScroll.cancel(); _personalScroll.cancel(); _editorScroll.cancel();
+    _faceTracking=false; _pointer.cancel(); _clickUntil=0; _settingsCarousel.cancel();
+    _timeScroll.cancel(); _personalScroll.cancel(); _editorScroll.cancel();
     _capturedTarget=watchcontrols::None; _namePressedKey = -1; _colorDrag = 0;
 }
 
@@ -833,6 +888,7 @@ static void consumeWakeInput() {
 
 static void applyScreenPowerState(watchpower::ScreenState next) {
     if (_screenPowerState == next) return;
+    const bool wasOff = _screenPowerState == watchpower::ScreenState::Off;
     _screenPowerState = next;
     _dozing = next != watchpower::ScreenState::Active;
     if (next == watchpower::ScreenState::Active) {
@@ -848,10 +904,23 @@ static void applyScreenPowerState(watchpower::ScreenState next) {
         _buttonFeedbackDirty = true;
     } else {
         applySoundDemand();
-        _settingsScroll.cancel();
+        _settingsCarousel.cancel();
+        _timeScroll.cancel();
         _personalScroll.cancel();
         _editorScroll.cancel();
-        if (next == watchpower::ScreenState::Dimmed) power.applyLevel(kDimBrightnessLevel);
+        if (next == watchpower::ScreenState::Dimmed) {
+            const uint8_t level = watchpower::dimBrightnessLevel(
+                settings.data().brightness, settings.data().dimBrightness);
+            if (wasOff) {
+                power.wakeDisplay(level);
+                _faceNeedsClear = true;
+                _buttonFeedbackFaceBaseValid = false;
+                _scrollMs = millis();
+                _uiDirty = true;
+                _listBandOnly = false;
+                face.invalidate();
+            } else power.applyLevel(level);
+        }
         else {
             _ambientCycle.setPaused(true,millis());
             power.sleepDisplay();
@@ -888,7 +957,8 @@ static void applySettings() {
     if (_screenPowerState == watchpower::ScreenState::Active)
         power.applyLevel(settings.data().brightness);
     else if (_screenPowerState == watchpower::ScreenState::Dimmed)
-        power.applyLevel(kDimBrightnessLevel);
+        power.applyLevel(watchpower::dimBrightnessLevel(
+            settings.data().brightness, settings.data().dimBrightness));
     _uiDirty = true;
 }
 
@@ -900,6 +970,7 @@ static void refreshPower(uint32_t now) {
     _battery = power.batteryPct();
     _charging = power.charging();
     _externalPower = power.externalPower();
+    watchClock.refresh();
     if (_powerKnown && _charging && !wasCharging) {
         _happyAcknowledgment.start(now, 1400);
         _statusPanelStartMs = now;
@@ -989,13 +1060,38 @@ static void enterSettings() {
     pushTouchTrace(TouchTraceKind::Screen, millis(), 0, 0, (int16_t)prior, (int16_t)_screen);
     _editor = Editor::None;
     _menu = MenuItem::Time;
-    _settingsList.configure(kMenuCount, kVisibleRows);
-    _settingsList.select(0);
-    _settingsScroll.setBounds(kMenuCount*kMenuStep,watchcontrols::mainList().h);
-    _settingsScroll.setOffset(0);
+    _settingsCarousel.configure(kMenuCount,watchcontrols::settingsCarousel().step);
+    _settingsCarousel.select(0);
     _buttonNavigation=false;
     _uiDirty = true;
     confirmSound();
+}
+
+static void enterTimeSettings() {
+    resetUiPointer();
+    Screen prior=_screen;
+    _screen=Screen::TimeSettings;
+    pushTouchTrace(TouchTraceKind::Screen,millis(),0,0,(int16_t)prior,(int16_t)_screen);
+    _editor=Editor::None;
+    _timeItem=TimeItem::Time;
+    _timeList.configure(kTimeCount,kVisibleRows);
+    _timeList.select(0);
+    _timeScroll.setBounds(kTimeCount*kMenuStep,watchcontrols::mainList().h);
+    _timeScroll.setOffset(0);
+    _buttonNavigation=false;
+    _uiDirty=true;
+    clickSound();
+}
+
+static void leaveTimeSettings(int cause=watchcontrols::None) {
+    resetUiPointer();
+    Screen prior=_screen;
+    _screen=Screen::Settings;
+    pushTouchTrace(TouchTraceKind::Screen,millis(),0,0,(int16_t)prior,(int16_t)_screen,
+                   0,0,0,(uint8_t)cause);
+    _editor=Editor::None;
+    _uiDirty=true;
+    clickSound();
 }
 
 static void enterPersonalize(Screen parent = Screen::Settings) {
@@ -1071,9 +1167,11 @@ static void enterEditor(Editor editor, Screen parent = Screen::Settings) {
 static void cancelEditor() {
     watchClock.cancelDraft();
     resetUiPointer();
+    const bool powerEditor = _editor == Editor::Power;
     _manualPreset = _originalManualPreset; _manualCombo = _originalManualCombo;
     settings.data() = _originalSettings;
     applySettings();
+    if(powerEditor) _idleScreenPolicy.wakeForUser(millis());
     Screen prior = _screen;
     _screen = _editorParent;
     pushTouchTrace(TouchTraceKind::Screen, millis(), 0, 0, (int16_t)prior, (int16_t)_screen);
@@ -1089,14 +1187,14 @@ static void returnHome() {
         settings.data()=_originalSettings; applySettings();
     }
     _manualDozing=false;
-    _idleScreenPolicy.wake(millis());
+    _idleScreenPolicy.wakeForUser(millis());
     applyScreenPowerState(watchpower::ScreenState::Active);
     _clockDoubleTap.reset(); consumeWakeInput();
     Screen prior=_screen;
     _screen=Screen::Face; _editor=Editor::None;
     pushTouchTrace(TouchTraceKind::Screen, millis(), 0, 0, (int16_t)prior, (int16_t)_screen);
     _faceNeedsClear=true; face.invalidate(); _uiDirty=true;
-    _sounds.play(ux::sound::Cue::Back);
+    playSound(ux::sound::Cue::Back, SoundChannel::Button);
 }
 
 static void saveEditor(int cause = watchcontrols::None) {
@@ -1111,7 +1209,7 @@ static void saveEditor(int cause = watchcontrols::None) {
             : watchClock.setDate(_editYear,_editMonth,_editDay);
         if(result==RtcClock::Save::Failed) {
             _rtcSaveFailed=true; _uiDirty=true;
-            _sounds.play(ux::sound::Cue::Error);
+            playSound(ux::sound::Cue::Error, SoundChannel::Alert);
             Serial.println("RTC save failed; editor retained");
             return;
         }
@@ -1140,7 +1238,9 @@ static void pokeBot() {
 }
 
 static void startDoze() {
-    if (_externalPower) return;
+    const auto config=idlePowerConfig();
+    if (!watchpower::policyApplies(config,_externalPower,
+                                   powerClockReady(),powerClockHour())) return;
     _manualDozing = true;
     applyScreenPowerState(watchpower::ScreenState::Dimmed);
 }
@@ -1250,9 +1350,36 @@ static void changeEditorValue(int8_t delta) {
     } else if (_editor == Editor::Display) {
         if (_editField == 0) {
             int level = settings.data().brightness + delta;
-            settings.data().brightness = (uint8_t)(level < 1 ? 1 : level > 5 ? 5 : level);
+            settings.data().brightness = (uint8_t)(level < Settings::BRIGHTNESS_MIN
+                ? Settings::BRIGHTNESS_MIN : level > Settings::BRIGHTNESS_MAX
+                ? Settings::BRIGHTNESS_MAX : level);
+            if(settings.data().dimBrightness>settings.data().brightness)
+                settings.data().dimBrightness=settings.data().brightness;
         } else if (_editField == 1) {
             settings.data().theme = (uint8_t)((settings.data().theme + Settings::THEME_COUNT + delta) % Settings::THEME_COUNT);
+        } else if(_editField==2) {
+            settings.data().indicator=!settings.data().indicator;
+        } else if(_editField==3) {
+            settings.data().buttonFeedback=!settings.data().buttonFeedback;
+        } else if(_editField==4) {
+            settings.data().showDescription=!settings.data().showDescription;
+        } else {
+            settings.data().swapLayout=!settings.data().swapLayout;
+        }
+        applySettings();
+    } else if (_editor == Editor::Sound) {
+        if(_editField==0) settings.data().sound=!settings.data().sound;
+        else if(_editField==1) settings.data().startupSound=!settings.data().startupSound;
+        else if(_editField==2) settings.data().buttonSound=!settings.data().buttonSound;
+        else settings.data().alertSound=!settings.data().alertSound;
+        applySettings();
+    } else if (_editor == Editor::Power) {
+        if(_editField==0) settings.data().powerSaveEnabled=!settings.data().powerSaveEnabled;
+        else if(_editField==1) {
+            int level=settings.data().dimBrightness+delta;
+            int maxLevel=settings.data().brightness;
+            settings.data().dimBrightness=(uint8_t)(level<Settings::BRIGHTNESS_MIN
+                ?Settings::BRIGHTNESS_MIN:level>maxLevel?maxLevel:level);
         } else if(_editField==2) {
             settings.data().dimTimeout=(uint8_t)((settings.data().dimTimeout
                 +Settings::TIMEOUT_COUNT+delta)%Settings::TIMEOUT_COUNT);
@@ -1260,28 +1387,41 @@ static void changeEditorValue(int8_t delta) {
             settings.data().screenOffTimeout=(uint8_t)((settings.data().screenOffTimeout
                 +Settings::TIMEOUT_COUNT+delta)%Settings::TIMEOUT_COUNT);
         } else if(_editField==4) {
-            settings.data().buttonWakeOnly=!settings.data().buttonWakeOnly;
+            settings.data().wakeMode=(uint8_t)((settings.data().wakeMode
+                +Settings::WAKE_MODE_COUNT+delta)%Settings::WAKE_MODE_COUNT);
         } else if(_editField==5) {
-            settings.data().sound = !settings.data().sound;
+            settings.data().keepAwakeWhileCharging=!settings.data().keepAwakeWhileCharging;
         } else if(_editField==6) {
-            settings.data().indicator=!settings.data().indicator;
+            settings.data().forcedSleepEnabled=!settings.data().forcedSleepEnabled;
+        } else if(_editField==7) {
+            settings.data().forcedSleepStartHour=(uint8_t)((settings.data().forcedSleepStartHour+24+delta)%24);
         } else {
-            settings.data().buttonFeedback=!settings.data().buttonFeedback;
+            settings.data().forcedSleepEndHour=(uint8_t)((settings.data().forcedSleepEndHour+24+delta)%24);
         }
         applySettings();
+        _idleScreenPolicy.wakeForUser(millis());
     }
     clickSound();
 }
 
 static void selectMenuItem() {
     switch (_menu) {
-        case MenuItem::Time:       enterEditor(Editor::Time); break;
-        case MenuItem::Date:       enterEditor(Editor::Date); break;
-        case MenuItem::Format:     enterEditor(Editor::Format); break;
+        case MenuItem::Time:        enterTimeSettings(); break;
         case MenuItem::Personalize: enterPersonalize(); break;
-        case MenuItem::Display:    enterEditor(Editor::Display); break;
-        case MenuItem::Layout:     enterEditor(Editor::Layout); break;
-        case MenuItem::Done:       leaveSettings(); break;
+        case MenuItem::Display:     enterEditor(Editor::Display); break;
+        case MenuItem::Sound:       enterEditor(Editor::Sound); break;
+        case MenuItem::Power:       enterEditor(Editor::Power); break;
+        case MenuItem::Done:        leaveSettings(); break;
+        default: break;
+    }
+}
+
+static void selectTimeItem() {
+    switch(_timeItem) {
+        case TimeItem::Time: enterEditor(Editor::Time,Screen::TimeSettings); break;
+        case TimeItem::Date: enterEditor(Editor::Date,Screen::TimeSettings); break;
+        case TimeItem::Format: enterEditor(Editor::Format,Screen::TimeSettings); break;
+        case TimeItem::Back: leaveTimeSettings(); break;
         default: break;
     }
 }
@@ -1318,10 +1458,6 @@ static void handleFaceInput(Gesture gesture) {
         const int clockY=settings.data().swapLayout?20:376;
         if(_clockDoubleTap.tap(tapHit(90,clockY,286,70),millis())) { enterSettings(); return; }
         directFaceGaze(_tapX,_tapY,millis());
-    } else if (gesture == Gesture::Long) {
-        _clockDoubleTap.reset();
-        if (actualBotContains(_touch.startX(),_touch.startY())&&actualBotContains(_tapX,_tapY))
-            enterPersonalize(Screen::Face);
     } else if (gesture != Gesture::None) {
         _clockDoubleTap.reset();
         if (gesture == Gesture::SwipeDown && _touch.startY() <= 20)
@@ -1349,11 +1485,29 @@ static void updateColorPicker(int16_t x, int16_t y) {
 
 static void activateUiControl(int target) {
     using namespace watchcontrols;
-    if(_screen==Screen::Settings || _screen==Screen::Personalize) {
-        if(target==Done) { if(_screen==Screen::Personalize) leavePersonalize(target); else leaveSettings(target); return; }
+    if(_screen==Screen::Settings || _screen==Screen::TimeSettings || _screen==Screen::Personalize) {
+        if(target==Done) {
+            if(_screen==Screen::Personalize) leavePersonalize(target);
+            else if(_screen==Screen::TimeSettings) leaveTimeSettings(target);
+            else leaveSettings(target);
+            return;
+        }
     }
     if (_screen == Screen::Settings && target >= MenuRow) {
-        _settingsList.select(target-MenuRow); _menu=(MenuItem)_settingsList.selected(); selectMenuItem(); return;
+        _settingsCarousel.select((uint8_t)(target-MenuRow));
+        _menu=(MenuItem)_settingsCarousel.selected(); selectMenuItem(); return;
+    }
+    if(_screen==Screen::Settings
+        &&(target==CarouselPrevious||target==CarouselNext)) {
+        _buttonNavigation=true;
+        _settingsCarousel.moveSelection(target==CarouselPrevious?-1:1);
+        _menu=(MenuItem)_settingsCarousel.selected();
+        _uiDirty=true;
+        clickSound();
+        return;
+    }
+    if (_screen == Screen::TimeSettings && target >= TimeRow) {
+        _timeList.select(target-TimeRow); _timeItem=(TimeItem)_timeList.selected(); selectTimeItem(); return;
     }
     if (_screen == Screen::Personalize && target >= PersonalRow) {
         _personalList.select(target-PersonalRow); _personal=(PersonalItem)_personalList.selected(); selectPersonalItem(); return;
@@ -1367,7 +1521,8 @@ static void activateUiControl(int target) {
     } else if (_editor == Editor::Language) {
         settings.data().language=field; applySettings(); clickSound();
     } else if (_editor == Editor::Layout || _editor == Editor::Preview || _editor == Editor::Gaze
-            || _editor == Editor::Appearance || _editor == Editor::Motion || _editor == Editor::Display) {
+            || _editor == Editor::Appearance || _editor == Editor::Motion || _editor == Editor::Display
+            || _editor == Editor::Sound || _editor == Editor::Power) {
         _editField=field; changeEditorValue(_tapX<233?-1:1);
     } else if (_editor == Editor::Color && target==First) {
         settings.data().customColor=false; applySettings(); clickSound();
@@ -1387,7 +1542,8 @@ static void activateUiControl(int target) {
 
 static int exactPressedTarget() {
     if(!_pointer.pressed()) return watchcontrols::None;
-    float offset=_screen==Screen::Settings?_settingsScroll.offset():
+    float offset=_screen==Screen::Settings?_settingsCarousel.offset():
+        _screen==Screen::TimeSettings?_timeScroll.offset():
         _screen==Screen::Personalize?_personalScroll.offset():
         _screen==Screen::Editor&&watchcontrols::editorUsesScrollList(_editor)?_editorScroll.offset():0;
     auto target=watchcontrols::at(_screen,_editor,offset,_pointer.x(),_pointer.y());
@@ -1397,7 +1553,7 @@ static int exactPressedTarget() {
 // Hardware and diagnostic input share this path; one session owns each gesture.
 static void handleUiPointer(bool down, bool held, bool up, int x, int y, uint32_t now) {
     if (_screen==Screen::Face) return;
-    ux::ScrollModel* scroll=_screen==Screen::Settings?&_settingsScroll:
+    ux::ScrollModel* scroll=_screen==Screen::TimeSettings?&_timeScroll:
         _screen==Screen::Personalize?&_personalScroll:
         _screen==Screen::Editor&&watchcontrols::editorUsesScrollList(_editor)?&_editorScroll:nullptr;
     const auto scrollLayout=_screen==Screen::Editor?watchcontrols::editorList(_editor):watchcontrols::mainList();
@@ -1405,11 +1561,44 @@ static void handleUiPointer(bool down, bool held, bool up, int x, int y, uint32_
     if(down) {
         _buttonNavigation=false; _uiDirty=true; _listBandOnly=false;
         if(scroll) scroll->cancel(); // Stop inertia before capturing the visible row.
-        auto target=watchcontrols::at(_screen,_editor,scroll?scroll->offset():0,x,y);
+        float offset=_screen==Screen::Settings?_settingsCarousel.offset():scroll?scroll->offset():0;
+        auto target=watchcontrols::at(_screen,_editor,offset,x,y);
         _capturedTarget=target.id;
-        _pointer.begin(target.id,target.bounds,x,y,now,scroll&&y>=scrollLayout.y&&y<scrollLayout.y+scrollLayout.h);
+        const auto carousel=watchcontrols::settingsCarousel();
+        const bool inCarousel=_screen==Screen::Settings&&x>=carousel.x&&x<carousel.x+carousel.w
+            &&y>=carousel.y&&y<carousel.y+carousel.h;
+        _pointer.begin(target.id,target.bounds,x,y,now,
+                       inCarousel||(scroll&&y>=scrollLayout.y&&y<scrollLayout.y+scrollLayout.h));
+        if(inCarousel)
+            _settingsCarousel.begin(x,now);
         pushTouchTrace(TouchTraceKind::Down, now, x, y, target.id);
         _colorDrag=target.id==watchcontrols::ColorPad?1:target.id==watchcontrols::HueBar?2:0;
+    }
+    if(_screen==Screen::Settings&&_settingsCarousel.active()&&(held||up)) {
+        bool wasDragging=_settingsCarousel.dragging();
+        float before=_settingsCarousel.offset();
+        if(wasDragging||watchcontrols::carouselDragIntent(
+                x-_pointer.startX(),y-_pointer.startY()))
+            _settingsCarousel.move(x,now);
+        if(!wasDragging&&_settingsCarousel.dragging()) {
+            _pointer.cancel();
+            pushTouchTrace(TouchTraceKind::Scroll,now,x,y,_capturedTarget,
+                           watchcontrols::None,now-_pointer.startedAt());
+        }
+        if(before!=_settingsCarousel.offset()) markListMoved();
+        if(up) {
+            bool dragged=_settingsCarousel.end(now);
+            _menu=(MenuItem)_settingsCarousel.selected();
+            if(dragged) {
+                pushTouchTrace(TouchTraceKind::End,now,x,y,_capturedTarget,
+                               watchcontrols::None,now-_pointer.startedAt(),0,0,
+                               (uint8_t)TouchEndReason::Scrolled);
+                _capturedTarget=watchcontrols::None;
+                _tapX=x; _tapY=y;
+                _uiDirty=true; _listBandOnly=true;
+                return;
+            }
+        }
     }
     if(_pointer.active() && (held||up)) {
         bool wasScrolling=_pointer.scrolling();
@@ -1428,7 +1617,8 @@ static void handleUiPointer(bool down, bool held, bool up, int x, int y, uint32_
     if(up && _pointer.active()) {
         bool dragged=_pointer.scrolling();
         auto releasedBounds=_pointer.bounds();
-        auto releasedTarget=watchcontrols::at(_screen,_editor,scroll?scroll->offset():0,x,y);
+        float offset=_screen==Screen::Settings?_settingsCarousel.offset():scroll?scroll->offset():0;
+        auto releasedTarget=watchcontrols::at(_screen,_editor,offset,x,y);
         uint32_t elapsed=now-_pointer.startedAt();
         int captured=_capturedTarget;
         TouchEndReason reason=TouchEndReason::Accepted;
@@ -1460,7 +1650,7 @@ static void handleInputs(uint32_t now) {
         contact=_diagnosticDown; x=_diagnosticX; y=_diagnosticY;
     }
     else if(_screenPowerState==watchpower::ScreenState::Off
-            &&settings.data().buttonWakeOnly) {
+            &&settings.data().wakeMode==Settings::WAKE_KEYS_ONLY) {
         contact=false;
     }
     else if(now-_contactReadMs>=8) {
@@ -1530,7 +1720,7 @@ static void handleInputs(uint32_t now) {
     auto wakeGate=_wakeInputGate.update(now,_gestureActive,
                                         _powerButtonPressed,powerClicked);
     if(wakeGate.blockControls) {
-        _idleScreenPolicy.wake(now);
+        _idleScreenPolicy.wakeForUser(now);
         consumeWakeInput();
         return;
     }
@@ -1538,10 +1728,14 @@ static void handleInputs(uint32_t now) {
         || _powerButtonWakePressed || M5.BtnPWR.wasPressed() || powerClicked
         || touch.wasPressed();
     bool wasDozing=_screenPowerState!=watchpower::ScreenState::Active;
-    if(_externalPower) {
+    const auto idleConfig=idlePowerConfig();
+    const bool clockReady=powerClockReady();
+    const uint8_t clockHour=powerClockHour();
+    if(!watchpower::policyApplies(idleConfig,_externalPower,
+                                  clockReady,clockHour)) {
         _manualDozing=false;
-        _idleScreenPolicy.update(now,true,_gestureActive,
-                                 settings.data().dimTimeout,settings.data().screenOffTimeout);
+        _idleScreenPolicy.update(now,_externalPower,_gestureActive,
+                                 clockReady,clockHour,idleConfig);
         applyScreenPowerState(watchpower::ScreenState::Active);
         if(wasDozing&&(_gestureActive||wakePressed)) {
             bool pendingPowerClick=!powerClicked
@@ -1553,23 +1747,23 @@ static void handleInputs(uint32_t now) {
     } else if(wasDozing) {
         if(watchpower::shouldWakeAndConsume(_screenPowerState,wakePressed)) {
             _manualDozing=false;
-            _idleScreenPolicy.wake(now);
+            _idleScreenPolicy.wakeForUser(now);
             applyScreenPowerState(watchpower::ScreenState::Active);
             bool pendingPowerClick=!powerClicked
                 &&(_powerButtonWakePressed||M5.BtnPWR.wasPressed());
             _wakeInputGate.beginWake(pendingPowerClick);
             consumeWakeInput();
         } else {
-            auto automatic=_idleScreenPolicy.update(now,false,false,
-                settings.data().dimTimeout,settings.data().screenOffTimeout);
+            auto automatic=_idleScreenPolicy.update(now,_externalPower,false,
+                clockReady,clockHour,idleConfig);
             auto next=_manualDozing&&automatic!=watchpower::ScreenState::Off
                 ?watchpower::ScreenState::Dimmed:automatic;
             applyScreenPowerState(next);
         }
         return;
     } else {
-        auto next=_idleScreenPolicy.update(now,false,_gestureActive,
-            settings.data().dimTimeout,settings.data().screenOffTimeout);
+        auto next=_idleScreenPolicy.update(now,_externalPower,_gestureActive,
+            clockReady,clockHour,idleConfig);
         applyScreenPowerState(next);
         if(next!=watchpower::ScreenState::Active) return;
     }
@@ -1639,10 +1833,23 @@ static void handleInputs(uint32_t now) {
         else if (ga == Gesture::Long) leaveSettings();
         if (gb == Gesture::Tap) {
             _buttonNavigation=true;
-            _settingsList.move(1);
-            _menu = (MenuItem)_settingsList.selected();
-            revealRow(_settingsScroll, (uint8_t)_menu);
+            _settingsCarousel.moveSelection(1);
+            _menu = (MenuItem)_settingsCarousel.selected();
             _uiDirty = true;
+            clickSound();
+        }
+        return;
+    }
+
+    if (_screen == Screen::TimeSettings) {
+        if(ga==Gesture::Tap) { _buttonNavigation=true; selectTimeItem(); }
+        else if(ga==Gesture::Long) leaveTimeSettings();
+        if(gb==Gesture::Tap) {
+            _buttonNavigation=true;
+            _timeList.move(1);
+            _timeItem=(TimeItem)_timeList.selected();
+            revealRow(_timeScroll,(uint8_t)_timeItem);
+            _uiDirty=true;
             clickSound();
         }
         return;
@@ -1705,52 +1912,82 @@ static void drawTitle(const char* title) {
 }
 
 static void drawFooter();
+static void drawSettingsFooter();
+
+class SettingsCarouselView {
+public:
+    explicit SettingsCarouselView(M5Canvas& target):_target(target) {}
+    uint16_t background() const { return 0; }
+    uint16_t ink() const { return settings.ink(); }
+    uint16_t muted() const { return settings.muted(); }
+    bool pressed(ux::Rect bounds) const {
+        return pressedOver(bounds.x,bounds.y,bounds.w,bounds.h);
+    }
+    void large(const char* text,int16_t x,int16_t y,uint16_t color) {
+        _target.setTextDatum(middle_center);
+        _target.setFont(&fonts::FreeSansBold12pt7b);
+        _target.setTextSize(1.0f);
+        _target.setTextColor(color);
+        watchText(_target,text,x,y);
+    }
+private:
+    M5Canvas& _target;
+};
 
 static void drawSettingsList(bool chrome = true) {
     if (chrome) drawTitle("SETTINGS");
+    const auto layout=watchcontrols::settingsCarousel();
+    canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
+    SettingsCarouselView view(canvas);
+    watchsettingscarousel::draw(canvas,view,_settingsCarousel.offset(),
+        _settingsCarousel.selected(),kMenuLabels);
+    canvas.clearClipRect();
+    if (chrome) drawSettingsFooter();
+}
+
+static void drawTimeSettingsList(bool chrome=true) {
+    if(chrome) drawTitle("TIME SETTINGS");
     const auto layout=watchcontrols::mainList();
     canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    for (uint8_t i = 0; i < kMenuCount; ++i) {
-        auto row=watchcontrols::rowBounds(layout,i,_settingsScroll.offset());
+    for(uint8_t i=0;i<kTimeCount;++i) {
+        auto row=watchcontrols::rowBounds(layout,i,_timeScroll.offset());
         int16_t cy=row.y+row.h/2;
         if(row.y+row.h<=layout.y||row.y>=layout.y+layout.h) continue;
-        bool selected=_buttonNavigation&&i==(uint8_t)_menu;
+        bool selected=_buttonNavigation&&i==(uint8_t)_timeItem;
         bool pressed=pressedOver(row.x,row.y,row.w,row.h);
-        ux::roundRect(canvas,row.x,row.y,row.w,row.h,layout.radius,pressed?ux::blend565(settings.panel(),settings.style().accentColor,55):selected?settings.panel():settings.style().bgColor);
-        if(selected) ux::strokeRoundRect(canvas,row.x,row.y,row.w,row.h,layout.radius,settings.style().accentColor);
-
+        ux::roundRect(canvas,row.x,row.y,row.w,row.h,layout.radius,
+            pressed?ux::blend565(settings.panel(),settings.style().accentColor,55)
+                   :selected?settings.panel():settings.style().bgColor);
+        if(selected) ux::strokeRoundRect(canvas,row.x,row.y,row.w,row.h,
+                                         layout.radius,settings.style().accentColor);
         canvas.setTextDatum(middle_left);
         canvas.setFont(&fonts::FreeSansBold9pt7b);
-        canvas.setTextSize(1.0f);
-        canvas.setTextColor(selected ? settings.style().accentColor : settings.ink());
-        watchText(canvas,kMenuLabels[i],84,cy);
-
-        char value[40] = {};
-        switch ((MenuItem)i) {
-            case MenuItem::Time:
-                if(watchClock.hasTime()) snprintf(value,sizeof(value),"%02u:%02u",watchClock.value().time.hours,watchClock.value().time.minutes);
+        canvas.setTextColor(selected?settings.style().accentColor:settings.ink());
+        watchText(canvas,kTimeLabels[i],84,cy);
+        char value[32]={};
+        switch((TimeItem)i) {
+            case TimeItem::Time:
+                if(watchClock.hasTime()) snprintf(value,sizeof(value),"%02u:%02u",
+                    watchClock.value().time.hours,watchClock.value().time.minutes);
                 else snprintf(value,sizeof(value),"--:--");
                 break;
-            case MenuItem::Date: {
-                if(watchClock.hasTime()) snprintf(value,sizeof(value),"%04d/%02u/%02u",watchClock.value().date.year,watchClock.value().date.month,watchClock.value().date.date);
+            case TimeItem::Date:
+                if(watchClock.hasTime()) snprintf(value,sizeof(value),"%04d/%02u/%02u",
+                    watchClock.value().date.year,watchClock.value().date.month,
+                    watchClock.value().date.date);
                 else snprintf(value,sizeof(value),"----/--/--");
                 break;
-            }
-            case MenuItem::Format: snprintf(value, sizeof(value), settings.data().hour24 ? "24 H" : "12 H"); break;
-            case MenuItem::Personalize: snprintf(value, sizeof(value), ">"); break;
-            case MenuItem::Display: snprintf(value, sizeof(value), "%u / 5", settings.data().brightness); break;
-            case MenuItem::Layout: snprintf(value, sizeof(value), settings.data().swapLayout ? "TIME TOP" : "BOT TOP"); break;
+            case TimeItem::Format: snprintf(value,sizeof(value),settings.data().hour24?"24 H":"12 H"); break;
             default: break;
         }
-        if (value[0]) {
-            canvas.setFont(&fonts::FreeSansBold9pt7b);
+        if(value[0]) {
             canvas.setTextDatum(middle_right);
             canvas.setTextColor(settings.muted());
             watchText(canvas,value,382,cy);
         }
     }
     canvas.clearClipRect();
-    if (chrome) drawFooter();
+    if(chrome) drawFooter();
 }
 
 static void drawPersonalizeList(bool chrome = true) {
@@ -1809,6 +2046,16 @@ static void drawFooter() {
     canvas.setFont(&fonts::FreeSansBold9pt7b);
     canvas.setTextSize(1.0f);
     canvas.setTextColor(settings.style().bgColor);
+    watchText(canvas,"DONE",watchcontrols::doneLabelX(),watchcontrols::doneLabelY());
+}
+
+static void drawSettingsFooter() {
+    const auto bounds=watchcontrols::doneBounds();
+    canvas.setTextDatum(middle_center);
+    canvas.setFont(&fonts::FreeSansBold9pt7b);
+    canvas.setTextSize(1.0f);
+    canvas.setTextColor(pressedOver(bounds.x,bounds.y,bounds.w,bounds.h)
+                        ?settings.ink():settings.muted());
     watchText(canvas,"DONE",watchcontrols::doneLabelX(),watchcontrols::doneLabelY());
 }
 
@@ -1875,20 +2122,39 @@ static void drawFormatEditor() {
     drawFooter();
 }
 
+class SettingsRowView {
+public:
+    explicit SettingsRowView(M5Canvas& target):_target(target) {}
+    uint16_t panel() const { return settings.panel(); }
+    uint16_t ink() const { return settings.ink(); }
+    uint16_t muted() const { return settings.muted(); }
+    uint16_t accent() const { return settings.style().accentColor; }
+    bool pressed(ux::Rect bounds) const {
+        return pressedOver(bounds.x,bounds.y,bounds.w,bounds.h);
+    }
+    void left(const char* text,int16_t x,int16_t y,uint16_t color) {
+        textAt(text,x,y,color,middle_left);
+    }
+    void right(const char* text,int16_t x,int16_t y,uint16_t color) {
+        textAt(text,x,y,color,middle_right);
+    }
+    void center(const char* text,int16_t x,int16_t y,uint16_t color) {
+        textAt(text,x,y,color,middle_center);
+    }
+private:
+    void textAt(const char* text,int16_t x,int16_t y,uint16_t color,uint8_t datum) {
+        _target.setTextDatum(datum);
+        _target.setFont(&fonts::FreeSans9pt7b);
+        _target.setTextSize(1.0f);
+        _target.setTextColor(color);
+        watchText(_target,text,x,y);
+    }
+    M5Canvas& _target;
+};
+
 static void drawArrowRow(ux::Rect row, const char* label, const char* value, bool selected) {
-    int16_t cy=row.y+row.h/2;
-    bool pressed=pressedOver(row.x,row.y,row.w,row.h);
-    if(selected||pressed) ux::roundRect(canvas,row.x,row.y,row.w,row.h,17,
-        pressed?ux::blend565(settings.panel(),settings.style().accentColor,55):settings.panel());
-    canvas.setTextDatum(middle_left);
-    canvas.setFont(&fonts::FreeSans9pt7b);
-    canvas.setTextSize(1.0f);
-    canvas.setTextColor(settings.muted()); watchText(canvas,label,84,cy);
-    canvas.setTextDatum(middle_right);
-    canvas.setTextColor(settings.ink()); watchText(canvas,value,382,cy);
-    canvas.setTextColor(settings.style().accentColor);
-    canvas.setTextDatum(middle_center);
-    watchText(canvas,"<",68,cy); watchText(canvas,">",398,cy);
+    SettingsRowView view(canvas);
+    watchsettingsrows::drawArrowRow(canvas,view,row,label,value,selected);
 }
 
 static void drawPreviewArrowRow(uint8_t index,const char* label,const char* value) {
@@ -1973,20 +2239,53 @@ static void drawColorEditor() {
 }
 
 static void drawDisplayEditor() {
-    drawTitle("DISPLAY & SOUND");
+    drawTitle("DISPLAY");
     char brightness[8];
     snprintf(brightness, sizeof(brightness), "%u / 5", settings.data().brightness);
-    auto layout=watchcontrols::displayList();
+    auto layout=watchcontrols::optionList();
     float offset=_editorScroll.offset();
     canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    drawArrowRow(watchcontrols::displayRowBounds(0,offset),"BRIGHTNESS",brightness,_buttonNavigation&&_editField==0);
-    drawArrowRow(watchcontrols::displayRowBounds(1,offset),"THEME",Settings::themeName(settings.data().theme),_buttonNavigation&&_editField==1);
-    drawArrowRow(watchcontrols::displayRowBounds(2,offset),"DIM TIMEOUT",watchpower::timeoutLabel(settings.data().dimTimeout),_buttonNavigation&&_editField==2);
-    drawArrowRow(watchcontrols::displayRowBounds(3,offset),"SCREEN OFF",watchpower::timeoutLabel(settings.data().screenOffTimeout),_buttonNavigation&&_editField==3);
-    drawArrowRow(watchcontrols::displayRowBounds(4,offset),"WAKE",settings.data().buttonWakeOnly?"KEYS ONLY":"TOUCH + KEYS",_buttonNavigation&&_editField==4);
-    drawArrowRow(watchcontrols::displayRowBounds(5,offset),"SOUND",settings.data().sound?"ON":"OFF",_buttonNavigation&&_editField==5);
-    drawArrowRow(watchcontrols::displayRowBounds(6,offset),"INDICATOR",settings.data().indicator?"ON":"OFF",_buttonNavigation&&_editField==6);
-    drawArrowRow(watchcontrols::displayRowBounds(7,offset),"BUTTON FX",settings.data().buttonFeedback?"ON":"OFF",_buttonNavigation&&_editField==7);
+    drawArrowRow(watchcontrols::optionRowBounds(0,offset),"BRIGHTNESS",brightness,_buttonNavigation&&_editField==0);
+    drawArrowRow(watchcontrols::optionRowBounds(1,offset),"THEME",Settings::themeName(settings.data().theme),_buttonNavigation&&_editField==1);
+    drawArrowRow(watchcontrols::optionRowBounds(2,offset),"INDICATOR",settings.data().indicator?"ON":"OFF",_buttonNavigation&&_editField==2);
+    drawArrowRow(watchcontrols::optionRowBounds(3,offset),"BUTTON FX",settings.data().buttonFeedback?"ON":"OFF",_buttonNavigation&&_editField==3);
+    drawArrowRow(watchcontrols::optionRowBounds(4,offset),"BOT TEXT",settings.data().showDescription?"SHOW":"HIDE",_buttonNavigation&&_editField==4);
+    drawArrowRow(watchcontrols::optionRowBounds(5,offset),"TOP",settings.data().swapLayout?"TIME":"BOT TEXT",_buttonNavigation&&_editField==5);
+    canvas.clearClipRect();
+    drawFooter();
+}
+
+static void drawSoundEditor() {
+    drawTitle("SOUND");
+    auto layout=watchcontrols::optionList();
+    float offset=_editorScroll.offset();
+    canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
+    drawArrowRow(watchcontrols::optionRowBounds(0,offset),"SOUND",settings.data().sound?"ON":"OFF",_buttonNavigation&&_editField==0);
+    drawArrowRow(watchcontrols::optionRowBounds(1,offset),"STARTUP SOUND",settings.data().startupSound?"ON":"OFF",_buttonNavigation&&_editField==1);
+    drawArrowRow(watchcontrols::optionRowBounds(2,offset),"BUTTON SOUND",settings.data().buttonSound?"ON":"OFF",_buttonNavigation&&_editField==2);
+    drawArrowRow(watchcontrols::optionRowBounds(3,offset),"ALERT SOUND",settings.data().alertSound?"ON":"OFF",_buttonNavigation&&_editField==3);
+    canvas.clearClipRect();
+    drawFooter();
+}
+
+static void drawPowerEditor() {
+    drawTitle("POWER SAVING");
+    char dimLevel[8],from[8],until[8];
+    snprintf(dimLevel,sizeof(dimLevel),"%u / 5",settings.data().dimBrightness);
+    snprintf(from,sizeof(from),"%02u:00",settings.data().forcedSleepStartHour);
+    snprintf(until,sizeof(until),"%02u:00",settings.data().forcedSleepEndHour);
+    auto layout=watchcontrols::optionList();
+    float offset=_editorScroll.offset();
+    canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
+    drawArrowRow(watchcontrols::optionRowBounds(0,offset),"POWER SAVE",settings.data().powerSaveEnabled?"ON":"OFF",_buttonNavigation&&_editField==0);
+    drawArrowRow(watchcontrols::optionRowBounds(1,offset),"DIM LEVEL",dimLevel,_buttonNavigation&&_editField==1);
+    drawArrowRow(watchcontrols::optionRowBounds(2,offset),"DIM AFTER",watchpower::timeoutLabel(settings.data().dimTimeout),_buttonNavigation&&_editField==2);
+    drawArrowRow(watchcontrols::optionRowBounds(3,offset),"AUTO OFF",watchpower::timeoutLabel(settings.data().screenOffTimeout),_buttonNavigation&&_editField==3);
+    drawArrowRow(watchcontrols::optionRowBounds(4,offset),"WAKE",settings.data().wakeMode==Settings::WAKE_KEYS_ONLY?"KEYS ONLY":"TOUCH + KEYS",_buttonNavigation&&_editField==4);
+    drawArrowRow(watchcontrols::optionRowBounds(5,offset),"CHARGE AWAKE",settings.data().keepAwakeWhileCharging?"ON":"OFF",_buttonNavigation&&_editField==5);
+    drawArrowRow(watchcontrols::optionRowBounds(6,offset),"FORCED OFF",settings.data().forcedSleepEnabled?"ON":"OFF",_buttonNavigation&&_editField==6);
+    drawArrowRow(watchcontrols::optionRowBounds(7,offset),"FROM",from,_buttonNavigation&&_editField==7);
+    drawArrowRow(watchcontrols::optionRowBounds(8,offset),"UNTIL",until,_buttonNavigation&&_editField==8);
     canvas.clearClipRect();
     drawFooter();
 }
@@ -2049,6 +2348,8 @@ static void drawEditor() {
         case Editor::Motion:     drawMotionEditor(); break;
         case Editor::Color:      drawColorEditor(); break;
         case Editor::Display:    drawDisplayEditor(); break;
+        case Editor::Sound:      drawSoundEditor(); break;
+        case Editor::Power:      drawPowerEditor(); break;
         case Editor::Name: drawNameEditor(); break;
         case Editor::Preview: drawCombinationEditor(); break;
         case Editor::Layout: drawLayoutEditor(); break;
@@ -2467,13 +2768,21 @@ static void render(uint32_t now) {
 
     if (!_uiDirty && !previewIsAnimated() && !_buttonFeedbackDirty) return;
     bool baseWasPushed = _uiDirty || previewIsAnimated();
-    bool bandOnly = _listBandOnly && (_screen == Screen::Settings || _screen == Screen::Personalize);
+    bool bandOnly = _listBandOnly && (_screen == Screen::Settings
+        || _screen == Screen::TimeSettings || _screen == Screen::Personalize);
     const auto mainLayout=watchcontrols::mainList();
+    const auto carouselLayout=watchcontrols::settingsCarousel();
+    watchbuttons::Bounds listArea=_screen==Screen::Settings
+        ?watchbuttons::Bounds{carouselLayout.x,carouselLayout.y,carouselLayout.w,carouselLayout.h}
+        :watchbuttons::Bounds{0,mainLayout.y,kW,mainLayout.h};
     if (baseWasPushed) {
-        if(bandOnly) canvas.fillRect(0,mainLayout.y,kW,mainLayout.h,settings.style().bgColor);
-        else canvas.fillSprite(settings.style().bgColor);
+        const uint16_t background=_screen==Screen::Settings?0:settings.style().bgColor;
+        if(bandOnly) canvas.fillRect(listArea.x,listArea.y,listArea.w,listArea.h,background);
+        else canvas.fillSprite(background);
         if (_screen == Screen::Settings) {
             drawSettingsList(!bandOnly);
+        } else if (_screen == Screen::TimeSettings) {
+            drawTimeSettingsList(!bandOnly);
         } else if (_screen == Screen::Personalize) {
             drawPersonalizeList(!bandOnly);
         } else {
@@ -2488,7 +2797,7 @@ static void render(uint32_t now) {
     if (baseWasPushed) {
         if (compositeBase) {
             watchbuttons::Bounds area = bandOnly
-                ? watchbuttons::Bounds{0, mainLayout.y, kW, mainLayout.h}
+                ? listArea
                 : watchbuttons::Bounds{0, 0, kW, kH};
             uint32_t started = micros();
             _buttonFeedbackPixels = pushCanvasRegionWithButtonFeedback(canvas, area, held);
@@ -2499,8 +2808,8 @@ static void render(uint32_t now) {
                 _buttonFeedbackDrawnMask = held;
                 _buttonFeedbackDirty = false;
             }
-        } else if(bandOnly) M5.Display.pushImage(0,mainLayout.y,kW,mainLayout.h,
-            (uint16_t*)canvas.getBuffer()+kW*mainLayout.y);
+        } else if(bandOnly) M5.Display.pushImage(listArea.x,listArea.y,listArea.w,listArea.h,
+            (uint16_t*)canvas.getBuffer()+kW*listArea.y+listArea.x);
         else canvas.pushSprite(0, 0);
     }
     if (!baseWasPushed || bandOnly)
@@ -2523,8 +2832,9 @@ static void emitFrameCapture() {
                   settings.style().accentColor, settings.panel(), settings.warning(),
                   statusPanelProgress(millis()));
     } else {
-        canvas.fillSprite(settings.style().bgColor);
+        canvas.fillSprite(_screen==Screen::Settings?0:settings.style().bgColor);
         if (_screen == Screen::Settings) drawSettingsList();
+        else if (_screen == Screen::TimeSettings) drawTimeSettingsList();
         else if (_screen == Screen::Personalize) drawPersonalizeList();
         else drawEditor();
         drawPointerFeedback();
@@ -2579,11 +2889,16 @@ static void selectDiagnosticPage(uint8_t page) {
         }
     } else if (page == 1 || page == 8 || page == 18 || page == 19) {
         _screen = Screen::Settings;
-        _settingsList.configure(kMenuCount, kVisibleRows);
-        _settingsList.select(page == 8 ? kMenuCount-1 : 0);
-        _menu = (MenuItem)_settingsList.selected();
-        _settingsScroll.setBounds(kMenuCount*kMenuStep,watchcontrols::mainList().h);
-        _settingsScroll.setOffset(page == 8 ? 9999 : page == 18 ? 37 : 0);
+        _settingsCarousel.configure(kMenuCount,watchcontrols::settingsCarousel().step);
+        _settingsCarousel.select(page==8?kMenuCount-1:0);
+        if(page==18) _settingsCarousel.setOffset(watchcontrols::settingsCarousel().step*0.5f);
+        _menu=(MenuItem)_settingsCarousel.selected();
+    } else if(page==23) {
+        _screen=Screen::TimeSettings;
+        _timeList.configure(kTimeCount,kVisibleRows);
+        _timeList.select(0); _timeItem=TimeItem::Time;
+        _timeScroll.setBounds(kTimeCount*kMenuStep,watchcontrols::mainList().h);
+        _timeScroll.setOffset(0);
     } else if (page == 2 || page == 9) {
         _screen = Screen::Personalize;
         _personalList.configure(kPersonalCount, kVisibleRows);
@@ -2603,7 +2918,9 @@ static void selectDiagnosticPage(uint8_t page) {
                 : (page == 13 || page == 20 || page == 22) ? Editor::Preview
                 : page == 14 ? Editor::Layout
                 : page == 15 ? Editor::Language
-                : page == 21 ? Editor::Gaze : Editor::Time;
+                : page == 21 ? Editor::Gaze
+                : page == 24 ? Editor::Sound
+                : page == 25 ? Editor::Power : Editor::Time;
         if (page == 12) _nameEditor.begin(settings.data().botName);
         if (page == 22) { _previewMood=(uint8_t)botux::BotUx::Mood::Thinking; _previewExpression=_previewAnimation=0; }
         if (page == 20) {
@@ -2615,7 +2932,7 @@ static void selectDiagnosticPage(uint8_t page) {
         if(watchcontrols::editorUsesScrollList(_editor)) {
             auto layout=watchcontrols::editorList(_editor);
             _editorScroll.setBounds(watchcontrols::editorRowCount(_editor)*layout.step,layout.h);
-            _editorScroll.setOffset(0);
+            _editorScroll.setOffset(page==25?9999:0);
         }
     }
     _uiDirty = true;
@@ -2627,13 +2944,18 @@ static void printUiState() {
     bool audioPower=false,audioPa=false;
     bool audioIoValid=ioe1.getInputLevel(kAudioPowerIo,&audioPower)
         &&ioe1.getInputLevel(kAudioAmplifierIo,&audioPa);
-    Serial.printf("UI seq=%lu screen=%u editor=%u pressed=%d scrolling=%u offset=%.1f sound=%u audio_desired=%u audio_bound=%u audio_state=%u audio_ready=%u audio_suspended=%u audio_failed=%u audio_io_valid=%u audio_power=%u audio_pa=%u language=%u gaze=%u indicator=%u button_fx=%u status=%u charging=%u manual=%u mood=%u effective=%u expression=%u effective_expr=%u animation=%u keys_held=%u pwr_valid=%u pwr_held=%u keys_diag=%u keys_px=%lu keys_us=%lu keys_max_us=%lu\n",
+    Serial.printf("UI seq=%lu screen=%u editor=%u pressed=%d scrolling=%u offset=%.1f sound=%u startup_sound=%u button_sound=%u alert_sound=%u audio_desired=%u audio_bound=%u audio_state=%u audio_ready=%u audio_suspended=%u audio_failed=%u audio_io_valid=%u audio_power=%u audio_pa=%u language=%u gaze=%u indicator=%u button_fx=%u status=%u charging=%u manual=%u mood=%u effective=%u expression=%u effective_expr=%u animation=%u keys_held=%u pwr_valid=%u pwr_held=%u keys_diag=%u keys_px=%lu keys_us=%lu keys_max_us=%lu power_save=%u dim_level=%u dim_timeout=%u off_timeout=%u wake_mode=%u charge_awake=%u force_sleep=%u force_start=%u force_end=%u screen_power=%u\n",
         (unsigned long)_diagnosticSeq,(unsigned)_screen,(unsigned)_editor,exactPressedTarget(),_pointer.scrolling(),
-        _screen==Screen::Personalize?_personalScroll.offset():_screen==Screen::Editor?_editorScroll.offset():_settingsScroll.offset(),settings.data().sound,soundDesired(),_soundBound,(unsigned)_soundOutput.powerState(),_soundOutput.ready(),_soundOutput.suspended(),_soundOutput.failed(),audioIoValid,audioPower,audioPa,settings.data().language,settings.data().gaze,settings.data().indicator,settings.data().buttonFeedback,_statusPanelUntilMs!=0,_charging,
+        _screen==Screen::Settings?_settingsCarousel.offset():_screen==Screen::TimeSettings?_timeScroll.offset():_screen==Screen::Personalize?_personalScroll.offset():_screen==Screen::Editor?_editorScroll.offset():0,settings.data().sound,settings.data().startupSound,settings.data().buttonSound,settings.data().alertSound,soundDesired(),_soundBound,(unsigned)_soundOutput.powerState(),_soundOutput.ready(),_soundOutput.suspended(),_soundOutput.failed(),audioIoValid,audioPower,audioPa,settings.data().language,settings.data().gaze,settings.data().indicator,settings.data().buttonFeedback,_statusPanelUntilMs!=0,_charging,
         _manualPreset,(unsigned)face.bot().mood(),(unsigned)face.bot().effectiveMood(),(unsigned)face.bot().expression(),(unsigned)face.bot().effectiveExpression(),(unsigned)face.bot().animation(),
         (unsigned)_buttonFeedback.held(),_powerButtonValid,_powerButtonPressed,_diagnosticButtons,
         (unsigned long)_buttonFeedbackPixels,(unsigned long)_buttonFeedbackRenderUs,
-        (unsigned long)_buttonFeedbackRenderMaxUs);
+        (unsigned long)_buttonFeedbackRenderMaxUs,settings.data().powerSaveEnabled,
+        settings.data().dimBrightness,settings.data().dimTimeout,
+        settings.data().screenOffTimeout,settings.data().wakeMode,
+        settings.data().keepAwakeWhileCharging,settings.data().forcedSleepEnabled,
+        settings.data().forcedSleepStartHour,settings.data().forcedSleepEndHour,
+        (unsigned)_screenPowerState);
     // Drain this diagnostic reply now, rather than waiting for later telemetry.
     Serial.flush();
 }
@@ -2705,7 +3027,7 @@ static void handleSerialCommands() {
                 && minute>=0 && minute<=59 && second>=0 && second<=59) {
                 m5::rtc_datetime_t dt(m5::rtc_date_t(year,month,day,0),m5::rtc_time_t(hour,minute,second));
                 ok=watchClock.set(dt);
-            }
+        }
             face.invalidate(); _uiDirty=true;
             Serial.printf("RTC set=%u\n",ok); Serial.flush();
         }
@@ -2730,8 +3052,11 @@ static void handleSerialCommands() {
         else if(!strcmp(line,"p")) pokeBot();
         else if(!strcmp(line,"s")) showStatusPanel(millis());
         else if(!strcmp(line,"c")) emitFrameCapture();
-        else if(!strncmp(line,"sound ",6)&&soundDesired()&&_soundOutput.ready())
-            _sounds.play((ux::sound::Cue)atoi(line+6));
+        else if(!strncmp(line,"sound ",6)) {
+            int cue = atoi(line + 6);
+            if (cue >= 0 && cue < (int)ux::sound::Cue::Count)
+                playSound((ux::sound::Cue)cue, cueChannel((ux::sound::Cue)cue));
+        }
     }
 }
 
@@ -2749,6 +3074,7 @@ void setup() {
     _sounds.setEnabled(initialSound);
     _soundBound=_soundOutput.begin(M5.Speaker,_sounds,6,initialSound);
     power.begin();
+    playSound(ux::sound::Cue::Wake, SoundChannel::Startup);
     watchClock.refresh();
     Serial.printf("RTC boot state=%u valid=%u hold=%u\n",
         (unsigned)watchClock.state(),watchClock.hasTime(),power.rtcHoldReady());
@@ -2792,11 +3118,12 @@ void setup() {
     uint32_t now=millis();
     refreshPower(now);
     _idleScreenPolicy.begin(now);
-    _settingsList.configure(kMenuCount, kVisibleRows);
+    _settingsCarousel.configure(kMenuCount,watchcontrols::settingsCarousel().step);
+    _timeList.configure(kTimeCount,kVisibleRows);
     _personalList.configure(kPersonalCount, kVisibleRows);
     _ambientCycle.begin(millis());
     showStatusPanel(millis(), 1800);
-    Serial.printf("bot-ux-watch ready; IMU=%d keys_mask_ms=%lu keys_mask_bytes=%lu. Commands: e/a/m/p/s, c capture, v0..v22 diagnostic pages, td/tm/tu x y, ui, keys 0..7/off, battery 0..100/off, trace on/off/clear/dump, cal start/repeat/direction/on/off/dump/profile/save/reset, sound N\n",
+    Serial.printf("bot-ux-watch ready; IMU=%d keys_mask_ms=%lu keys_mask_bytes=%lu. Commands: e/a/m/p/s, c capture, v0..v25 diagnostic pages, td/tm/tu x y, ui, keys 0..7/off, battery 0..100/off, trace on/off/clear/dump, cal start/repeat/direction/on/off/dump/profile/save/reset, sound N\n",
                   M5.Imu.isEnabled(), (unsigned long)buttonMaskMs,
                   (unsigned long)kButtonMasksTotal);
 }
@@ -2817,17 +3144,25 @@ void loop() {
         if(!watchpower::audioSafeForLightSleep(_screenPowerState,
                                                _soundOutput.suspended())) {
             delay(8);
-        } else if(watchpower::offWaitMode(_screenPowerState,
-                    settings.data().buttonWakeOnly,_externalPower,_gestureActive)
+        } else {
+            const auto config=idlePowerConfig();
+            const bool forced=watchpower::forcedSleepApplies(
+                config,powerClockReady(),powerClockHour());
+            const bool savingBypassed=_externalPower
+                &&config.keepAwakeWhileExternalPower&&!forced;
+            if(watchpower::offWaitMode(_screenPowerState,
+                    settings.data().wakeMode==Settings::WAKE_KEYS_ONLY,
+                    savingBypassed,_gestureActive)
                   ==watchpower::OffWaitMode::ButtonLightSleep) {
-            if(power.lightSleepForButtonPoll()) {
-                _manualDozing=false;
-                _idleScreenPolicy.wake(millis());
-                applyScreenPowerState(watchpower::ScreenState::Active);
-                _wakeInputGate.beginWake(false);
-                consumeWakeInput();
-            }
-        } else delay(8);
+                if(power.lightSleepForButtonPoll()) {
+                    _manualDozing=false;
+                    _idleScreenPolicy.wakeForUser(millis());
+                    applyScreenPowerState(watchpower::ScreenState::Active);
+                    _wakeInputGate.beginWake(false);
+                    consumeWakeInput();
+                }
+            } else delay(8);
+        }
         return;
     }
     // AMOLED wakeup includes a hardware-mandated delay. Use the current host
@@ -2848,12 +3183,17 @@ void loop() {
             ?watchcompanion::lookingAroundMood():watchcompanion::ambientMood(_ambientCycle.index()));
     }
     if (_diagnosticScroll && _screen == Screen::Settings) {
-        _settingsScroll.setOffset((sinf(now*0.001f)+1)*0.5f
-            *(kMenuCount*kMenuStep-watchcontrols::mainList().h));
+        _settingsCarousel.setOffset((sinf(now*0.001f)+1)*0.5f
+            *((kMenuCount-1)*watchcontrols::settingsCarousel().step));
+        _menu=(MenuItem)_settingsCarousel.selected();
         markListMoved();
     }
     uint32_t scrollDt = _scrollMs ? now - _scrollMs : 0; _scrollMs = now;
-    if (_screen == Screen::Settings && _settingsScroll.update(scrollDt)) markListMoved();
+    if (_screen == Screen::Settings && _settingsCarousel.update(scrollDt)) {
+        _menu=(MenuItem)_settingsCarousel.selected();
+        markListMoved();
+    }
+    if (_screen == Screen::TimeSettings && _timeScroll.update(scrollDt)) markListMoved();
     if (_screen == Screen::Personalize && _personalScroll.update(scrollDt)) markListMoved();
     if (_screen == Screen::Editor && watchcontrols::editorUsesScrollList(_editor)
         && _editorScroll.update(scrollDt)) markListMoved();

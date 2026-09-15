@@ -8,6 +8,7 @@ using watchpower::IdleScreenPolicy;
 using watchpower::ScreenState;
 using watchpower::OffWaitMode;
 using watchpower::WakeInputGate;
+using watchpower::IdleConfig;
 
 struct FakePmic {
     uint8_t regs[8]={};
@@ -46,6 +47,10 @@ int main() {
     assert(watchpower::timeoutMs(255) == expected[5]);
     assert(strcmp(watchpower::timeoutLabel(0),"5 S")==0);
     assert(strcmp(watchpower::timeoutLabel(5),"15 MIN")==0);
+    assert(watchpower::dimBrightnessLevel(5,3)==3);
+    assert(watchpower::dimBrightnessLevel(2,5)==2);
+    assert(watchpower::dimBrightnessLevel(0,0)==1);
+    assert(watchpower::dimBrightnessLevel(255,255)==5);
 
     IdleScreenPolicy policy;
     policy.begin(1000);
@@ -78,6 +83,85 @@ int main() {
     policy.wake(123);
     assert(policy.state() == ScreenState::Active);
     assert(policy.lastActivity() == 123);
+
+    IdleConfig configured;
+    configured.dimTimeout=0;
+    configured.offTimeout=1;
+    configured.forcedSleepEnabled=true;
+    configured.forcedSleepStartHour=23;
+    configured.forcedSleepEndHour=7;
+    assert(watchpower::hourInRange(23,23,7));
+    assert(watchpower::hourInRange(0,23,7));
+    assert(watchpower::hourInRange(6,23,7));
+    assert(!watchpower::hourInRange(7,23,7));
+    assert(!watchpower::hourInRange(22,23,7));
+    assert(!watchpower::hourInRange(12,5,5));
+    assert(!watchpower::hourInRange(24,23,7));
+    assert(watchpower::hourInRange(9,8,18));
+    assert(!watchpower::hourInRange(18,8,18));
+
+    // Power save can be disabled globally. Charging keep-awake bypasses only
+    // the ordinary idle policy.
+    policy.begin(0);
+    configured.enabled=false;
+    assert(policy.update(900000,false,false,true,23,configured)==ScreenState::Active);
+    configured.enabled=true;
+    configured.forcedSleepEnabled=false;
+    configured.keepAwakeWhileExternalPower=true;
+    assert(!watchpower::savingApplies(configured,true));
+    assert(policy.update(1800000,true,false,true,23,configured)==ScreenState::Active);
+    configured.keepAwakeWhileExternalPower=false;
+    assert(watchpower::savingApplies(configured,true));
+    assert(policy.update(1800001,true,false,true,23,configured)==ScreenState::Active);
+    assert(policy.update(1805000,true,false,true,23,configured)==ScreenState::Dimmed);
+
+    // A ready clock activates the forced range; invalid and read-error clock
+    // states are passed as not-ready even when a stale hour remains cached.
+    policy.begin(1000);
+    configured.forcedSleepEnabled=true;
+    configured.keepAwakeWhileExternalPower=true;
+    assert(policy.update(1001,false,false,false,23,configured)==ScreenState::Active);
+    assert(policy.update(1002,false,false,true,22,configured)==ScreenState::Active);
+    assert(policy.update(1003,false,false,true,23,configured)==ScreenState::Off);
+
+    // A valid forced interval outranks charging keep-awake, including across
+    // midnight. Leaving the interval restores Active while external power is
+    // still present. The global switch remains the prerequisite for both.
+    policy.begin(20000);
+    assert(watchpower::policyApplies(configured,true,true,23));
+    assert(policy.update(20001,true,false,true,23,configured)==ScreenState::Off);
+    policy.wakeForUser(20002);
+    assert(policy.update(20003,true,false,true,0,configured)==ScreenState::Active);
+    assert(policy.update(80003,true,false,true,0,configured)==ScreenState::Off);
+    assert(policy.update(80004,true,false,true,7,configured)==ScreenState::Active);
+    assert(!watchpower::policyApplies(configured,true,true,7));
+    configured.enabled=false;
+    assert(policy.update(80005,true,false,true,23,configured)==ScreenState::Active);
+    assert(!watchpower::policyApplies(configured,true,true,23));
+    configured.enabled=true;
+
+    // User wake guarantees a bounded usable window. The ordinary short off
+    // timeout cannot truncate it, while inactivity may still dim the panel.
+    policy.wakeForUser(2000);
+    assert(policy.update(6999,false,false,true,23,configured)==ScreenState::Active);
+    assert(policy.update(7000,false,false,true,23,configured)==ScreenState::Dimmed);
+    assert(policy.update(61999,false,false,true,23,configured)==ScreenState::Dimmed);
+    assert(policy.update(62000,false,false,true,23,configured)==ScreenState::Off);
+
+    // Activity in the forced interval renews the window and rollover-safe
+    // deadline comparison works across UINT32_MAX.
+    policy.wakeForUser(UINT32_MAX-10000U);
+    assert(policy.update(UINT32_MAX-1000U,false,true,true,0,configured)==ScreenState::Active);
+    assert(policy.update(58998,false,false,true,0,configured)==ScreenState::Dimmed);
+    assert(policy.update(58999,false,false,true,0,configured)==ScreenState::Off);
+
+    // Leaving the range clears the temporary forced-wake grant and resumes
+    // the normal independent idle deadlines.
+    policy.wakeForUser(70000);
+    assert(policy.update(70001,false,false,true,7,configured)==ScreenState::Active);
+    assert(!policy.forcedWakeActive(70001));
+    assert(policy.update(75000,false,false,true,7,configured)==ScreenState::Dimmed);
+    assert(policy.update(85000,false,false,true,7,configured)==ScreenState::Off);
 
     assert(watchpower::offWaitMode(ScreenState::Off,true,false,false)
            ==OffWaitMode::ButtonLightSleep);

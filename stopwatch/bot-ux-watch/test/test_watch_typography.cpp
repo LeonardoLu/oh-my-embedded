@@ -79,7 +79,8 @@ int main(int argc,char** argv) {
 
     const char* titles[]={"SETTINGS","BOT PERSONALITY","SET TIME","SET DATE",
         "TIME FORMAT","APPEARANCE","EXPRESSION","MOTION","BOT COLOR",
-        "DISPLAY & SOUND","BOT NAME","LANGUAGE","WATCH LAYOUT","COMBINATIONS","GAZE"};
+        "TIME SETTINGS","DISPLAY","SOUND","POWER SAVING","BOT NAME","LANGUAGE",
+        "WATCH LAYOUT","COMBINATIONS","GAZE"};
     for(const char* title:titles) {
         assert(textWidth(title,Latin28)<=284);
         assert(textWidth(watchstrings::translate(title,true),Cjk28)<=284);
@@ -102,6 +103,15 @@ int main(int argc,char** argv) {
     assertPair("DIRECTION","Down-right",Latin24);
     assertPair("BRIGHTNESS","5 / 5",Latin24);
     assertPair("BUTTON FX","OFF",Latin24);
+    assertPair("STARTUP SOUND","OFF",Latin24);
+    assertPair("BUTTON SOUND","OFF",Latin24);
+    assertPair("ALERT SOUND","OFF",Latin24);
+    assertPair("POWER SAVE","OFF",Latin24);
+    assertPair("DIM LEVEL","5 / 5",Latin24);
+    assertPair("CHARGE AWAKE","OFF",Latin24);
+    assertPair("FORCED OFF","OFF",Latin24);
+    assertPair("FROM","23:00",Latin24);
+    assertPair("UNTIL","07:00",Latin24);
     assertPair("DIM TIMEOUT","15 MIN",Latin24);
     assertPair("SCREEN OFF","15 MIN",Latin24);
     assertPair("WAKE","TOUCH + KEYS",Latin24);
@@ -109,8 +119,12 @@ int main(int argc,char** argv) {
     assertPair("按下效果","关闭",Cjk24);
     assertPair("调暗延时","15 MIN",Cjk24);
     assertPair("息屏延时","15 MIN",Cjk24);
-    assertPair("唤醒","触摸 + 按键",Cjk24);
-    assertPair("唤醒","仅按键",Cjk24);
+    assertPair("唤醒方式","触摸 + 按键",Cjk24);
+    assertPair("唤醒方式","仅按键",Cjk24);
+    assertPair("充电时常亮","关闭",Cjk24);
+    assertPair("强制息屏","关闭",Cjk24);
+    assertPair("开始时间","23:00",Cjk24);
+    assertPair("结束时间","07:00",Cjk24);
     assertPair("伙伴描述","显示",Cjk24);
     assertPair("方向","右下",Cjk24);
     assertPair("表情","怀疑",Cjk24);
@@ -125,6 +139,12 @@ int main(int argc,char** argv) {
     for(const char* value:animations) assertPair("ACTION",value,Latin24);
     for(const char* value:appearances) assertPair("APPEARANCE",value,Latin24);
     for(const char* value:directions) assertPair("GAZE",value,Latin24);
+
+    // Center cards keep their 28 px names inside the 136 px surface.
+    for(const char* label:{"TIME","BOT","DISPLAY","SOUND","POWER"})
+        assert(textWidth(label,Latin28)<=124);
+    for(const char* label:{"时间","伙伴","显示","声音","省电"})
+        assert(textWidth(label,Cjk28)<=124);
 
     assert(textWidth("MONTH",Latin24)<=86);
     assert(textWidth("2026",Latin28)<=86);
