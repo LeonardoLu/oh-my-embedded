@@ -131,3 +131,28 @@ the complete build log is retained at
 `tmp/deployment/watch-settings/pio-build-final-phosphor.log`. These checks establish host
 geometry, interaction, raster and firmware integration. Physical deployment
 and bounded serial acceptance are recorded separately below.
+
+## Deployment state
+
+An intermediate build from `a0de199`, with the earlier launcher artwork, was
+written to `/dev/cu.usbmodem214201` after a successful ESP32-S3 ROM identity
+check reported MAC `28:84:85:44:5b:8c`. Esptool verified every written segment
+and NVS was not erased. That image was superseded before device acceptance and
+is not the final icon evidence.
+
+The final Phosphor build above has not yet been written. A fresh device
+inventory continued to report the same port and USB serial number, but two
+bounded automatic ROM-entry attempts returned no serial data. A normal 115200
+baud probe and one standard DTR/RTS recovery sequence also produced no
+application or ROM reply. These observations do not establish the cause. The
+next step is the official StopWatch download-mode recovery: while USB remains
+connected, hold Reset for about two seconds until the green LED lights, then
+release it and repeat the identity check and upload. No additional automatic
+serial retries are pending.
+
+The attempt logs are retained under `tmp/deployment/watch-settings/` as
+`device-list-final.log`, `chip-id-final.log`,
+`chip-id-final-retry.log`, `chip-id-manual-reset.log`, and
+`serial-recover-probe.log`. After the final image is written, device acceptance
+still requires `ui`/`rtc`/`power`, the `v19` frame telemetry, native Time and
+Power captures, and the `v0`/`home`/`physical`/`keys off` restoration sequence.
