@@ -14,8 +14,8 @@ Only the semantic colors differ between icons.
 | `power.png` | Battery and power saving | `battery-charging-vertical-duotone` |
 
 The exact upstream SVGs are retained in `source/phosphor-duotone/` from
-[`phosphor-icons/core`](https://github.com/phosphor-icons/core) commit
-`2b75f3ad12b420c9504ef05df8d2564a28f8500e`. Phosphor is MIT licensed,
+[`phosphor-icons/core` at commit `2b75f3a`](https://github.com/phosphor-icons/core/tree/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone).
+Phosphor is MIT licensed,
 Copyright (c) 2023 Phosphor Icons; `PHOSPHOR-MIT.txt` retains the notice.
 The set was selected through the
 [Iconify Phosphor catalog](https://icon-sets.iconify.design/ph/), whose API

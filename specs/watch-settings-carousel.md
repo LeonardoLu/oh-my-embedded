@@ -110,6 +110,7 @@ name, title, chevrons, dots and Done do not collide, and that the lower Power
 values do not overlap or clip.
 
 Durable copies of the native host rasters are retained as
+[all five English pages](assets/watch-settings-en-five.png),
 [English Time](assets/watch-settings-en-time.png),
 [English Display](assets/watch-settings-en-display.png),
 [Chinese Power](assets/watch-settings-zh-power.png) and
@@ -122,8 +123,11 @@ regeneration using the repository-pinned Noto Sans SC font and Pillow 12.3.0;
 all 350 prior glyphs were byte-identical in all four CJK sizes. Each face now
 contains 358 glyphs.
 
-The complete `tools/check_host.sh` suite passed, including the native carousel
-screens, and the StopWatch PlatformIO target built successfully. The build used
+The complete `tools/check_host.sh` suite passed for the settings hierarchy,
+input, power and font implementation in `a0de199`. The later icon-only change
+in `33741a5` passed focused `test_ui_controls`, `test_watch_strings`, exact icon
+asset and production carousel renderer checks. A clean StopWatch PlatformIO
+build then passed from the final source. The build used
 50,236 bytes static RAM (15.3%) and 1,210,729 bytes flash (18.5%). The upload
 artifact is 1,211,136 bytes with SHA256
 `ad8f186ccc582c6adb9f1873852a16787dd86dfb52b5f48be5a1cbad933a0294`;
