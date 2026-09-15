@@ -96,7 +96,7 @@ On 2026-09-16, `test_power_policy`, `test_settings_timeouts`,
 `test_ui_controls`, `test_watch_strings`, and
 `test_settings_carousel_render` passed as independent Clang host binaries. A
 full StopWatch PlatformIO integration build also passed at 50,236 bytes RAM and
-1,285,241 bytes flash. Static review confirmed that the Display 6-row, Sound
+1,210,729 bytes flash. Static review confirmed that the Display 6-row, Sound
 4-row, and Power 9-row draw, hit, edit, save, and cancel paths use matching
 indices, and that the power state transition runs before normal UI dispatch.
 

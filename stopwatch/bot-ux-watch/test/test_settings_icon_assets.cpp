@@ -101,7 +101,7 @@ void operator delete[](void* memory) noexcept { free(memory); }
 int main(int argc, char** argv) {
     using namespace watchsettingsiconassets;
     const uint32_t expectedHashes[] = {
-        0x7EAB375Du, 0x688F9DB1u, 0xA6FFEE09u, 0x5AD7F0C3u, 0x1482FF4Eu
+        0x1DFEFCDDu, 0x79D3833Au, 0xE5598DB3u, 0x240D20DAu, 0x7ED23F03u
     };
     static_assert(sizeof(lgfx::rgb565_t) == sizeof(uint16_t),
                   "host must model M5GFX native RGB565 words");
@@ -156,9 +156,23 @@ int main(int argc, char** argv) {
                 assert(gCanvasPixels[y * 120 + x] == expected);
             }
         }
+
+        // Fully offscreen carousel neighbors still decode safely and submit no
+        // invalid source pointer to M5GFX on either horizontal side.
+        clipped.clear(0xA55A);
+        assert(draw(clipped, icon, -120, 45));
+        assert(clipped.pushes == 0);
+        assert(clipped.pixelsPushed == 0);
+        for (int pixel = 0; pixel < 120 * 90; ++pixel)
+            assert(gCanvasPixels[pixel] == 0xA55A);
+        assert(draw(clipped, icon, 230, 45));
+        assert(clipped.pushes == 0);
+        assert(clipped.pixelsPushed == 0);
+        for (int pixel = 0; pixel < 120 * 90; ++pixel)
+            assert(gCanvasPixels[pixel] == 0xA55A);
     }
     assert(!asset(Icon::Count));
-    assert(packedBytes == 172488);
+    assert(packedBytes == 97977);
     assert(packedBytes < (size_t)Width * Height * 2 * (uint8_t)Icon::Count / 2);
 
     if (argc == 2) {

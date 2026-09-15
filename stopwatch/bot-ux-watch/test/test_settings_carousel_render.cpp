@@ -177,7 +177,10 @@ int main(int argc,char** argv) {
     if(argc>1) {
         const std::string root=argv[1];
         renderCarousel(root+"/settings-en-time.ppm",false,0);
+        renderCarousel(root+"/settings-en-bot.ppm",false,1);
         renderCarousel(root+"/settings-en-display.ppm",false,2);
+        renderCarousel(root+"/settings-en-sound.ppm",false,3);
+        renderCarousel(root+"/settings-en-power.ppm",false,4);
         renderCarousel(root+"/settings-zh-power.ppm",true,4);
         renderPowerBottom(root+"/power-zh-bottom.ppm");
     }

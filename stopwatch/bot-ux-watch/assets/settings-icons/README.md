@@ -1,36 +1,54 @@
 # StopWatch settings icon sources
 
-These five 200 × 200 PNG files are the lossless RGB565 sources for the Watch
-settings launcher. Their black background is intentional: the launcher follows
-the factory StopWatch's black AMOLED presentation.
+The launcher uses one unified set of five Phosphor Duotone symbols. Each icon
+starts as a two-level vector mask, then receives the same diagonal gradient,
+upper-left sheen and restrained radial halo on a pure-black AMOLED background.
+Only the semantic colors differ between icons.
 
-| Local source | Meaning | Provenance |
+| Local output | Meaning | Phosphor symbol |
 | --- | --- | --- |
-| `time.png` | Time | Exact RGB565 pixels decoded from M5Stack `icon_watch_face.c` |
-| `bot.png` | Bot personality | Original project artwork, 2026-09-16 |
-| `display.png` | Display | Exact RGB565 pixels decoded from M5Stack `icon_setup.c` |
-| `sound.png` | Sound | Exact RGB565 pixels decoded from M5Stack `icon_fft.c` |
-| `power.png` | Power saving | Original project artwork, 2026-09-16 |
+| `time.png` | Time | `clock-duotone` |
+| `bot.png` | Bot personality | `robot-duotone` |
+| `display.png` | Display brightness | `sun-duotone` |
+| `sound.png` | Sound | `speaker-high-duotone` |
+| `power.png` | Battery and power saving | `battery-charging-vertical-duotone` |
 
-The three M5Stack images come from
-[`m5stack/M5StopWatch-UserDemo`](https://github.com/m5stack/M5StopWatch-UserDemo)
-commit `6b4aa125288b6fe9dca661f10159f6e1e5ee785c`. That repository is MIT
-licensed, Copyright (c) 2026 M5Stack Technology CO LTD. The required license
-notice is retained in `M5STACK-MIT.txt` beside these sources.
+The exact upstream SVGs are retained in `source/phosphor-duotone/` from
+[`phosphor-icons/core`](https://github.com/phosphor-icons/core) commit
+`2b75f3ad12b420c9504ef05df8d2564a28f8500e`. Phosphor is MIT licensed,
+Copyright (c) 2023 Phosphor Icons; `PHOSPHOR-MIT.txt` retains the notice.
+The set was selected through the
+[Iconify Phosphor catalog](https://icon-sets.iconify.design/ph/), whose API
+exposes these same symbols.
 
-The Bot and Power images are original drawings made for this repository. They
-use the same RGB565 palette, glass gradient, soft halo and white specular edge
-as the factory assets. Bot uses the shared companion's dark pill-eye language;
-Power uses a conventional upright battery and large lightning mark.
+Flaticon packs and Apple's SF Symbols were reviewed as visual references during
+selection. No artwork from either source is included in these files.
 
-`tools/generate_settings_icon_assets.py` quantizes these files to native-order
-RGB565, losslessly applies row-local PackBits, and regenerates
-`include/WatchSettingsIconAssets.h`. Every command stays inside one row. The
-runtime decoder therefore needs one fixed 200-pixel (400-byte) scanline and no
+The tracked 512 × 512 files in `source/masks/` are transparent raster snapshots
+of those SVGs. Keeping masks in the repository makes the color composition
+portable and deterministic without requiring an SVG renderer in firmware or in
+the normal asset-generation command. `tools/render_settings_icons.py` contains
+all layout, color, gradient, halo and sheen parameters and creates the five
+200 × 200 RGB PNGs above.
+
+`tools/generate_settings_icon_assets.py` first runs that composition, quantizes
+the results to native-order RGB565, and losslessly applies row-local PackBits to
+regenerate `include/WatchSettingsIconAssets.h`. Every command stays inside one
+row, so the runtime decoder uses one fixed 200-pixel (400-byte) scanline with no
 heap allocation or full icon buffer.
 
-Regenerate with the repository-bundled Pillow and NumPy runtime:
+Regenerate every derived icon asset and the firmware header in one command:
 
 ```sh
 python3 stopwatch/bot-ux-watch/tools/generate_settings_icon_assets.py
 ```
+
+To refresh all mask snapshots from the fixed SVG sources on macOS, run:
+
+```sh
+sh stopwatch/bot-ux-watch/tools/rasterize_settings_icon_masks.sh
+```
+
+The script invokes `sips -s format png -z 512 512` for each source and writes
+directly to `source/masks/`; this step is only needed when the selected upstream
+symbols change.

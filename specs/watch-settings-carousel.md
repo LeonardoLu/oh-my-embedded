@@ -12,7 +12,10 @@ Power. Each page presents one centered 200 x 200 RGB565 icon on pure black, its
 localized white name, five position dots, and fixed left/right chevrons. There
 is no card surface, frame or current-value caption. The layout follows the
 factory StopWatch launcher while retaining this app's Settings title and Done
-path.
+path. The five symbols come from one Phosphor Duotone family (clock, robot,
+sun, speaker-high and battery-charging-vertical). A deterministic host tool
+applies the category gradients, sheen and halo before RGB565 quantization;
+firmware never parses SVG or computes those effects.
 
 - Time opens one vertical submenu containing Time, Date and Format. Time and
   Date retain `RtcClock`'s paired draft behavior: when RTC state is lost, saving
@@ -67,7 +70,7 @@ The existing 466 x 466 full canvas remains the only Settings framebuffer. The
 carousel redraws the 466 x 330 launcher band while dragging or snapping. Option
 editors continue to use the existing 350 x 278 clipped list viewport. The five
 200 x 200 RGB565 source icons would occupy 400,000 decoded bytes. A lossless,
-row-local PackBits representation stores them in 172,488 bytes of flash and
+row-local PackBits representation stores them in 97,977 bytes of flash and
 decodes directly into the existing canvas through one fixed 200-pixel scanline
 (400 stack bytes). It adds no framebuffer or heap allocation. An 8-bit indexed
 version was rejected because it would reduce the gradients that define the
@@ -75,6 +78,18 @@ factory-inspired visual; sharing the live Bot preview sprite would couple two
 independent render paths. The established buffers remain: full canvas 434,312
 bytes, Bot 163,592 bytes, preview 63,368 bytes, HUD 83,880 bytes, button scratch
 59,840 bytes and button masks 754,785 bytes.
+
+A bounded implementation comparison also evaluated storing symbol alpha masks
+and composing color gradients and radial glows at runtime. A single compressed
+mask can reduce flash while retaining the same 400-byte RGB565 output row, but
+multiple masks are needed to preserve anti-aliased edges, independent glow and
+highlight layers. Even a favorable host lower-bound benchmark, using an
+uncompressed mask and a precomputed glow, took 1.4--1.85 times the exact RGB565
+decoder per icon. This is not an ESP32 performance measurement; it establishes
+only that runtime composition adds meaningful per-pixel work before mask decode
+and display submission. The production path therefore composites the source
+symbol, gradients and glow offline, then preserves those pixels with lossless
+RGB565 PackBits. The on-device `v19` diagnostic remains the frame-time check.
 
 ## Host acceptance
 
@@ -86,8 +101,8 @@ new English/Chinese titles, launcher labels, option pairs and glyphs.
 
 `test_settings_carousel_render` uses the same production carousel, icon and
 arrow-row renderers with the native 24/28 px generated fonts. It produces full
-466 x 466 RGB565 screens under `tmp/host-checks/settings-carousel/` for English
-Time and Display, Chinese Power and the Chinese forced-schedule rows. A separate
+466 x 466 RGB565 screens under `tmp/host-checks/settings-carousel/` for all five
+English launcher pages, Chinese Power and the Chinese forced-schedule rows. A separate
 asset test losslessly decodes all 40,000 pixels of each icon, checks their FNV
 hashes, clipped drawing at both horizontal edges, typed RGB565 submission, zero
 heap use and the 400-byte working bound. Visual inspection confirmed that icon,
@@ -109,10 +124,10 @@ contains 358 glyphs.
 
 The complete `tools/check_host.sh` suite passed, including the native carousel
 screens, and the StopWatch PlatformIO target built successfully. The build used
-50,236 bytes static RAM (15.3%) and 1,285,241 bytes flash (19.6%). The upload
-artifact is 1,285,648 bytes with SHA256
-`e915082f2b21d1bf34bff2852ecfe44f0dbe57fe9d947088ae829ed2c8bb2297`;
+50,236 bytes static RAM (15.3%) and 1,210,729 bytes flash (18.5%). The upload
+artifact is 1,211,136 bytes with SHA256
+`ad8f186ccc582c6adb9f1873852a16787dd86dfb52b5f48be5a1cbad933a0294`;
 the complete build log is retained at
-`tmp/deployment/watch-settings/pio-build-final.log`. These checks establish host
+`tmp/deployment/watch-settings/pio-build-final-phosphor.log`. These checks establish host
 geometry, interaction, raster and firmware integration. Physical deployment
 and bounded serial acceptance are recorded separately below.

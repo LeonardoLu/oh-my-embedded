@@ -9,6 +9,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from render_settings_icons import render_icons
+
 
 WIDTH = 200
 HEIGHT = 200
@@ -280,7 +282,12 @@ def main() -> None:
                         default=project / "assets" / "settings-icons")
     parser.add_argument("--output", type=Path,
                         default=project / "include" / "WatchSettingsIconAssets.h")
+    parser.add_argument("--skip-compose", action="store_true",
+                        help="compress existing 200x200 PNGs without recomposing")
     args = parser.parse_args()
+    if not args.skip_compose:
+        render_icons(project / "assets" / "settings-icons" / "source" / "masks",
+                     args.source)
     generate(args.source, args.output)
 
 
