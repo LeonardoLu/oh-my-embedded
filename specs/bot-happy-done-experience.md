@@ -90,8 +90,19 @@ mirroring, coverage, transition, sleep and sparse-frame checks, and adds:
 
 The captures and tests establish renderer geometry and RGB565 contrast. They do
 not claim panel optics, device frame time, physical controls, Bluetooth or
-serial acceptance; no firmware was flashed for this change.
+serial acceptance.
 
 The final focused host run passed with the real `BotUx.cpp`, including all
 1,120 combinations and the prior gaze/orb/sleep regressions. The integrated
 Core2 PlatformIO build also passed, using 60,752 B RAM and 1,517,245 B flash.
+
+## Firmware evidence boundary
+
+The final Core2 `firmware.bin` is 1,523,824 bytes with SHA-256
+`b4a6ffbda75c85ebaff00ebd2a7cfc4ef04fadb77120db3610e9828c7c134ccf`.
+The USB inventory contained only the identified StopWatch at
+`/dev/cu.usbmodem214201`; the previously verified Core2 serial bridge at
+`/dev/cu.usbserial-5C9A0591461` was absent. No Core2 `chip_id`, upload or serial
+boot probe was attempted, which avoids writing the ESP32 firmware to the
+ESP32-S3 watch. StopWatch deployment and on-panel acceptance belong to the
+Watch integration validation rather than this shared renderer record.
