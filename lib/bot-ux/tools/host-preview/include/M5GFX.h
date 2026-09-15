@@ -49,6 +49,22 @@ public:
                       int32_t x3, int32_t y3, uint32_t c) {
         if (pointOutside(x1, y1) || pointOutside(x2, y2) || pointOutside(x3, y3))
             _outOfBounds = true;
+        int32_t minX = x1 < x2 ? x1 : x2;
+        if (x3 < minX) minX = x3;
+        int32_t maxX = x1 > x2 ? x1 : x2;
+        if (x3 > maxX) maxX = x3;
+        int32_t minY = y1 < y2 ? y1 : y2;
+        if (y3 < minY) minY = y3;
+        int32_t maxY = y1 > y2 ? y1 : y2;
+        if (y3 > maxY) maxY = y3;
+        for (int32_t y = minY; y <= maxY; ++y) for (int32_t x = minX; x <= maxX; ++x) {
+            int32_t a = (x - x2) * (y1 - y2) - (x1 - x2) * (y - y2);
+            int32_t b = (x - x3) * (y2 - y3) - (x2 - x3) * (y - y3);
+            int32_t d = (x - x1) * (y3 - y1) - (x3 - x1) * (y - y1);
+            if (((a >= 0 && b >= 0 && d >= 0) ||
+                 (a <= 0 && b <= 0 && d <= 0)) && !pointOutside(x, y))
+                _pixels[y * _w + x] = c;
+        }
         _out << "<polygon points='" << x1 << "," << y1 << " " << x2 << "," << y2
              << " " << x3 << "," << y3 << "' fill='" << color(c) << "'/>\n";
     }

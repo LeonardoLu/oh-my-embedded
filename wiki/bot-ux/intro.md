@@ -34,7 +34,7 @@ The shared component renders into a caller-owned M5Canvas. Mood, expression and 
 
 ![Happy animation](assets/Mood-4.gif)
 
-`Mood::Happy` — 圆润弧形笑眼、轻盈上浮，伴随环绕的小光点。 Rounded smiling arches and a buoyant lift, accompanied by small sparkles.
+`Mood::Happy` — 圆润笑弧眼、温暖腮红、轻快弹跳与两枚醒目的收尖星芒，清楚表达喜悦。 Rounded smiling arches, warm cheeks, a buoyant bounce and two large tapered sparkles make delight explicit.
 
 ### Sad · 难过
 
@@ -76,7 +76,7 @@ The shared component renders into a caller-owned M5Canvas. Mood, expression and 
 
 ![Done animation](assets/Mood-11.gif)
 
-`Mood::Done` — 害羞的低侧目光、轻柔抬升和庆祝光点。 A settled bashful glance, gentle lift and celebratory sparkles.
+`Mood::Done` — 身体下半部的大号圆角勾号明确表示完成，并搭配沉稳侧目与两枚收尖星芒。 A large rounded check in the lower orb makes completion explicit, paired with a settled glance and two tapered sparkles.
 
 ### Asleep · 熟睡
 
@@ -200,7 +200,7 @@ The shared component renders into a caller-owned M5Canvas. Mood, expression and 
 
 ![Sparkle animation](assets/Animation-7.gif)
 
-`Animation::Sparkle` — 三个小光点围绕正在呼吸的角色运动。 Three small accent lights circulate around the breathing bot.
+`Animation::Sparkle` — 两枚醒目的收尖星芒在身体上方轮廓附近错相闪动，不穿过脸部。 Two large tapered sparkles twinkle near the upper silhouette without crossing the face.
 
 ## 九方向眼神 · Gaze perspective
 

@@ -31,14 +31,14 @@ public:
         Listening,  // engaged, eyes widen, subtle forward nod
         Thinking,   // breathing volumetric dot shell
         Speaking,   // body pulse follows setTalking()
-        Happy,      // crescent eyes and a buoyant lift
+        Happy,      // crescent eyes, blush and a buoyant celebratory lift
         Sad,        // lowered gaze and settled body
         Sleepy,     // half/closed eyes, slow breath
         Surprised,  // wide eye marks + quick vertical stretch (transient)
         Working,    // flowing vortex dot shell
         Waiting,    // alert, patient eyes with a slow searching glance
         Blocked,    // exclamation-mark silhouette
-        Done,       // settled orb with a low-left glance
+        Done,       // settled orb with a low-left glance and completion check
         Asleep,     // closed eyes, deep breathing and drifting zzz (append-only)
         LookingAround, // full-range autonomous gaze shared with touch/directions
     };
@@ -247,6 +247,8 @@ private:
     void _drawOverlays(); // battery/signal/label/time
     void _fillCapsule(float cx, float cy, float halfDx, float halfDy,
                       float radius, uint16_t color, uint8_t opacity = 255);
+    void _fillSparkle(float cx, float cy, float verticalRadius,
+                      float horizontalRadius, uint16_t color);
     void _fillEyeCurve(float cx, float cy, float dx, float dy, float rise,
                        float radius, uint16_t color);
     void _fillEllipseAA(float cx, float cy, float rx, float ry, uint16_t color);

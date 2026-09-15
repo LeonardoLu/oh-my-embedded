@@ -354,20 +354,25 @@ void BotUx::_updateTalk(uint32_t now) {
 }
 
 void BotUx::_resolveMood(uint32_t now) {
-    if (_pokeUntil && (int32_t)(_pokeUntil - now) > 0) _effMood = Mood::Surprised;
-    else if (_reactionUntil && (int32_t)(_reactionUntil - now) > 0) _effMood = Mood::Happy;
+    bool surpriseReaction = _pokeUntil && (int32_t)(_pokeUntil - now) > 0;
+    bool happyReaction = !surpriseReaction && _reactionUntil &&
+                         (int32_t)(_reactionUntil - now) > 0;
+    if (surpriseReaction) _effMood = Mood::Surprised;
+    else if (happyReaction) _effMood = Mood::Happy;
     else {
         _effMood = _mood;
         _pokeUntil = 0;
         _reactionUntil = 0;
     }
 
-    if (_effMood == Mood::Surprised) _effExpression = Expression::Alarmed;
-    else if (_effMood == Mood::Happy) _effExpression = Expression::Joy;
+    if (surpriseReaction) _effExpression = Expression::Alarmed;
+    else if (happyReaction) _effExpression = Expression::Joy;
     else if (_expression != Expression::Auto) _effExpression = _expression;
     else {
         switch (_effMood) {
             case Mood::Listening: _effExpression = Expression::Curious; break;
+            case Mood::Happy:     _effExpression = Expression::Joy; break;
+            case Mood::Surprised: _effExpression = Expression::Alarmed; break;
             case Mood::Working:   _effExpression = Expression::Focused; break;
             case Mood::Done:      _effExpression = Expression::Bashful; break;
             default:              _effExpression = Expression::Neutral; break;
@@ -649,7 +654,7 @@ void BotUx::_resolveMood(uint32_t now) {
             case Mood::Working:   active = Animation::Orbit; break;
             case Mood::Speaking:
             case Mood::Surprised: active = Animation::Bounce; break;
-            case Mood::Happy:
+            case Mood::Happy:     active = Animation::Bounce; break;
             case Mood::Done:      active = Animation::Sparkle; break;
             case Mood::Waiting:   active = Animation::Calm; break;
             case Mood::Blocked:   active = Animation::Glitch; break;
@@ -928,25 +933,99 @@ void BotUx::_drawAnimationFx() {
         return;
     }
 
-    if (_activeAnimation != Animation::Sparkle || _reducedMotion ||
-        _m.bodyR == 0 || _motionAmount <= 0.0f) return;
-    int16_t r = _m.bodyR;
-    int16_t cx = _m.cx + (int16_t)_bodyDX;
-    int16_t cy = _m.cy + (int16_t)_bodyDY;
+    if (_m.bodyR == 0) return;
+    float r = _m.bodyR;
+    float cx = _m.cx + _bodyDX;
+    float cy = _m.cy + _bodyDY;
+    float motion = (_reducedMotion ? 0.20f : 1.0f)
+                 * fminf(_motionAmount, 1.0f);
     float elapsed = (_now - _animStart) * _animationSpeed;
-    for (int i = 0; i < 3; ++i) {
-        float angle = 2.0f * kPi * elapsed / 2400.0f + i * 2.094f;
-        float pulse = 0.65f + 0.35f * sinf(2.0f * kPi * elapsed / 780.0f + i);
-        int16_t sr = (int16_t)(r * 0.035f * pulse * _motionAmount);
-        if (sr < 1) sr = 1;
-        int16_t x = cx + (int16_t)(cosf(angle) * r * 1.12f);
-        int16_t y = cy + (int16_t)(sinf(angle) * r * 0.88f);
-        if (x < sr) x = sr;
-        if (x > _w - sr - 1) x = _w - sr - 1;
-        if (y < sr) y = sr;
-        if (y > _h - sr - 1) y = _h - sr - 1;
-        _cv->fillCircle(x, y, sr, _style.accentColor);
+
+    if (_effMood == Mood::Happy) {
+        // Warm cheek strokes make the joyful face readable even when motion is
+        // reduced or an explicit non-celebratory Animation is selected.
+        float sensorAmount = _reducedMotion ? _motionAmount * 0.32f : _motionAmount;
+        float gazeX = clampf(_pupilDX - _motionX * 0.18f * sensorAmount, -1.0f, 1.0f);
+        float gazeY = clampf(_pupilDY - _motionY * 0.14f * sensorAmount, -1.0f, 1.0f);
+        constexpr float kDiagonal = 0.70710678f;
+        float fieldX = clampf(gazeX / kDiagonal, -1.0f, 1.0f);
+        float fieldY = clampf(gazeY / kDiagonal, -1.0f, 1.0f);
+        float naturalX = _eyePairX + gazeX * 0.24f;
+        float naturalY = _eyePairY + gazeY * (gazeY > 0.0f ? 0.16f : 0.20f);
+        float directedX = fieldX * 0.26f;
+        float directedY = fieldY * (fieldY > 0.0f ? 0.16f : 0.38f);
+        float faceCx = cx + (naturalX + (directedX - naturalX) * _directionPose) * r;
+        float faceCy = cy + (naturalY + (directedY - naturalY) * _directionPose) * r;
+        float cheekY = faceCy + r * 0.28f;
+        float cheekDx = fmaxf(0.9f, r * 0.070f);
+        float cheekDy = r * 0.020f;
+        float cheekRadius = fmaxf(0.8f, r * 0.030f);
+        _fillCapsule(faceCx - _m.eyeDX, cheekY, cheekDx, -cheekDy,
+                     cheekRadius, _style.blushColor, 210);
+        _fillCapsule(faceCx + _m.eyeDX, cheekY, cheekDx, cheekDy,
+                     cheekRadius, _style.blushColor, 210);
     }
+
+    if (_effMood == Mood::Done) {
+        // A large rounded check occupies the quiet lower-left portion of the
+        // orb. It remains present with every expression and animation, so Done
+        // never depends on tiny orbiting decoration for its meaning.
+        float checkScale = 1.0f + 0.025f * motion
+                         * sinf(2.0f * kPi * elapsed / 1100.0f);
+        float stroke = fmaxf(1.15f, r * 0.052f) * checkScale;
+        uint16_t checkColor = mix565(_style.accentColor, _style.eyeColor, 96);
+        float jointX = cx - r * 0.28f;
+        float jointY = cy + r * 0.72f;
+        float shortX = cx - r * 0.47f;
+        float shortY = cy + r * 0.57f;
+        float longX = cx + r * 0.14f;
+        float longY = cy + r * 0.43f;
+        _fillCapsule((shortX + jointX) * 0.5f, (shortY + jointY) * 0.5f,
+                     (jointX - shortX) * 0.5f, (jointY - shortY) * 0.5f,
+                     stroke, checkColor);
+        _fillCapsule((jointX + longX) * 0.5f, (jointY + longY) * 0.5f,
+                     (longX - jointX) * 0.5f, (longY - jointY) * 0.5f,
+                     stroke, checkColor);
+        _fillCapsule(jointX, jointY, 0.0f, 0.0f, stroke,
+                     checkColor);
+    }
+
+    // Auto Happy adds radiance around its Bounce rhythm; Sparkle remains an
+    // independently selectable animation for every mood. Two tapered stars
+    // stay near the upper silhouette instead of orbiting across the face/check.
+    bool happyAuto = _effMood == Mood::Happy && _animation == Animation::Auto;
+    if (_activeAnimation != Animation::Sparkle && !happyAuto) return;
+    static const float anchorAngles[] = {-2.42f, -0.46f};
+    for (int i = 0; i < 2; ++i) {
+        float twinkle = sinf(2.0f * kPi * elapsed / 920.0f + i * 2.1f);
+        float angle = anchorAngles[i] + 0.11f * motion
+                    * sinf(2.0f * kPi * elapsed / 2600.0f + i);
+        float pulse = 0.88f + 0.12f * motion * twinkle;
+        float vertical = fmaxf(3.5f, r * 0.205f * pulse);
+        float horizontal = vertical * 0.70f;
+        float x = cx + cosf(angle) * r * 0.91f;
+        float y = cy + sinf(angle) * r * 0.79f;
+        x = clampf(x, vertical + 1.0f, _w - vertical - 2.0f);
+        y = clampf(y, vertical + 1.0f, _h - vertical - 2.0f);
+        _fillSparkle(x, y, vertical, horizontal, _style.accentColor);
+    }
+}
+
+void BotUx::_fillSparkle(float cx, float cy, float verticalRadius,
+                         float horizontalRadius, uint16_t color) {
+    float inner = fmaxf(0.85f, fminf(verticalRadius, horizontalRadius) * 0.24f);
+    int x = (int)roundf(cx), y = (int)roundf(cy);
+    int top = (int)roundf(cy - verticalRadius);
+    int bottom = (int)roundf(cy + verticalRadius);
+    int left = (int)roundf(cx - horizontalRadius);
+    int right = (int)roundf(cx + horizontalRadius);
+    int ix0 = (int)floorf(cx - inner), ix1 = (int)ceilf(cx + inner);
+    int iy0 = (int)floorf(cy - inner), iy1 = (int)ceilf(cy + inner);
+    _cv->fillTriangle(x, top, ix0, iy0, ix1, iy0, color);
+    _cv->fillTriangle(right, y, ix1, iy0, ix1, iy1, color);
+    _cv->fillTriangle(x, bottom, ix1, iy1, ix0, iy1, color);
+    _cv->fillTriangle(left, y, ix0, iy1, ix0, iy0, color);
+    _fillCapsule(cx, cy, 0.0f, 0.0f, inner * 1.20f, color);
 }
 
 // Scanline ellipse: solid spans plus one-pixel coverage at the perimeter.

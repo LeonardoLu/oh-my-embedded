@@ -7,6 +7,7 @@
 #include <iostream>
 #include <set>
 #include <string>
+#include <vector>
 
 static uint32_t gNow = 1000;
 uint32_t millis() { return gNow; }
@@ -65,6 +66,34 @@ static const AnimationCase kAnimations[] = {
     {botux::BotUx::Animation::Wave, "Wave"},
     {botux::BotUx::Animation::Sparkle, "Sparkle"},
 };
+
+static botux::BotUx::Style watchThemeStyle(bool mono) {
+    botux::BotUx::Style style;
+    if (!mono) {
+        style.bgColor = botux::rgb565(0x08,0x0B,0x10);
+        style.bodyColor = botux::rgb565(0xF2,0xF0,0xE8);
+        style.accentColor = botux::rgb565(0x55,0x8D,0xFF);
+        style.eyeColor = style.pupilColor = style.mouthColor = botux::rgb565(0x19,0x22,0x32);
+        style.blushColor = botux::rgb565(0xFA,0x9A,0xA8);
+    } else {
+        style.bgColor = botux::rgb565(0x0C,0x0D,0x10);
+        style.bodyColor = botux::rgb565(0xEC,0xEC,0xE8);
+        style.accentColor = botux::rgb565(0xC7,0xCF,0xDC);
+        style.eyeColor = style.pupilColor = style.mouthColor = botux::rgb565(0x19,0x1B,0x20);
+        style.blushColor = botux::rgb565(0x9A,0x9A,0x9A);
+    }
+    style.blinkMinMs = style.blinkMaxMs = 600000;
+    return style;
+}
+
+static uint16_t mix565ForTest(uint16_t a, uint16_t b, uint8_t amount) {
+    uint16_t ar = (a >> 11) & 0x1F, ag = (a >> 5) & 0x3F, ab = a & 0x1F;
+    uint16_t br = (b >> 11) & 0x1F, bg = (b >> 5) & 0x3F, bb = b & 0x1F;
+    uint16_t inv = 255u - amount;
+    return (uint16_t)((((ar * inv + br * amount) / 255u) << 11) |
+                      (((ag * inv + bg * amount) / 255u) << 5) |
+                       ((ab * inv + bb * amount) / 255u));
+}
 
 static size_t countToken(const std::string& value, const char* token) {
     size_t count = 0, pos = 0;
@@ -552,6 +581,10 @@ static void checkCompanionSemantics() {
     bot.describe(desc, sizeof(desc)); assert(std::strcmp(desc, "Ava is happy") == 0);
     bot.describe(desc, sizeof(desc), Bot::Language::Chinese);
     assert(std::strcmp(desc, "Ava 很高兴") == 0);
+    bot.setMood(Bot::Mood::Done, 0); gNow += 16; bot.update(gNow);
+    bot.describe(desc, sizeof(desc)); assert(std::strcmp(desc, "Ava has finished") == 0);
+    bot.describe(desc, sizeof(desc), Bot::Language::Chinese);
+    assert(std::strcmp(desc, "Ava 已经完成") == 0);
     bot.setMood(Bot::Mood::LookingAround, 0); gNow += 16; bot.update(gNow);
     bot.describe(desc, sizeof(desc)); assert(std::strcmp(desc, "Ava is looking around") == 0);
     bot.describe(desc, sizeof(desc), Bot::Language::Chinese);
@@ -644,6 +677,148 @@ static uint32_t rasterHash(M5Canvas& canvas) {
     return hash;
 }
 
+struct PixelRegion {
+    int x0 = 10000, x1 = -1, y0 = 10000, y1 = -1, pixels = 0;
+    void add(int x, int y) {
+        x0 = std::min(x0, x); x1 = std::max(x1, x);
+        y0 = std::min(y0, y); y1 = std::max(y1, y); ++pixels;
+    }
+    int width() const { return x1 - x0 + 1; }
+    int height() const { return y1 - y0 + 1; }
+};
+
+static std::vector<PixelRegion> exactColorRegions(const M5Canvas& canvas,
+                                                   uint16_t color) {
+    int width = canvas.width(), height = canvas.height();
+    std::vector<bool> seen(width * height, false);
+    std::vector<PixelRegion> regions;
+    for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+        int start = y * width + x;
+        if (seen[start] || canvas.readPixel(x, y) != color) continue;
+        PixelRegion region;
+        std::vector<int> queue(1, start); seen[start] = true;
+        for (size_t q = 0; q < queue.size(); ++q) {
+            int px = queue[q] % width, py = queue[q] / width;
+            region.add(px, py);
+            for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+                int nx = px + dx, ny = py + dy;
+                if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+                int id = ny * width + nx;
+                if (!seen[id] && canvas.readPixel(nx, ny) == color) {
+                    seen[id] = true; queue.push_back(id);
+                }
+            }
+        }
+        regions.push_back(region);
+    }
+    return regions;
+}
+
+static PixelRegion exactColorBounds(const M5Canvas& canvas, uint16_t color) {
+    PixelRegion bounds;
+    for (int y = 0; y < canvas.height(); ++y) for (int x = 0; x < canvas.width(); ++x)
+        if (canvas.readPixel(x, y) == color) bounds.add(x, y);
+    return bounds;
+}
+
+static bool isBlushPixel(uint16_t color) {
+    int red = (color >> 11) & 31, green = (color >> 5) & 63, blue = color & 31;
+    return red >= 28 && green >= 25 && green < 57 && blue < 27;
+}
+
+static void checkHappyDoneSemantics() {
+    using Bot = botux::BotUx;
+    Bot::Style themes[] = {watchThemeStyle(false), watchThemeStyle(true)};
+    for (int theme = 0; theme < 2; ++theme) for (int size : {40, 72, 120, 286}) {
+        uint32_t hashes[2] = {};
+        for (int moodIndex = 0; moodIndex < 2; ++moodIndex) {
+            Bot::Mood mood = moodIndex ? Bot::Mood::Done : Bot::Mood::Happy;
+            for (int motionMode = 0; motionMode < 3; ++motionMode) {
+                gNow = 1000; M5Canvas canvas(size, size); canvas.setRecording(false);
+                Bot bot; bot.begin(&canvas); bot.setStyle(themes[theme]); bot.seedBlink(1234);
+                bot.setMood(mood, 0); bot.setAnimationSpeed(0.73f);
+                bot.setMotionAmount(motionMode == 2 ? 0.0f : 0.55f);
+                bot.setReducedMotion(motionMode == 1);
+                gNow += 713; bot.update(gNow); bot.draw();
+                assert(!canvas.outOfBounds());
+                std::vector<PixelRegion> accents = exactColorRegions(
+                    canvas, themes[theme].accentColor);
+                assert(accents.size() == 2);
+                for (const auto& star : accents) {
+                    assert(star.y1 < bot.metrics().cy);
+                    assert(star.height() >= std::max(5, (int)(bot.metrics().bodyR * 0.30f)));
+                    assert(star.height() > star.width());
+                    assert(star.pixels * 4 < star.width() * star.height() * 3);
+                }
+                if (mood == Bot::Mood::Done) {
+                    uint16_t checkColor = mix565ForTest(
+                        themes[theme].accentColor, themes[theme].eyeColor, 96);
+                    std::vector<PixelRegion> checks = exactColorRegions(canvas, checkColor);
+                    assert(checks.size() == 1);
+                    const PixelRegion& check = checks[0];
+                    assert(check.y0 > bot.metrics().cy + bot.metrics().bodyR * 0.20f);
+                    assert(check.y1 > bot.metrics().cy + bot.metrics().bodyR * 0.54f);
+                    assert(check.x0 < bot.metrics().cx - bot.metrics().bodyR * 0.34f);
+                    assert(check.x1 > bot.metrics().cx);
+                    int bodyLuma = ((themes[theme].bodyColor >> 11) & 31) * 2
+                                 + ((themes[theme].bodyColor >> 5) & 63) * 3
+                                 + (themes[theme].bodyColor & 31);
+                    int checkLuma = ((checkColor >> 11) & 31) * 2
+                                  + ((checkColor >> 5) & 63) * 3
+                                  + (checkColor & 31);
+                    assert(std::abs(bodyLuma - checkLuma) >= 90);
+                }
+                if (motionMode == 0) hashes[moodIndex] = rasterHash(canvas);
+            }
+        }
+        assert(hashes[0] != hashes[1]);
+    }
+
+    // Every explicit expression remains selectable. Mood identity decorations
+    // track the directed eye group and stay vertically separate at all sizes.
+    for (int size : {40, 72, 286})
+        for (uint8_t expression = 1; expression < Bot::expressionCount(); ++expression)
+            for (uint8_t gaze = 1; gaze < Bot::gazeDirectionCount(); ++gaze)
+                for (int moodIndex = 0; moodIndex < 2; ++moodIndex) {
+                    Bot::Mood mood = moodIndex ? Bot::Mood::Done : Bot::Mood::Happy;
+                    gNow = 1000; M5Canvas canvas(size, size); canvas.setRecording(false);
+                    Bot bot; bot.begin(&canvas); Bot::Style style = bot.style();
+                    style.bgColor = botux::rgb565(0, 0, 0);
+                    style.bodyColor = botux::rgb565(255, 255, 255);
+                    style.eyeColor = style.pupilColor = botux::rgb565(0, 255, 0);
+                    style.accentColor = botux::rgb565(70, 130, 255);
+                    style.blushColor = botux::rgb565(255, 80, 110);
+                    style.blinkMinMs = style.blinkMaxMs = 600000; bot.setStyle(style);
+                    bot.seedBlink(1234); bot.setMood(mood, 0);
+                    bot.setExpression((Bot::Expression)expression, 0);
+                    bot.setAnimation(Bot::Animation::Calm); bot.setMotionAmount(0);
+                    bot.setGazeDirection((Bot::GazeDirection)gaze); bot.update(gNow); bot.draw();
+                    assert(bot.effectiveExpression() == (Bot::Expression)expression);
+                    PixelRegion eyes = exactColorBounds(canvas, style.eyeColor);
+                    assert(eyes.pixels > 0);
+                    if (mood == Bot::Mood::Done) {
+                        uint16_t checkColor = mix565ForTest(style.accentColor, style.eyeColor, 96);
+                        std::vector<PixelRegion> checks = exactColorRegions(canvas, checkColor);
+                        assert(checks.size() == 1);
+                        assert(eyes.y1 < checks[0].y0);
+                    } else {
+                        PixelRegion blush;
+                        for (int y = 0; y < size; ++y) for (int x = 0; x < size; ++x)
+                            if (isBlushPixel(canvas.readPixel(x, y))) blush.add(x, y);
+                        assert(blush.pixels > 0);
+                        assert(eyes.y1 < blush.y0);
+                    }
+                    assert(!canvas.outOfBounds());
+                }
+
+    // poke() keeps authored transient faces, then restores the selected face.
+    gNow = 1000; M5Canvas canvas(72, 72); Bot bot; bot.begin(&canvas);
+    bot.setExpression(Bot::Expression::Skeptical, 0); bot.update(gNow); bot.poke();
+    bot.update(1100); assert(bot.effectiveExpression() == Bot::Expression::Alarmed);
+    bot.update(1400); assert(bot.effectiveExpression() == Bot::Expression::Joy);
+    bot.update(2300); assert(bot.effectiveExpression() == Bot::Expression::Skeptical);
+}
+
 static void checkPersistentAnimationWindows() {
     using Bot = botux::BotUx;
     M5Canvas canvas(72, 72); canvas.setRecording(false);
@@ -721,7 +896,9 @@ static void checkDirectionsDominateEveryFace() {
                     gNow = 1000; Bot bot; bot.begin(&canvas);
                     auto style = bot.style(); style.eyeStyle = (Bot::EyeStyle)eyeStyle;
                     style.blinkMinMs = style.blinkMaxMs = 600000;
-                    style.bodyColor = botux::rgb565(255,255,255); style.eyeColor = style.pupilColor = 0;
+                    style.bodyColor = botux::rgb565(255,255,255);
+                    style.accentColor = style.blushColor = style.bodyColor;
+                    style.eyeColor = style.pupilColor = 0;
                     bot.setStyle(style); bot.seedBlink(1234);
                     bot.setMood((Bot::Mood)mood); bot.setExpression((Bot::Expression)expr);
                     bot.setAnimation(Bot::Animation::Calm); bot.setMotionAmount(0.55f);
@@ -737,9 +914,11 @@ static void checkDirectionsDominateEveryFace() {
                         uint16_t c = canvas.readPixel(x,y);
                         if (c != style.bgColor) { bodyX += x; bodyY += y; ++bodyPixels; }
                         // Thin closed eyes can have only partial-coverage pixels.
-                        // Limit detection to the orb interior to exclude its AA edge.
+                        // Limit detection to the upper orb interior to exclude
+                        // its AA edge and the lower Done check.
                         float ox=x-bot.metrics().cx, oy=y-bot.metrics().cy;
                         if (c != style.bgColor && ((c>>11)&31)<24 &&
+                            oy < bot.metrics().bodyR * 0.30f &&
                             ox*ox+oy*oy < bot.metrics().bodyR*bot.metrics().bodyR*.64f) {
                             eyeMinX = std::min(eyeMinX, x); eyeMaxX = std::max(eyeMaxX, x);
                             eyeMinY = std::min(eyeMinY, y); eyeMaxY = std::max(eyeMaxY, y); ++eyePixels;
@@ -1097,6 +1276,63 @@ static void writeIdleComparison(const std::string& path) {
     }
 }
 
+static void writeHappyDoneThemeComparison(const std::string& path) {
+    using Bot = botux::BotUx;
+    const int size = 286;
+    Bot::Style themes[] = {watchThemeStyle(false), watchThemeStyle(true)};
+    std::vector<uint16_t> pixels(size * size * 4);
+    for (int theme = 0; theme < 2; ++theme) for (int mood = 0; mood < 2; ++mood) {
+        gNow = 1000; M5Canvas canvas(size, size); canvas.setRecording(false);
+        Bot bot; bot.begin(&canvas); bot.setStyle(themes[theme]); bot.seedBlink(1234);
+        bot.setAnimationSpeed(0.73f); bot.setMotionAmount(0.55f);
+        bot.setMood(mood ? Bot::Mood::Done : Bot::Mood::Happy, 0);
+        gNow += 713; bot.update(gNow); bot.draw(); assert(!canvas.outOfBounds());
+        int originX = mood * size, originY = theme * size;
+        for (int y = 0; y < size; ++y) for (int x = 0; x < size; ++x)
+            pixels[(originY + y) * size * 2 + originX + x] = canvas.readPixel(x, y);
+    }
+    std::ofstream out(path, std::ios::binary); assert(out);
+    out << "P6\n" << size * 2 << " " << size * 2 << "\n255\n";
+    for (uint16_t pixel : pixels) {
+        char rgb[3] = {(char)(((pixel >> 11) & 31) * 255 / 31),
+                       (char)(((pixel >> 5) & 63) * 255 / 63),
+                       (char)((pixel & 31) * 255 / 31)};
+        out.write(rgb, 3);
+    }
+}
+
+static void writeHappyDoneSmallComparison(const std::string& path) {
+    using Bot = botux::BotUx;
+    const int cell = 72, width = cell * 4, height = cell * 2;
+    Bot::Style themes[] = {watchThemeStyle(false), watchThemeStyle(true)};
+    std::vector<uint16_t> pixels(width * height);
+    for (int theme = 0; theme < 2; ++theme) {
+        for (int y = 0; y < cell; ++y) for (int x = 0; x < width; ++x)
+            pixels[(theme * cell + y) * width + x] = themes[theme].bgColor;
+        for (int sizeIndex = 0; sizeIndex < 2; ++sizeIndex) for (int mood = 0; mood < 2; ++mood) {
+            int size = sizeIndex ? 72 : 40;
+            gNow = 1000; M5Canvas canvas(size, size); canvas.setRecording(false);
+            Bot bot; bot.begin(&canvas); bot.setStyle(themes[theme]); bot.seedBlink(1234);
+            bot.setAnimationSpeed(0.73f); bot.setMotionAmount(0.55f);
+            bot.setMood(mood ? Bot::Mood::Done : Bot::Mood::Happy, 0);
+            gNow += 713; bot.update(gNow); bot.draw(); assert(!canvas.outOfBounds());
+            int cellIndex = sizeIndex * 2 + mood;
+            int originX = cellIndex * cell + (cell - size) / 2;
+            int originY = theme * cell + (cell - size) / 2;
+            for (int y = 0; y < size; ++y) for (int x = 0; x < size; ++x)
+                pixels[(originY + y) * width + originX + x] = canvas.readPixel(x, y);
+        }
+    }
+    std::ofstream out(path, std::ios::binary); assert(out);
+    out << "P6\n" << width << " " << height << "\n255\n";
+    for (uint16_t pixel : pixels) {
+        char rgb[3] = {(char)(((pixel >> 11) & 31) * 255 / 31),
+                       (char)(((pixel >> 5) & 63) * 255 / 63),
+                       (char)((pixel & 31) * 255 / 31)};
+        out.write(rgb, 3);
+    }
+}
+
 static void checkDirectionTransitionContinuity() {
     using Bot=botux::BotUx; using G=Bot::GazeDirection;
     gNow=1000; M5Canvas canvas(200,200); canvas.setRecording(false); Bot bot; bot.begin(&canvas);
@@ -1225,6 +1461,7 @@ int main(int argc, char** argv) {
     checkCompanionSemantics();
     checkTemporaryGaze();
     checkConnectedEyeMorphs();
+    checkHappyDoneSemantics();
     checkPersistentAnimationWindows();
     checkGazeDirectionsAndMotionZero();
     checkDirectionsDominateEveryFace();
@@ -1248,6 +1485,8 @@ int main(int argc, char** argv) {
     checkMotionStaysInCanvas();
     const char* outDir = (argc > 1) ? argv[1] : ".";
     writeIdleComparison(std::string(outDir) + "/idle-up-right.ppm");
+    writeHappyDoneThemeComparison(std::string(outDir) + "/happy-done-themes.ppm");
+    writeHappyDoneSmallComparison(std::string(outDir) + "/happy-done-small.ppm");
     std::string tiny = std::string(outDir) + "/moods-40.svg";
     std::string small = std::string(outDir) + "/moods-72.svg";
     std::string large = std::string(outDir) + "/moods-200.svg";
