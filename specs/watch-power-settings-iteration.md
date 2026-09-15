@@ -104,3 +104,27 @@ The tests and firmware build do not establish battery-current improvement,
 AMOLED legibility at each level, physical wake reliability, speaker acoustics,
 or RTC behavior under actual power interruption. Those remain device-validation
 items.
+
+## Device validation state
+
+As of 2026-09-16, an intermediate `a0de199` image with the superseded launcher
+artwork had been written successfully without erasing NVS. The final Phosphor
+icon image built from `33741a5` has not yet been written. Subsequent bounded
+automatic ROM-entry attempts found the same USB device node but received no
+application or bootloader data, so the cause remains undetermined.
+
+Static review does not show the power policy locking download mode. The app
+sets only M5PM1 button-register bit 0 to disable single-click reset and preserves
+bit 7, the download lock. Keys-only light sleep can create one-second polling
+windows while the display is Off; external VBUS with Charging keep awake On
+bypasses ordinary sleep, while a configured forced interval still takes
+priority. With neither application telemetry nor a ROM reply available, those
+conditions cannot be confirmed on the device and are not established as the
+upload failure's cause.
+
+Device validation resumes after the official manual download-mode recovery and
+successful final write. Acceptance then reads `ui`, `rtc`, and `power`: the
+power line must show download-lock bit 7 clear, and the UI/RTC lines must confirm
+the persisted sound, wake, charge-awake, forced-sleep, screen-power, audio, and
+Ready-clock states. The complete upload attempt log inventory and recovery steps
+are recorded in `specs/watch-settings-carousel.md`.
