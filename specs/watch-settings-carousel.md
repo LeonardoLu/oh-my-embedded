@@ -67,12 +67,16 @@ production pointer path; it is not physical touch-controller acceptance.
 ## Memory and rendering
 
 The existing 466 x 466 full canvas remains the only Settings framebuffer. The
-carousel redraws the 466 x 330 launcher band while dragging or snapping. Option
+carousel redraws and submits only its 466 x 280 moving-content band while
+dragging or snapping. That band contains the full icon, arrows, name and dots;
+the static title and Done footer remain outside it. Option
 editors continue to use the existing 350 x 278 clipped list viewport. The five
 200 x 200 RGB565 source icons would occupy 400,000 decoded bytes. A lossless,
 row-local PackBits representation stores them in 97,977 bytes of flash and
-decodes directly into the existing canvas through one fixed 200-pixel scanline
-(400 stack bytes). It adds no framebuffer or heap allocation. An 8-bit indexed
+decodes through one fixed 200-pixel scanline (400 stack bytes). The numeric
+RGB565 row is written directly into the existing canvas as RGB565BE, avoiding
+one M5GFX image transaction per decoded row. It adds no framebuffer or heap
+allocation. An 8-bit indexed
 version was rejected because it would reduce the gradients that define the
 factory-inspired visual; sharing the live Bot preview sprite would couple two
 independent render paths. The established buffers remain: full canvas 434,312
@@ -127,36 +131,61 @@ The complete `tools/check_host.sh` suite passed for the settings hierarchy,
 input, power and font implementation in `a0de199`. The later icon-only change
 in `33741a5` passed focused `test_ui_controls`, `test_watch_strings`, exact icon
 asset and production carousel renderer checks. A clean StopWatch PlatformIO
-build then passed from the final source. The build used
-50,236 bytes static RAM (15.3%) and 1,210,729 bytes flash (18.5%). The upload
-artifact is 1,211,136 bytes with SHA256
-`ad8f186ccc582c6adb9f1873852a16787dd86dfb52b5f48be5a1cbad933a0294`;
+build then passed from the final source. Commit `67738ca` added the bounded
+rendering optimization and capture hardening. Focused `test_ui_controls`, exact
+icon/direct-write boundary and byte-order tests, and the production carousel
+renderer passed again; the direct-write test covers both clipped edges, fully
+offscreen neighbors, adjacent guard bytes, zero heap use and all five source
+hashes. Independent static review also confirmed the fixed 466-pixel stride and
+16-bit canvas assumptions. The final build used 50,236 bytes static RAM (15.3%)
+and 1,210,793 bytes flash (18.5%). The upload artifact is 1,211,200 bytes with
+SHA256
+`221451da6421f89c50ce36a2d299e75ec965aff737ab7c35c9aa7220be1abf01`;
 the complete build log is retained at
-`tmp/deployment/watch-settings/pio-build-final-phosphor.log`. These checks establish host
+`tmp/deployment/watch-settings/pio-build-optimized-final.log`. These checks establish host
 geometry, interaction, raster and firmware integration. Physical deployment
 and bounded serial acceptance are recorded separately below.
 
 ## Deployment state
 
-An intermediate build from `a0de199`, with the earlier launcher artwork, was
-written to `/dev/cu.usbmodem214201` after a successful ESP32-S3 ROM identity
-check reported MAC `28:84:85:44:5b:8c`. Esptool verified every written segment
-and NVS was not erased. That image was superseded before device acceptance and
-is not the final icon evidence.
+The final optimized Phosphor build was written to the explicitly inventoried
+`/dev/cu.usbmodem214201`. USB serial `28:84:85:44:5B:8C` and esptool both
+identified the same ESP32-S3 revision 0.2 target and MAC. Esptool hash-verified
+every segment; the write covered the bootloader, partition table, boot-app and
+application ranges and did not erase NVS. The upload log is
+`tmp/deployment/watch-settings/pio-upload-optimized.log`.
 
-The final Phosphor build above has not yet been written. A fresh device
-inventory continued to report the same port and USB serial number, but two
-bounded automatic ROM-entry attempts returned no serial data. A normal 115200
-baud probe and one standard DTR/RTS recovery sequence also produced no
-application or ROM reply. These observations do not establish the cause. The
-next step is the official StopWatch download-mode recovery: while USB remains
-connected, hold Reset for about two seconds until the green LED lights, then
-release it and repeat the identity check and upload. No additional automatic
-serial retries are pending.
+The bounded serial run booted without a panic and reported `RTC boot state=1
+valid=1 hold=1`. Persisted UI telemetry contained the four sound switches, all
+power fields and `screen_power=0`; `rtc` remained Ready/valid with advancing
+time, and `power` reported `key_cfg=0x2b` with the download-lock bit clear. The
+current `_charging` sample was 0; this field is battery charging state and is
+not the external-power input used by the charging keep-awake policy. Detailed
+policy limits are recorded in `specs/watch-power-settings-iteration.md`.
 
-The attempt logs are retained under `tmp/deployment/watch-settings/` as
-`device-list-final.log`, `chip-id-final.log`,
-`chip-id-final-retry.log`, `chip-id-manual-reset.log`, and
-`serial-recover-probe.log`. After the final image is written, device acceptance
-still requires `ui`/`rtc`/`power`, the `v19` frame telemetry, native Time and
-Power captures, and the `v0`/`home`/`physical`/`keys off` restoration sequence.
+On-device `v19` measured 23.9--24.1 fps with 19.16--19.23 ms draw and
+18.82--18.92 ms panel push. The preceding 466 x 330 implementation measured
+20.6--20.8 fps, 22.49--22.62 ms draw and 22.10--22.19 ms push on the same
+diagnostic. The minimal 280-pixel content band and direct row write therefore
+improved the measured rate by about 16% without another cache or framebuffer;
+it did not reach 30 fps, and no broader dirty-region system was added.
+
+The same continuous session ran `v19`, captured Time, selected Power and
+captured again. Both 466 x 466 RGB565BE frames contain complete title,
+chevrons, label, dots and Done chrome. Time raw SHA256 is
+`9d57095fbc2552ae1e3a5024a1e73eaceafc3d1f9a0f4d083aec3db25aa28281`;
+Power raw SHA256 is
+`710f4817fba80bee1252c933c81a10eecd3f92c4353b23ce41769abb54a85e28`.
+The capture entry clears any inherited clip and requests an independent full
+redraw; raw-region checks also confirm that both frames carry identical title,
+arrow and footer pixels. Durable renderings are retained as
+[device Time](assets/watch-settings-device-time-final.png) and
+[device Power](assets/watch-settings-device-power-final.png). The complete run
+is `tmp/deployment/watch-settings/serial-acceptance-optimized.log`.
+
+Finally, `v0`, `home`, `physical` and `keys off` restored the face, physical
+input and normal carousel state. A final `ui` read showed `screen=0` and
+`keys_diag=0`; RTC and PMIC telemetry remained stable, and the serial port was
+closed. Earlier bounded auto-reset failures are retained as historical logs,
+but the later identified upload and acceptance completed; the PMIC bit readback
+does not establish the cause of the earlier transient failure.

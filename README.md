@@ -52,8 +52,8 @@ Press A to choose a non-repeating random mood from the complete shared set. B
 advances to the next mood; double-click B within 320 ms to return to automatic
 Idle. A face touch temporarily looks straight ahead when inside the bot and
 toward the contact when outside it, then returns to the selected mood. Hold A+B
-together for three seconds to open settings; hold the bot for three seconds for
-personalization. Hold B to dim the face;
+together for three seconds to open settings. Bot personalization is available
+from the Bot page in Settings. Hold B to dim the face;
 the next touch/button press wakes it without activating a control.
 
 The watch samples raw display contacts every 8 ms and derives its own press/release
@@ -68,8 +68,9 @@ Swipe down from the top edge for the compact battery/charging panel. Double-tap
 the visible time to open settings. Settings, Bot Personality and every editor keep
 a single fixed Done control outside the scrolling content, with native antialiased
 text, rounded touch targets and a live HSV body-color picker. Settings and
-Personality show four rows; preview editors show two rows and scroll additional
-choices. A touch clears persistent button selection and shows only the captured
+Personality use their dedicated horizontal and vertical navigation; preview
+editors show two rows and scroll additional choices. A touch clears persistent
+button selection and shows only the captured
 control’s pressed fill. The M5PM1 power button
 returns directly to the face and cancels unsaved editor changes. Its green status
 LED is an independent persisted display option, off by default.

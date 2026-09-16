@@ -95,36 +95,44 @@ window, activity renewal, and `millis()` rollover.
 On 2026-09-16, `test_power_policy`, `test_settings_timeouts`,
 `test_ui_controls`, `test_watch_strings`, and
 `test_settings_carousel_render` passed as independent Clang host binaries. A
-full StopWatch PlatformIO integration build also passed at 50,236 bytes RAM and
-1,210,729 bytes flash. Static review confirmed that the Display 6-row, Sound
+full StopWatch PlatformIO integration build also passed. The final optimized
+image uses 50,236 bytes RAM and 1,210,793 bytes flash. Static review confirmed
+that the Display 6-row, Sound
 4-row, and Power 9-row draw, hit, edit, save, and cancel paths use matching
 indices, and that the power state transition runs before normal UI dispatch.
 
 The tests and firmware build do not establish battery-current improvement,
-AMOLED legibility at each level, physical wake reliability, speaker acoustics,
-or RTC behavior under actual power interruption. Those remain device-validation
-items.
+AMOLED legibility at each level or physical wake reliability. Device evidence
+and its remaining limits follow.
 
 ## Device validation state
 
-As of 2026-09-16, an intermediate `a0de199` image with the superseded launcher
-artwork had been written successfully without erasing NVS. The final Phosphor
-icon image built from `33741a5` has not yet been written. Subsequent bounded
-automatic ROM-entry attempts found the same USB device node but received no
-application or bootloader data, so the cause remains undetermined.
+The final commit `67738ca` image is 1,211,200 bytes with SHA256
+`221451da6421f89c50ce36a2d299e75ec965aff737ab7c35c9aa7220be1abf01`.
+It was hash-verified on the identified StopWatch without erasing NVS. Boot
+reported RTC state 1 (`Ready`), valid and hold all true. The final `ui` readback
+confirmed persisted `sound=0`, each sound subcategory at 1, and
+`power_save=1 dim_level=1 dim_timeout=0 off_timeout=2 wake_mode=1
+charge_awake=1 force_sleep=1 force_start=23 force_end=7`. Screen power was
+Active. Audio `desired=0`, bound true, state 2 (`Suspended`), failed false,
+valid I/O true, audio power off and PA off are consistent with the persisted
+master sound switch being Off.
 
-Static review does not show the power policy locking download mode. The app
-sets only M5PM1 button-register bit 0 to disable single-click reset and preserves
-bit 7, the download lock. Keys-only light sleep can create one-second polling
-windows while the display is Off; external VBUS with Charging keep awake On
-bypasses ordinary sleep, while a configured forced interval still takes
-priority. With neither application telemetry nor a ROM reply available, those
-conditions cannot be confirmed on the device and are not established as the
-upload failure's cause.
+The final RTC read was Ready and valid with hold enabled and advancing time.
+PMIC telemetry reported `key_cfg=0x2b`, so download-lock bit 7 was clear and the
+single-click-reset-disable bit remained set; `hold_cfg=0x20`, RTC hold and LDO
+were also present. After diagnostics, `v0`, `home`, `physical` and `keys off`
+restored the normal face and input state; repeated UI/RTC/PMIC fields remained
+stable. The complete final run is
+`tmp/deployment/watch-settings/serial-acceptance-optimized.log`, and the upload
+is `tmp/deployment/watch-settings/pio-upload-optimized.log`.
 
-Device validation resumes after the official manual download-mode recovery and
-successful final write. Acceptance then reads `ui`, `rtc`, and `power`: the
-power line must show download-lock bit 7 clear, and the UI/RTC lines must confirm
-the persisted sound, wake, charge-awake, forced-sleep, screen-power, audio, and
-Ready-clock states. The complete upload attempt log inventory and recovery steps
-are recorded in `specs/watch-settings-carousel.md`.
+The final battery charging sample was 0. This does not contradict charging
+keep-awake: telemetry prints `_charging`, while policy uses the separate
+external-power signal that is not printed. The device run did not wait through
+23:00--07:00, so it does not establish forced-sleep precedence over external
+power, the cross-midnight transition, or 07:00 recovery. Master sound remained
+Off, so playback, acoustics and subcategory gating were not exercised. RTC
+continuity covers reset/upload rather than complete power removal. Finally,
+download-lock bit 7 being clear does not explain the earlier transient USB
+auto-reset failure; it only rules out that lock at the time of final readback.

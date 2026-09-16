@@ -139,7 +139,7 @@ official bot treatment uses dark pill eyes.
 - Rendering targets 16 ms active / 33 ms preview / 250 ms dozing. The face pushes only
   the bot region; disjoint clock/status regions redraw when their values change. A fixed 466×90
   HUD canvas (83,880 bytes) provides coverage text/shapes without panel readback.
-  Launcher motion pushes its 466×330 band; Time and Personality scrolling push
+  Launcher motion pushes its 466×280 content band; Time and Personality scrolling push
   their 466×264 list band. Static chrome stays cached. Serial
   `PERF` summaries report real frame timing for hardware validation.
 - Serial `c` remains raw RGB565 capture. Diagnostic pages accept `vNN` plus newline:

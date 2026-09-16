@@ -94,13 +94,19 @@ serial acceptance.
 
 The final focused host run passed with the real `BotUx.cpp`, including all
 1,120 combinations and the prior gaze/orb/sleep regressions. The integrated
-Core2 PlatformIO build also passed, using 60,752 B RAM and 1,517,245 B flash.
+Core2 PlatformIO build was repeated cleanly at source commit `6b17105`. It
+passed using 60,752 B RAM and 1,517,421 B flash. The build compiled the current
+shared CJK sources, and the final link selected `FontCjk18.cpp` with source
+SHA-256 `8aa4254231e93368a456ad1cc256e0637cc87b0926321bfd939e7869be9781c3`.
+The ignored build log is `tmp/final-core2-build.log`.
 
 ## Firmware evidence boundary
 
-The final Core2 `firmware.bin` is 1,523,824 bytes with SHA-256
-`b4a6ffbda75c85ebaff00ebd2a7cfc4ef04fadb77120db3610e9828c7c134ccf`.
-The USB inventory contained only the identified StopWatch at
+The final Core2 `firmware.bin` is 1,524,000 bytes with SHA-256
+`bcb2f6b5cbc545e530d23e779f2245222c638b4bb9b3ada2db214782f4a8066b`.
+This clean regression did not enumerate or access serial ports and did not
+upload firmware. The earlier one-time USB inventory contained only the
+identified StopWatch at
 `/dev/cu.usbmodem214201`; the previously verified Core2 serial bridge at
 `/dev/cu.usbserial-5C9A0591461` was absent. No Core2 `chip_id`, upload or serial
 boot probe was attempted, which avoids writing the ESP32 firmware to the
