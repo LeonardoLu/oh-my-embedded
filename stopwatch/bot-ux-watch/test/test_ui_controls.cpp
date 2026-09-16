@@ -40,6 +40,11 @@ int main() {
     auto carousel=settingsCarousel();
     assert(carousel.x==0&&carousel.y==76&&carousel.w==466&&carousel.h==330);
     assert(carousel.step==466&&carousel.cardWidth==220&&carousel.cardHeight==250);
+    auto motionBand=settingsCarouselMotionBand();
+    assert(motionBand.x==0&&motionBand.y==110&&motionBand.w==466&&motionBand.h==280);
+    assert(motionBand.x==carousel.x&&motionBand.w==carousel.w);
+    assert(motionBand.y<=115&&motionBand.y+motionBand.h>=385);
+    assert(motionBand.y>48&&motionBand.y+motionBand.h<done.y);
     for(uint8_t i=0;i<(uint8_t)MenuItem::Done;++i) {
         float offset=i*carousel.step;
         auto card=carouselCardBounds(i,offset);

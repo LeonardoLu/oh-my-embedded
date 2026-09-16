@@ -18,6 +18,10 @@ struct ListLayout { int16_t x,y,w,h,step,rowHeight,radius; uint8_t visibleRows; 
 struct CarouselLayout { int16_t x,y,w,h,step,cardWidth,cardHeight,radius; };
 constexpr ListLayout mainList() { return {62,76,342,264,66,58,25,4}; }
 constexpr CarouselLayout settingsCarousel() { return {0,76,466,330,466,220,250,0}; }
+// Settings animation only changes this content band. It contains the full
+// 200 px icon, both arrows, the translated label and every page dot, while
+// leaving the static title and Done footer outside the panel transfer.
+constexpr ux::Rect settingsCarouselMotionBand() { return {0,110,466,280}; }
 constexpr ux::Rect carouselPreviousBounds() { return {34,176,56,80}; }
 constexpr ux::Rect carouselNextBounds() { return {376,176,56,80}; }
 constexpr ListLayout previewList() { return {58,242,350,96,48,44,17,2}; }

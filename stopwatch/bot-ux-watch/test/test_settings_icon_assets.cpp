@@ -13,6 +13,7 @@ struct rgb565_t {
 } }
 
 #include "WatchSettingsIconAssets.h"
+#include "WatchSettingsDirectCanvas.h"
 
 namespace {
 constexpr int kIconPixels = watchsettingsiconassets::Width
@@ -20,6 +21,9 @@ constexpr int kIconPixels = watchsettingsiconassets::Width
 constexpr int kMaxCanvasPixels = 1200 * 240;
 uint16_t gSource[kIconPixels];
 uint16_t gCanvasPixels[kMaxCanvasPixels];
+constexpr int kDirectGuardBytes=16;
+uint8_t gDirectStorage[kIconPixels*2+kDirectGuardBytes*2];
+uint8_t* const gDirectPixels=gDirectStorage+kDirectGuardBytes;
 size_t gAllocations = 0;
 
 uint32_t fnv1a565(const uint16_t* pixels, size_t count) {
@@ -60,6 +64,31 @@ private:
     int _width;
     int _height;
 };
+
+struct DirectCanvas {
+    DirectCanvas(int width,int height):_width(width),_height(height) {}
+    int width() const { return _width; }
+    int height() const { return _height; }
+    void* getBuffer() { return gDirectPixels; }
+private:
+    int _width,_height;
+};
+
+uint16_t directPixel(int index) {
+    return (uint16_t)(gDirectPixels[index*2]<<8)|gDirectPixels[index*2+1];
+}
+
+void resetDirectPixels(int pixels) {
+    memset(gDirectStorage,0xA5,sizeof(gDirectStorage));
+    assert(pixels<=kIconPixels);
+}
+
+void assertDirectGuards(int pixels) {
+    for(int i=0;i<kDirectGuardBytes;++i) {
+        assert(gDirectStorage[i]==0xA5);
+        assert(gDirectPixels[pixels*2+i]==0xA5);
+    }
+}
 
 void decode(const watchsettingsiconassets::Asset& asset) {
     watchsettingsiconassets::Reader reader(asset);
@@ -128,6 +157,42 @@ int main(int argc, char** argv) {
         assert(full.pixelsPushed == kIconPixels);
         assert(full.maxPushWidth == Width);
         assert(!memcmp(gCanvasPixels, gSource, sizeof(gSource)));
+
+        // The production writer stores the same decoded logical pixels in the
+        // M5Canvas RGB565BE byte order without allocating a second row buffer.
+        resetDirectPixels(kIconPixels);
+        DirectCanvas directBase(Width,Height);
+        watchsettingsdirect::CanvasWriter<DirectCanvas> direct(directBase);
+        allocations = gAllocations;
+        assert(draw(direct,icon,Width/2,Height/2));
+        assert(gAllocations==allocations);
+        for(int pixel=0;pixel<kIconPixels;++pixel) {
+            assert(directPixel(pixel)==gSource[pixel]);
+        }
+        assertDirectGuards(kIconPixels);
+
+        DirectCanvas directClipBase(120,90);
+        watchsettingsdirect::CanvasWriter<DirectCanvas> directClip(directClipBase);
+        resetDirectPixels(120*90);
+        assert(draw(directClip,icon,20,20));
+        for(int y=0;y<90;++y)
+            for(int x=0;x<120;++x)
+                assert(directPixel(y*120+x)==gSource[(y+80)*Width+x+80]);
+        assertDirectGuards(120*90);
+        resetDirectPixels(120*90);
+        assert(draw(directClip,icon,200,170));
+        for(int y=0;y<90;++y) for(int x=0;x<120;++x) {
+            uint16_t expected=x>=100&&y>=70
+                ?gSource[(y-70)*Width+x-100]:0xA5A5;
+            assert(directPixel(y*120+x)==expected);
+        }
+        assertDirectGuards(120*90);
+        resetDirectPixels(120*90);
+        assert(draw(directClip,icon,-120,45));
+        for(int pixel=0;pixel<120*90;++pixel) assert(directPixel(pixel)==0xA5A5);
+        assert(draw(directClip,icon,230,45));
+        for(int pixel=0;pixel<120*90;++pixel) assert(directPixel(pixel)==0xA5A5);
+        assertDirectGuards(120*90);
 
         // A carousel neighbor can place the 200 px icon beyond the upper-left
         // canvas boundary. Drawing clips to source x/y 80 without a bad read.

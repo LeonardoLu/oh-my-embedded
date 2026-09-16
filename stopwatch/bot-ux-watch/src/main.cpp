@@ -23,6 +23,7 @@
 #include "WatchUi.h"
 #include "WatchControls.h"
 #include "WatchSettingsCarousel.h"
+#include "WatchSettingsDirectCanvas.h"
 #include "WatchSettingsRows.h"
 #include <UxPointer.h>
 #include <UxSound.h>
@@ -1937,9 +1938,12 @@ private:
 static void drawSettingsList(bool chrome = true) {
     if (chrome) drawTitle("SETTINGS");
     const auto layout=watchcontrols::settingsCarousel();
-    canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
+    const auto band=watchcontrols::settingsCarouselMotionBand();
+    const auto clip=chrome?ux::Rect{layout.x,layout.y,layout.w,layout.h}:band;
+    canvas.setClipRect(clip.x,clip.y,clip.w,clip.h);
     SettingsCarouselView view(canvas);
-    watchsettingscarousel::draw(canvas,view,_settingsCarousel.offset(),
+    watchsettingsdirect::CanvasWriter<M5Canvas> iconCanvas(canvas);
+    watchsettingscarousel::draw(canvas,iconCanvas,view,_settingsCarousel.offset(),
         _settingsCarousel.selected(),kMenuLabels);
     canvas.clearClipRect();
     if (chrome) drawSettingsFooter();
@@ -2771,9 +2775,10 @@ static void render(uint32_t now) {
     bool bandOnly = _listBandOnly && (_screen == Screen::Settings
         || _screen == Screen::TimeSettings || _screen == Screen::Personalize);
     const auto mainLayout=watchcontrols::mainList();
-    const auto carouselLayout=watchcontrols::settingsCarousel();
+    const auto carouselBand=watchcontrols::settingsCarouselMotionBand();
     watchbuttons::Bounds listArea=_screen==Screen::Settings
-        ?watchbuttons::Bounds{carouselLayout.x,carouselLayout.y,carouselLayout.w,carouselLayout.h}
+        ?watchbuttons::Bounds{(int16_t)carouselBand.x,(int16_t)carouselBand.y,
+                             (int16_t)carouselBand.w,(int16_t)carouselBand.h}
         :watchbuttons::Bounds{0,mainLayout.y,kW,mainLayout.h};
     if (baseWasPushed) {
         const uint16_t background=_screen==Screen::Settings?0:settings.style().bgColor;
@@ -2822,6 +2827,9 @@ static void render(uint32_t now) {
 }
 
 static void emitFrameCapture() {
+    // A capture is an independent full-frame render. Do not inherit a partial
+    // update clip from the preceding animation frame or diagnostic command.
+    canvas.clearClipRect();
     if(_touchCalibration) {
         drawTouchCalibration();
     } else if (_screen == Screen::Face) {
@@ -2833,12 +2841,13 @@ static void emitFrameCapture() {
                   statusPanelProgress(millis()));
     } else {
         canvas.fillSprite(_screen==Screen::Settings?0:settings.style().bgColor);
-        if (_screen == Screen::Settings) drawSettingsList();
-        else if (_screen == Screen::TimeSettings) drawTimeSettingsList();
-        else if (_screen == Screen::Personalize) drawPersonalizeList();
+        if (_screen == Screen::Settings) drawSettingsList(true);
+        else if (_screen == Screen::TimeSettings) drawTimeSettingsList(true);
+        else if (_screen == Screen::Personalize) drawPersonalizeList(true);
         else drawEditor();
         drawPointerFeedback();
     }
+    canvas.clearClipRect();
     if(!_touchCalibration) compositeButtonFeedbackIntoCanvas(canvas);
 
     const uint8_t* pixels = (const uint8_t*)canvas.getBuffer();
