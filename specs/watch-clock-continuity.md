@@ -57,6 +57,10 @@ References:
 - `rtc set YYYY-MM-DDTHH:MM:SS`: explicit local wall-time setting with validation
   and verified write; reports `RTC set=1` only on success. No timezone conversion
   or network synchronization occurs in firmware.
+- `tools/sync_rtc.py` (host helper): captures host local time, sends `rtc set`
+  and optionally reads the clock back to report skew. It retries briefly, but a
+  dozed Keys-only watch drops all serial input while asleep, so the watch must
+  be awake (touch or button wake) for a reply.
 - `power`: additionally reports raw `hold_cfg`, `rtc_hold` and LDO enable.
 
 ## Validation
