@@ -2,11 +2,13 @@
 
 M5Stack companion firmware built around one shared **bot-ux** animation component,
 with a Grok Bot-inspired orb and state-driven motion.
+It also includes an official PPS power-supply demo adapted for Core2.
 
 | App | Path | Device | What it does |
 |---|---|---|---|
 | **watch** | `stopwatch/bot-ux-watch/` | M5Stack StopWatch (ESP32-S3) | RTC watch, date, battery/charging, companion and settings; no stopwatch |
 | **codex** | `core2/bot-ux-codex-core2/` | M5Stack Core2 + M5GO Battery Bottom2 v1.3 | Codex Micro-compatible Bluetooth HID controller with host RGB feedback |
+| **pps** | `core2/pps/` | Core2 + PPS + Bottom v1.1 | Official PPS demo with serial output tests and external power research |
 | **ux-components** | `lib/ux-components/` | (shared) | Native text/shapes, pointer gestures, scrolling, keyboard and synthesized/PCM sound; products link selectively |
 | **bot-ux** | `lib/bot-ux/` | (shared) | The bot animation component — expressions, behaviors, eased transitions, IMU motion and personalization |
 
@@ -17,6 +19,7 @@ lib/bot-ux/                 shared bot component (PlatformIO library)
 lib/ux-components/          reusable native UI products and subset fonts
 stopwatch/bot-ux-watch/      watch app (PlatformIO project)
 core2/bot-ux-codex-core2/    core2 app (PlatformIO project)
+core2/pps/                   official PPS demo adaptation (PlatformIO project)
 specs/                       task specs
 wiki/bot-ux/                 searchable bilingual native animation catalog
 tmp/                         scratch / research notes (gitignored)
