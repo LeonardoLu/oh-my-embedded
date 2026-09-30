@@ -27,10 +27,6 @@ uint8_t btnA_lock_flag = 0;
 uint8_t btnB_lock_flag = 0;
 uint8_t btnC_lock_flag = 0;
 
-long flash_counter = 0;
-uint8_t flash_slow_flag = 0;
-uint8_t flash_fast_flag = 0;
-
 bool example_lvgl_lock(int timeout_ms)
 {
     const TickType_t timeout_ticks = (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
@@ -472,14 +468,7 @@ void screen_standby_timer_cb(lv_timer_t *t)
         lv_obj_add_flag(guider_ui.screen_standby_img_cv, LV_OBJ_FLAG_HIDDEN);
     }
 
-    if (output == 1) {
-        lv_obj_clear_flag(guider_ui.screen_standby_img_status_on, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(guider_ui.screen_standby_img_status_off, LV_OBJ_FLAG_HIDDEN);
-    }
-    else if (output == 0){
-        lv_obj_clear_flag(guider_ui.screen_standby_img_status_off, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(guider_ui.screen_standby_img_status_on, LV_OBJ_FLAG_HIDDEN); 
-    }
+    pps_output_status_set(guider_ui.screen_standby_output_status, output == 1);
 
     lv_label_set_text_fmt(guider_ui.screen_standby_label_15, "%.1fV", vin);
     lv_label_set_text_fmt(guider_ui.screen_standby_label_16, "%.0f", temp);
@@ -504,54 +493,8 @@ void screen_running_timer_cb(lv_timer_t *t)
         lv_obj_add_flag(guider_ui.screen_running_img_cv, LV_OBJ_FLAG_HIDDEN);
     }
 
-    if (output == 1) {
-        if (flash_fast_flag) {
-            lv_obj_clear_flag(guider_ui.screen_running_img_status_on, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(guider_ui.screen_running_img_status_off, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(guider_ui.screen_running_img_status_none, LV_OBJ_FLAG_HIDDEN);
-        }
-        else {
-            lv_obj_clear_flag(guider_ui.screen_running_img_status_none, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(guider_ui.screen_running_img_status_on, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(guider_ui.screen_running_img_status_off, LV_OBJ_FLAG_HIDDEN);            
-        }
-    }
-    else if (output == 0){
-        if (flash_slow_flag) {
-            lv_obj_clear_flag(guider_ui.screen_running_img_status_off, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(guider_ui.screen_running_img_status_on, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(guider_ui.screen_running_img_status_none, LV_OBJ_FLAG_HIDDEN);
-        }
-        else {
-            lv_obj_clear_flag(guider_ui.screen_running_img_status_none, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(guider_ui.screen_running_img_status_on, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(guider_ui.screen_running_img_status_off, LV_OBJ_FLAG_HIDDEN);            
-        }
-    }
+    pps_output_status_set(guider_ui.screen_running_output_status, output == 1);
 
     lv_label_set_text_fmt(guider_ui.screen_running_label_15, "%.1fV", vin);
     lv_label_set_text_fmt(guider_ui.screen_running_label_16, "%.0f", temp);    
-}
-
-void flash_timer_cb(lv_timer_t *t)
-{
-    flash_counter++;
-
-    if (flash_counter % 50 == 0) {
-        if (flash_slow_flag) {
-            flash_slow_flag = 0;
-        }
-        else {
-            flash_slow_flag = 1;
-        }
-    }   
-
-    if (flash_counter % 10 == 0) {
-        if (flash_fast_flag) {
-            flash_fast_flag = 0;
-        }
-        else {
-            flash_fast_flag = 1;
-        }
-    }   
 }

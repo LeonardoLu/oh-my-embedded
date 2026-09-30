@@ -740,30 +740,8 @@ void setup_scr_screen_running(lv_ui *ui)
 	//Write style for screen_running_img_1, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
 	lv_obj_set_style_img_opa(ui->screen_running_img_1, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
 
-	//Write codes screen_running_img_status_on
-	ui->screen_running_img_status_on = lv_img_create(ui->screen_running);
-	lv_obj_add_flag(ui->screen_running_img_status_on, LV_OBJ_FLAG_CLICKABLE);
-	lv_img_set_src(ui->screen_running_img_status_on, &_output_on_alpha_94x26);
-	lv_img_set_pivot(ui->screen_running_img_status_on, 50,50);
-	lv_img_set_angle(ui->screen_running_img_status_on, 0);
-	lv_obj_set_pos(ui->screen_running_img_status_on, 226, 0);
-	lv_obj_set_size(ui->screen_running_img_status_on, 94, 26);
-	lv_obj_add_flag(ui->screen_running_img_status_on, LV_OBJ_FLAG_HIDDEN);
-
-	//Write style for screen_running_img_status_on, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-	lv_obj_set_style_img_opa(ui->screen_running_img_status_on, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-
-	//Write codes screen_running_img_status_off
-	ui->screen_running_img_status_off = lv_img_create(ui->screen_running);
-	lv_obj_add_flag(ui->screen_running_img_status_off, LV_OBJ_FLAG_CLICKABLE);
-	lv_img_set_src(ui->screen_running_img_status_off, &_output_off_alpha_94x26);
-	lv_img_set_pivot(ui->screen_running_img_status_off, 50,50);
-	lv_img_set_angle(ui->screen_running_img_status_off, 0);
-	lv_obj_set_pos(ui->screen_running_img_status_off, 226, 0);
-	lv_obj_set_size(ui->screen_running_img_status_off, 94, 26);
-
-	//Write style for screen_running_img_status_off, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-	lv_obj_set_style_img_opa(ui->screen_running_img_status_off, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+	// Fill the top-right cutout with one persistent output badge.
+	ui->screen_running_output_status = pps_output_status_create(ui->screen_running);
 
 	//Write codes screen_running_img_5
 	ui->screen_running_img_5 = lv_img_create(ui->screen_running);
@@ -969,19 +947,6 @@ void setup_scr_screen_running(lv_ui *ui)
 	lv_obj_set_style_text_opa(ui->screen_running_btn_b_long, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
 	lv_obj_set_style_text_align(ui->screen_running_btn_b_long, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
 
-	//Write codes screen_running_img_status_none
-	ui->screen_running_img_status_none = lv_img_create(ui->screen_running);
-	lv_obj_add_flag(ui->screen_running_img_status_none, LV_OBJ_FLAG_CLICKABLE);
-	lv_img_set_src(ui->screen_running_img_status_none, &_output_none_alpha_94x26);
-	lv_img_set_pivot(ui->screen_running_img_status_none, 50,50);
-	lv_img_set_angle(ui->screen_running_img_status_none, 0);
-	lv_obj_set_pos(ui->screen_running_img_status_none, 226, 0);
-	lv_obj_set_size(ui->screen_running_img_status_none, 94, 26);
-	lv_obj_add_flag(ui->screen_running_img_status_none, LV_OBJ_FLAG_HIDDEN);
-
-	//Write style for screen_running_img_status_none, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-	lv_obj_set_style_img_opa(ui->screen_running_img_status_none, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-	
 	//The custom code of screen_running.
 	// lv_obj_remove_style(guider_ui.screen_running_label_v_0, NULL, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
 	// lv_obj_remove_style(guider_ui.screen_running_label_v_1, NULL, LV_PART_MAIN | LV_STATE_FOCUS_KEY);

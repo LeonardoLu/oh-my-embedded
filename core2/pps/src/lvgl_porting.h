@@ -21,7 +21,6 @@ void example_lvgl_unlock(void);
 // Call back function
 void screen_standby_timer_cb(lv_timer_t *t);
 void screen_running_timer_cb(lv_timer_t *t);
-void flash_timer_cb(lv_timer_t *t);
 
 extern TaskHandle_t task_lvgl_handle;
 
@@ -33,4 +32,3 @@ extern uint8_t encoder_test_flag;
 #endif
 
 #endif
-

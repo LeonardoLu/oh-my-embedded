@@ -16,6 +16,8 @@ extern "C" {
 #include "gui_guider.h"
 
 void custom_init(lv_ui *ui);
+lv_obj_t *pps_output_status_create(lv_obj_t *parent);
+void pps_output_status_set(lv_obj_t *badge, bool enabled);
 
 #ifdef __cplusplus
 }

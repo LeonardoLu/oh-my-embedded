@@ -33,7 +33,6 @@ void setting_voltage_current_reduce(uint8_t index);
 
 static lv_timer_t *standby_update_data_task;
 static lv_timer_t *running_update_data_task;
-static lv_timer_t *flash_timer;
 static void screen_standby_event_handler (lv_event_t *e)
 {
 	lv_event_code_t code = lv_event_get_code(e);
@@ -42,8 +41,8 @@ static void screen_standby_event_handler (lv_event_t *e)
 	case LV_EVENT_SCREEN_LOADED:
 	{
 		standby_update_data_task = lv_timer_create(screen_standby_timer_cb, 100, &guider_ui);
-		flash_timer = lv_timer_create(flash_timer_cb, 10, &guider_ui);
 		page_number = PAGE_STANDBY;
+		updateOutputControls();
 		break;
 	}
 	case LV_EVENT_SCREEN_UNLOADED:
@@ -740,7 +739,11 @@ void setting_voltage_current_reduce(uint8_t index)
 void updateOutputControls(void)
 {
 	output_flag = pps.getPowerEnable();
-	if (page_number != PAGE_RUNNING) return;
+	if (page_number == PAGE_STANDBY) {
+		pps_output_status_set(guider_ui.screen_standby_output_status, output_flag == 1);
+		return;
+	}
+	pps_output_status_set(guider_ui.screen_running_output_status, output_flag == 1);
 	if (!output_flag) {
 		lv_obj_add_flag(guider_ui.screen_running_img_output_enable, LV_OBJ_FLAG_HIDDEN);
 		lv_obj_clear_flag(guider_ui.screen_running_img_output_diabled, LV_OBJ_FLAG_HIDDEN);

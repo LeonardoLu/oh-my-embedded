@@ -748,30 +748,8 @@ void setup_scr_screen_standby(lv_ui *ui)
 	lv_obj_set_style_text_opa(ui->screen_standby_btn_2, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
 	lv_obj_set_style_text_align(ui->screen_standby_btn_2, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN|LV_STATE_DEFAULT);
 
-	//Write codes screen_standby_img_status_off
-	ui->screen_standby_img_status_off = lv_img_create(ui->screen_standby);
-	lv_obj_add_flag(ui->screen_standby_img_status_off, LV_OBJ_FLAG_CLICKABLE);
-	lv_img_set_src(ui->screen_standby_img_status_off, &_output_off_alpha_94x26);
-	lv_img_set_pivot(ui->screen_standby_img_status_off, 50,50);
-	lv_img_set_angle(ui->screen_standby_img_status_off, 0);
-	lv_obj_set_pos(ui->screen_standby_img_status_off, 226, 0);
-	lv_obj_set_size(ui->screen_standby_img_status_off, 94, 26);
-
-	//Write style for screen_standby_img_status_off, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-	lv_obj_set_style_img_opa(ui->screen_standby_img_status_off, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
-
-	//Write codes screen_standby_img_status_on
-	ui->screen_standby_img_status_on = lv_img_create(ui->screen_standby);
-	lv_obj_add_flag(ui->screen_standby_img_status_on, LV_OBJ_FLAG_CLICKABLE);
-	lv_img_set_src(ui->screen_standby_img_status_on, &_output_on_alpha_94x26);
-	lv_img_set_pivot(ui->screen_standby_img_status_on, 50,50);
-	lv_img_set_angle(ui->screen_standby_img_status_on, 0);
-	lv_obj_set_pos(ui->screen_standby_img_status_on, 226, 0);
-	lv_obj_set_size(ui->screen_standby_img_status_on, 94, 26);
-	lv_obj_add_flag(ui->screen_standby_img_status_on, LV_OBJ_FLAG_HIDDEN);
-
-	//Write style for screen_standby_img_status_on, Part: LV_PART_MAIN, State: LV_STATE_DEFAULT.
-	lv_obj_set_style_img_opa(ui->screen_standby_img_status_on, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+	// Fill the top-right cutout with one persistent output badge.
+	ui->screen_standby_output_status = pps_output_status_create(ui->screen_standby);
 
 	//Write codes screen_standby_label_15
 	ui->screen_standby_label_15 = lv_label_create(ui->screen_standby);

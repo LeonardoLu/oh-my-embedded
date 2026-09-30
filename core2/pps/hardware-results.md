@@ -60,6 +60,17 @@ Core2 官方 SDK 支持 M-Bus 输入供电；本 demo 设置 `bus_boost=0`，关
 只保留 PPS 的 DC 供电线。串口断开阶段的屏幕与启动结果由用户现场确认，
 未通过电脑连续采样。未测试高亮度、Wi-Fi、扬声器大负载及边运行边充电。
 
+## 右上角 ON/OFF 标志优化
+
+- 待机页与设置页共用常亮状态标志，填满右上角缺口、移除黑色内边，文字居中。
+  删除闪烁定时器与空白状态图；仅在输出状态变化时刷新，进入页面立即同步。
+- 使用项目同版本 LVGL 8.3.10 / RGB565 在电脑上绘制 OFF、ON、再 OFF，
+  检查缺口斜边、填充和文字布局。本次没有开启香蕉输出来检查 ON 外观。
+- PlatformIO 编译与烧录成功，esptool 写入 hash 验证通过。实机启动日志连续
+  四次确认 `ready=true, enabled=0, mode=0, bus_boost=0`，输入回读约 12.21V。
+- 此次 `firmware.bin` 为 1,480,720 字节，SHA-256：
+  `3795b2cc3475a88cc81497b429819a773241963a764dc707672c79290ba03a75`。
+
 ## 备份与原始日志
 
 临时文件均在仓库 gitignored `tmp/pps/`：
@@ -70,12 +81,15 @@ Core2 官方 SDK 支持 M-Bus 输入供电；本 demo 设置 `bus_boost=0`，关
 - `official-ui-core2.bin`：仅适配构建配置时编译的官方界面版本。
 - `build.log`、`upload.log`、`upload-retry.log`、`boot-and-probe.log`、
   `output-test.log`、`final-console-check.log`：原始日志。
+- `badge-build.log`、`badge-upload.log`、`badge-before-upload.log`、
+  `badge-boot-check.log`：状态标志优化的编译、烧录与串口日志；
+  `badge-preview/` 为 LVGL 软件绘制预览。
 
 原分区布局与当前 `default_16MB.csv` 一致：app0 `0x10000 / 0x640000`，
 app1 `0x650000 / 0x640000`，SPIFFS `0xc90000 / 0x360000`。
 921600 / 460800 波特率曾出现传输错误，最终使用 115200 完成备份和烧录。
-最终烧录曾中断一次，重试后写入及 hash 验证成功，随后完成上述串口复核。
-最终 `firmware.bin`：1,483,904 字节，SHA-256：
+首次适配版本的最后一次烧录曾中断，重试后写入及 hash 验证成功，随后完成串口复核。
+该版 `firmware.bin`：1,483,904 字节，SHA-256：
 `5f5dfe2709c1dd174b1f1e4e6952dcff050ee195fd659476e3587aaacc5bdbc8`。
 
 若要恢复烧录前被覆盖的内容，在仓库根目录运行：

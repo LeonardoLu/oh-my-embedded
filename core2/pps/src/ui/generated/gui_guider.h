@@ -68,8 +68,7 @@ typedef struct
 	lv_obj_t *screen_standby_btn_1_label;
 	lv_obj_t *screen_standby_btn_2;
 	lv_obj_t *screen_standby_btn_2_label;
-	lv_obj_t *screen_standby_img_status_off;
-	lv_obj_t *screen_standby_img_status_on;
+	lv_obj_t *screen_standby_output_status;
 	lv_obj_t *screen_standby_label_15;
 	lv_obj_t *screen_standby_label_16;	
 	lv_obj_t *screen_running;
@@ -118,8 +117,7 @@ typedef struct
 	lv_obj_t *screen_running_btn_1;
 	lv_obj_t *screen_running_btn_1_label;
 	lv_obj_t *screen_running_img_1;
-	lv_obj_t *screen_running_img_status_on;
-	lv_obj_t *screen_running_img_status_off;
+	lv_obj_t *screen_running_output_status;
 	lv_obj_t *screen_running_img_5;
 	lv_obj_t *screen_running_label_15;
 	lv_obj_t *screen_running_label_16;	
@@ -137,7 +135,6 @@ typedef struct
 	lv_obj_t *screen_running_btn_a_long_label;
 	lv_obj_t *screen_running_img_loud;
 	lv_obj_t *screen_running_img_mute;	
-	lv_obj_t *screen_running_img_status_none;	
 }lv_ui;
 
 typedef void (*ui_setup_scr_t)(lv_ui * ui);
