@@ -204,7 +204,7 @@ The shared component renders into a caller-owned M5Canvas. Mood, expression and 
 
 ## 九方向眼神 · Gaze perspective
 
-![九方向原生视线图](../../lib/bot-ux/docs/nine-directions-raster.png)
+![九方向原生视线图](../../projects/shared-libs/bot-ux/docs/nine-directions-raster.png)
 
 上排：左上 / 上 / 右上。中排：左 / 正面 / 右。下排：左下 / 下 / 右下。下看的极限位置更接近中心；Auto 是额外的自主视线模式。
 
@@ -219,11 +219,11 @@ Auto follows the effective mood. Thinking and Working replace the avatar with la
 From the repository root:
 
 ```sh
-lib/bot-ux/tools/host-preview/render.sh
+projects/shared-libs/bot-ux/tools/host-preview/render.sh
 ./tmp/botux-preview/botux-preview tmp/botux-preview --catalog
-python3 lib/bot-ux/tools/host-preview/catalog.py tmp/botux-preview
+python3 projects/shared-libs/bot-ux/tools/host-preview/catalog.py tmp/botux-preview
 ```
 
-Packaging requires Pillow. The native C++ renderer emits 72 frames per entry at 120×120, 100 ms apart, using fixed blink seed 1234. The packager encodes GIF assets and embeds them into the searchable HTML. Sources are `lib/bot-ux/src/BotUx.{h,cpp}` and `lib/bot-ux/tools/host-preview/`.
+Packaging requires Pillow. The native C++ renderer emits 72 frames per entry at 120×120, 100 ms apart, using fixed blink seed 1234. The packager encodes GIF assets and embeds them into the searchable HTML. Sources are `projects/shared-libs/bot-ux/src/BotUx.{h,cpp}` and `projects/shared-libs/bot-ux/tools/host-preview/`.
 
 The focused harness verifies coverage, pose direction, mirroring, reduced/zero motion, transition continuity, both orb phase wraps and sleep-loop continuity. These are native host renders, not hardware captures. Component AA ellipse/capsule rendering is real; other M5GFX shapes/fonts remain approximations. GIF quantization and a finite repeating capture can introduce sampling or loop artifacts absent from continuous firmware. No device performance claim is made.
