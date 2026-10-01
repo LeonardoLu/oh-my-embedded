@@ -2,7 +2,7 @@
 """Sync the Watch RTC to this computer's local time over serial.
 
 Sends the device's existing `rtc set YYYY-MM-DDTHH:MM:SS` diagnostic command
-(verified write, see projects/m5stack-stopwatch/bot-ux-watch/specs/watch-clock-continuity.md) and then reads the clock
+(verified write, see projects/m5stack-stopwatch/bot-ux-watch/specs/clock.md) and then reads the clock
 back to report the residual skew. No firmware timezone conversion happens on
 the device; this sends local wall time as-is.
 

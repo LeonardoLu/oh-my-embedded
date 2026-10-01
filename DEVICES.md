@@ -18,7 +18,7 @@
 | --- | --- | --- | --- |
 | M5Stack | M5GO Battery Bottom2 v1.3（Core2） | Codex 控制器底座；10 颗 SK6812，GPIO25；替换原底座后不使用原振动马达 | [Core2 硬件与装配](projects/m5stack-core2/specs/hardware.md) |
 | M5Stack | Module13.2 PPS | Core2 可编程电源模块，内部 I2C 地址 `0x35`；已有 12V DC 空载测试记录 | [PPS 工程](projects/m5stack-core2/pps/README.md) |
-| M5Stack | Base Bottom v1.1 | PPS 装配中的电池/引脚扩展底座，与 Battery Bottom2 区分 | [PPS 实机记录](projects/m5stack-core2/pps/specs/hardware-results.md) |
+| M5Stack | Base Bottom v1.1 | PPS 装配中的电池/引脚扩展底座，与 Battery Bottom2 区分 | [PPS 供电与输出](projects/m5stack-core2/pps/specs/power-and-output.md) |
 
 ## 后续补充
 

@@ -110,7 +110,9 @@ An idle source adopts the gain immediately, so starting at zero produces silence
 Active changes use a 4 ms exponential smoothing time constant in newly synthesized
 samples; queued samples retain their old gain. Muting preserves the selected
 volume. Core2 exposes the same range through `AudioFeedback::setVolume`; its six
-UI steps map to 0, 64, 120, 180, 220, and 255. The default is step 3.
+UI steps map to 0, 16, 30, 45, 96, and 255 with speaker master 128.
+The default is step 3; device gain decisions are defined in
+[Core2 feedback](../../m5stack-core2/bot-ux-codex-core2/specs/feedback.md).
 
 ## Sound vocabulary and synthesis
 

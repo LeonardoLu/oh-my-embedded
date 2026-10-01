@@ -24,7 +24,7 @@ pio run -d projects/m5stack-stopwatch/bot-ux-watch -t upload --upload-port <Stop
 校时工具：`python3 projects/m5stack-stopwatch/bot-ux-watch/tools/sync_rtc.py --help`，
 使用安装了 `pyserial` 的 Python 环境（例如 PlatformIO 的 Python 环境）。
 
-主机检查不等同于实机触摸、声学或灯效验收；历史证据与限制见项目 specs。
+主机检查不等同于实机触摸、声学或灯效验收；各项行为与验证边界见项目 specs。
 
 ## 功能与操作
 
@@ -70,5 +70,5 @@ diagonals. Temporary screen-directed gaze returns to that preference; normal
 presets retain continuous motion. Idle rests at the canonical upper-right pose;
 LookingAround explores the full gaze field, and FaceSide controls automatic or
 fixed left/right mirroring. Watch contact and gaze validation is tracked in
-[the current gaze specification](specs/watch-gaze-experience.md) and
-[the combined acceptance record](../../shared-libs/specs/companion-catalog-validation.md).
+[the current gaze specification](specs/companion.md) and
+[verification methods and limits](../../shared-libs/specs/verification.md).

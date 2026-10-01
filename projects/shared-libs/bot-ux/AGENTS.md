@@ -66,8 +66,7 @@ implementation is `src/BotUx.cpp`.
 - `update(nowMs)` + `draw()` — host drives the frame loop.
 
 
-Current motion contracts: [orb motion](specs/orb-motion-experience.md),
-[Happy/Done](specs/bot-happy-done-experience.md), and
-[Watch gaze](../../m5stack-stopwatch/bot-ux-watch/specs/watch-gaze-experience.md).
-They supersede older vocabulary/touch records where those disagree. Keep
-root `wiki/bot-ux/intro.md` and `intro.html` synchronized through the native renderer.
+Current contracts: [behavior](specs/behavior.md), [gaze](specs/gaze.md),
+[orb motion](specs/orb-motion.md) and [Happy/Done](specs/happy-done.md).
+Watch timing belongs to its [companion spec](../../m5stack-stopwatch/bot-ux-watch/specs/companion.md).
+Keep root `wiki/bot-ux/intro.md` and `intro.html` synchronized through the native renderer.

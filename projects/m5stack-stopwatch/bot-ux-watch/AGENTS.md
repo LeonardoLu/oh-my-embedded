@@ -105,9 +105,10 @@ official bot treatment uses dark pill eyes.
 - Face: RTC `yyyy/mm/dd {weekday}` and time share one information block. A hideable
   English/Chinese description occupies the other band; Layout swaps these regions. Battery
   has no permanent percentage; its factory-inspired top panel slides in over 300 ms
-  and shows percentage, a horizontal gauge, green charging fill and bolt.
+  and shows percentage and a gauge on a measured-level green/yellow/red fill;
+  charging adds a separate bolt. Rendering and hit testing share its geometry.
 - Settings is the horizontal Time, Bot, Display, Sound and Power hierarchy described
-  in `specs/watch-settings-carousel.md`. Time owns time/date/format; Display owns
+  in `specs/settings.md`. Time owns time/date/format; Display owns
   brightness, theme, indicator, button feedback and both layout controls; Sound owns
   master/startup/button/alert switches; Power owns the complete idle and forced-sleep policy.
   Personality includes expression, action, shape, eye style, HSV color, action amount
@@ -153,8 +154,6 @@ official bot treatment uses dark pill eyes.
 - Match existing code style; keep comments purposeful. No per-frame heap allocation.
 - Keep the state machine in `main.cpp`; modules are plain classes.
 - Persist settings with `Preferences` (NVS). Do not over-engineer edge cases.
-- The user's current goal, `specs/watch-settings-carousel.md`,
-  `specs/watch-power-settings-iteration.md`, `specs/watch-gaze-experience.md` and
-  `specs/watch-ambient-experience.md` supersede older stopwatch notes.
-- Keep the final contact replay and on-device evidence in
-  `specs/touch-gaze-validation.md`.
+- Keep the topical contracts in `specs/README.md` consistent with the implementation.
+  Specs explain current facts, decisions, causes and verification limits. Raw
+  contact replays and deployment logs belong in ignored `tmp/`, not spec appendices.

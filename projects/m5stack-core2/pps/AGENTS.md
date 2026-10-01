@@ -15,6 +15,6 @@
 - Confirm that outputs are empty before running `tools/test_output.py`.
 - Backups, flash binaries, raw logs, and schematic downloads belong in `tmp/`.
 
-- Hardware acceptance is recorded in `specs/hardware-results.md`; keep future
-  project requirements and validation under `specs/`. Device assembly context is
-  in `../specs/hardware.md`.
+- `specs/power-and-output.md` defines power/output decisions and bounded hardware
+  conclusions. Keep raw runs in `tmp/`; update current facts in the spec.
+  Device assembly context is in `../specs/hardware.md`.

@@ -84,15 +84,15 @@ See [device hardware](../specs/hardware.md); keep app-specific integration below
 - `Settings::animate()` requests only the private Bot preview region; use
   `drawAnimatedPreview()` and `previewRect()` for partial frames. First entry,
   interaction and capture still draw the whole page. Do not redraw static AA
-  selectors every preview frame (native cost drops from full-page ~88 ms).
+  selectors every preview frame; their content is unchanged during animation.
 - Shared UX fonts/shapes use RGB565 coverage on canvases. Active status glyphs
   have color without tiles; the battery number is inside its icon.
 - Bottom2 offers Off/Status/Alive. Both active modes keep the six card identity
   colors and encode known host states through distinct rhythms; Alive adds
   traveling interaction and fresh-reply emphasis. Reduced Motion is static. Both
   mode Off and brightness zero immediately clear LEDs; notify(0) cancels notices.
-- Current contracts: [touch/gaze](../../m5stack-stopwatch/bot-ux-watch/specs/touch-gaze-iteration.md),
-  [agent signals](specs/agent-signal-contract.md) and
-  [Alive lighting](specs/core2-alive-lighting.md). Validate with root
+- Current contracts: [connection and controls](specs/connection.md),
+  [agent signals](specs/agent-signals.md) and
+  [Alive lighting](specs/feedback.md). Validate with root
   `tools/check_host.sh` and native capture/telemetry; never confuse serial transfer
   FPS with steady animation.

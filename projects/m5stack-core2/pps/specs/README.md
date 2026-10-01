@@ -1,9 +1,9 @@
-# PPS 工程记录
+# PPS 工程规格
 
-当前功能、串口接口与供电约束见上级 README/AGENTS；本目录保存实机验收，保留原始测试日期和边界。
+描述适用装配、电源通路、输出控制与有条件的测量结论。
 
 [上级说明](../README.md)
 
-| 文档 | 内容 |
+| 主题 | 内容 |
 | --- | --- |
-| [hardware-results.md](hardware-results.md) | 实机记录 - 2026-09-30（Asia/Shanghai） |
+| [power-and-output.md](power-and-output.md) | 供电、使能条件、控制台与空载结论 |

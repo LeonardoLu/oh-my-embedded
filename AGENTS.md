@@ -11,8 +11,8 @@ hardware or SDK requirement.
 - `projects/<brand-model>/<project>/`: independently buildable firmware, project
   README, AGENTS, functional `specs/`, tests and validation evidence.
 - `projects/shared-libs/<library>/`: reusable libraries and their own specs.
-- `projects/shared-libs/specs/`: preserved cross-device companion iteration and
-  acceptance records; these are historical context, not new-device defaults.
+- `projects/shared-libs/specs/`: shared integration decisions and verification
+  boundaries; device-specific behavior remains with its owner.
 - `tools/`: repository-wide host checks and diagnostics.
 - `wiki/bot-ux/`: bilingual illustrated catalog with native animation captures.
 - `tmp/`: ignored scratch, research, build logs and generated previews.
@@ -26,9 +26,12 @@ revisions or acceptance; leave unconfirmed inventory fields explicit.
 ## Working rules
 
 - Match existing code style; keep comments purposeful. Do not over-engineer.
-- The user's current goal and newer applicable specs supersede historical notes.
-  Keep durable implementation and validation notes in the owning `specs/`;
-  `tmp/` must never be the sole source of an implementation contract.
+- Specs describe current facts, decisions, rationale and evidence limits. Rewrite
+  the owning topic when behavior changes; do not append task timelines, agent
+  assignments, upload logs or one-off build hashes. Keep history in Git and raw
+  investigation/output in ignored `tmp/`; preserve useful conclusions in specs.
+- Reconcile conflicting prose against the current user goal and implementation.
+  Distinguish implemented behavior, design intent and unmeasured hardware claims.
 - Preserve vendor licenses and project-private dependencies. Shared components
   belong in `projects/shared-libs`; keep their actual platform limits explicit.
 - Update build, test, tool, documentation and asset references when moving files.

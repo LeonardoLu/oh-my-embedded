@@ -24,7 +24,7 @@ projects/
   shared-libs/
     bot-ux/                        Bot 动画组件及规格
     ux-components/                 UI、输入、字体和声音组件及规格
-    specs/                         两个陪伴应用的共同迭代与验收历史
+    specs/                         共享集成决策与验证边界
 tools/                             跨工程检查、抓帧与 HID 诊断
 wiki/bot-ux/                        双语原生动画图鉴
 tmp/                               临时文件与构建记录（gitignored）

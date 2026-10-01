@@ -105,8 +105,8 @@ flowchart LR
 单根线的确认方法：完成串口测试、关闭输出后，保留 PPS 的 12V 输入，
 将 Bottom 电池开关置 OFF，再拔掉 Core2 USB。若持续运行，说明供电来自 PPS。
 随后关闭并重新打开 PPS DC 输入，确认能冷启动；仅拔 USB 后继续运行，
-但保留电池开启，无法排除设备仍靠电池供电。实际执行结果见
-[hardware-results.md](specs/hardware-results.md)。
+但保留电池开启，无法排除设备仍靠电池供电。适用条件与验证结论见
+[供电与输出规格](specs/power-and-output.md)。
 
 ## 官方资料
 

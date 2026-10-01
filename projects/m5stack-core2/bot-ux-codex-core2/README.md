@@ -21,7 +21,7 @@ sh tools/check_host.sh
 pio run -d projects/m5stack-core2/bot-ux-codex-core2 -t upload --upload-port <Core2-port>
 ```
 
-主机检查不等同于实机触摸、声学或灯效验收；历史证据与限制见项目 specs。
+主机检查不等同于实机触摸、声学或灯效验收；各项行为与验证边界见项目 specs。
 
 ## 功能与操作
 
@@ -46,17 +46,16 @@ A fresh Working → New reply transition adds an attention highlight for up to
 30 seconds. Screen or button interaction dismisses it; persistent green does
 not restart the window. Authoritative host colors and states remain intact.
 Meaningful transitions trigger a bounded highlight and optional sound, with silent
-initial/reconnect baselines. See [the signal contract](specs/agent-signal-contract.md). End-to-end connection
-validation is tracked in [the iteration record](specs/interaction-validation.md).
+initial/reconnect baselines. See [the signal contract](specs/agent-signals.md). Connection readiness and controls are defined in [the connection spec](specs/connection.md).
 
 Holding MIC sends push-to-talk press/release events; the Mac captures the audio.
 Releasing or dragging off stops the hold, and the host decides whether to submit.
 Other buttons activate on release in the original target. The bottom left/right
 halves switch pages around a compact page count. Double-tap the battery to open
 settings for brightness, audio, theme, animation, motion, reduced motion and LED
-brightness. The Lights page offers Off, Host and Alive modes plus transition
-notifications. Alive preserves host hues with gentle breathing, a traveling
-highlight and selection feedback; Reduced Motion keeps it static. Bot
+brightness. The Lights page offers Off, Status and Alive modes plus transition
+notifications. Alive keeps slot identity hues, represents projected host states through rhythms, and adds
+a traveling highlight and selection feedback; Reduced Motion keeps it static. Bot
 personalization includes naming, language, complete combination preview and live RGB sliders for body, eyes and
 accent; valid releases save in NVS and dragging outside cancels the color edit.
 

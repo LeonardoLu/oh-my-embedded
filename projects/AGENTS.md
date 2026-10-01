@@ -4,8 +4,9 @@
   firmware or experiment. Each level has README and AGENTS.
 - Keep hardware/assembly contracts in device `specs/`, app contracts and acceptance
   in project `specs/`, and reusable component contracts beside their shared library.
-- Keep cross-device historical companion records in `shared-libs/specs/` intact;
-  link to them from project indexes. They do not govern unrelated future devices.
+- Keep shared integration and verification decisions in `shared-libs/specs/`;
+  project indexes link to their owners. Specs state current behavior and reasons,
+  not a sequence of tasks, deployments or superseded requirements.
 - Current M5Stack apps use PlatformIO/Arduino and `espressif32@6.13.0`. Respect the
   pinned dependencies in each app. New devices may use a different SDK/toolchain.
 - Apps at `<device>/<project>` discover shared libraries through
