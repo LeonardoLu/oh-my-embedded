@@ -24,13 +24,17 @@ are replaced by explicit test doubles. Covered behavior includes:
 - Charging/unavailable power and runtime semantics and idle scheduling boundaries.
 - The actual output-only speaker worker against explicit codec/RTOS test doubles:
   silent startup/restore, no output while muted, bounded 100 ms local PCM, and
-  codec close after feedback or a partially opened codec failure. This checks
-  control flow, not physical sound/power.
+  draining both 2880-byte and 4096-byte DMA rings before mute/close. The test
+  rejects the earlier immediate-close implementation because tone samples remain
+  queued. Open/query/write/drain failures and mid-play mute close the codec.
+  This checks control flow, not physical sound/power.
 - Generated factory scene traversal: removed actions have hidden ancestors,
   retained apps keep their launcher entries and Home provides its three requested
   shortcuts plus a Weather card route. Icon-only buttons are centered in two
   columns; controls/sliders match pointer hit regions and compact Battery labels
-  fit their compiled font.
+  fit their compiled font. The compiled Bluetooth connection badge uses the
+  enabled/connected visibility predicate; its non-interactive geometry stays
+  within the button while the enabled tile retains its original color.
   About and the independent protocol detail have separate navigation routes.
 - Settings scene generation: the update page, update bindings and actions are
   absent. Firmware inspection rejects linked update-client symbols, the vendor
@@ -67,27 +71,36 @@ observed UI and BLE tests. No startup abort or missing-font failure recurred.
 The device's existing Wi-Fi configuration reconnects successfully.
 
 The Apple Development-signed macOS Corallium app discovered ESP-Mosaico and
-completed an encrypted connection. Device logs confirmed authentication success
-and notification subscription; the app received device.info, device.status and
-periodic status updates. App time synchronization returned success and displayed
+completed ordinary GATT connections without pairing. The user confirmed that the
+macOS device-pairing dialog no longer appeared. Device logs confirmed notification
+subscription; the app received device.info, device.status and periodic status updates. App time synchronization returned success and displayed
 UTC+08:00 with source Corallium. A Wi-Fi configuration request returned success,
 progressed through connecting, and reported connected with a DHCP address.
 The app's visible activity log contains operation/result metadata, not Wi-Fi
 credentials. After more than two minutes enabled, disconnection and a new scan
-still allowed a successful connection. One intervening scan found no device;
-this observation does not establish a radio range or discovery-time guarantee.
+still allowed a successful connection. The plain-GATT build also completed an
+explicit disconnect/reconnect without a pairing step. Some scans found no device,
+and an early connection ended after its initial replies; subsequent connections
+remained active during configuration and state updates. These observations do not
+establish a radio range, discovery-time or long-term link-stability guarantee.
 
 The official CDC normal-reset sequence completed a powered software restart.
 The saved enabled Bluetooth state was followed by discovery and another successful
 app connection; Wi-Fi rejoined and UTC+08:00 remained saved. Network time was
 already synchronized when the app read status, so this is not offline RTC-retention
 evidence. The saved-off and factory-reset BLE paths remain host-tested only.
-The CDC download-reset sequence also reached ROM USB, but its warm RAM-stub start
-did not respond; a cold BOOT/POWER entry was required for reliable flashing.
+The factory CDC download-reset sequence reached ROM USB, and the official ROM
+loader then wrote and verified all six images with no stub and no manual button
+sequence. A warm RAM-stub launch had not responded, so that path is not accepted
+as the automatic-update workflow.
 
-Local volume interaction opened the official output codec on the physical board.
-Audible output, the final page layout and mute restoration still require user
-confirmation; a successful codec-open log alone is not acoustic acceptance.
+The user confirmed audible feedback after raising volume and unmuting on the
+DMA-draining speaker implementation. The three Home shortcuts, Weather card
+navigation and centered icon-only controls were also confirmed on the device.
+The badge refinement passed the same resource checks, booted, and reconnected
+to the Mac; its physical visual appearance has not been separately confirmed.
+Mute/previous-volume restoration across reboot and battery-detail layout remain
+separate checks; codec-open logs alone are not acoustic acceptance.
 Compilation and these observations do not establish battery accuracy, calibrated
 power savings, RTC retention, long-term stability or achieved interactive FPS.
 
@@ -96,7 +109,7 @@ After confirming the CoreBoard revision, use the same device for comparisons:
 | Area | Procedure and observable result |
 | --- | --- |
 | USB | After leaving ROM download mode, application Type-C CDC must enumerate and expose startup logs. Reopen the console and verify the official DTR/RTS download-reset sequence returns to the ROM loader. |
-| BLE | Fresh/reset device stays off. Enable locally: ESP-Mosaico appears and stays discoverable beyond two minutes. Encrypted subscription/RX succeeds; unencrypted RX fails. Verify saved on/off after reboot, Connected state, local close, disconnect/reconnect framing and no status event before device.info completes. |
+| BLE | Fresh/reset device stays off. Enable locally: ESP-Mosaico appears and stays discoverable beyond two minutes. Ordinary unpaired subscription/RX succeeds without a system pairing dialog. Verify saved on/off after reboot, Connected state, local close, disconnect/reconnect framing and no status event before device.info completes. |
 | Audio/UI | Confirm two button columns and both sliders respond at their visible positions. Releasing volume/unmuting sounds once; mute produces silence and restores the previous level after reboot. No startup/background sound or microphone task. Confirm shortened Battery values and independent protocol page, with the three Home shortcuts and a working Weather card. |
 | Wi-Fi | Set from app after local Wi-Fi off, join, inspect local SSID/IP, restart and confirm enabled state; wrong password reports failed; forget erases credentials and remains off after restart. Include a 32-byte SSID. |
 | Time | Set without internet; powered software reset should retain plausible RTC time with estimated quality. Full power removal must show invalid/--:-- until app or NTP sync. Measure drift against an external reference. |

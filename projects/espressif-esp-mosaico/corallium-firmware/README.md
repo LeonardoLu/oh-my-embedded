@@ -5,7 +5,8 @@ Corallium BLE provisioning, offline app time synchronization, battery power/runt
 telemetry and reduced background/rendering work. Official update checking and
 upgrade entries are removed; About still shows the installed version.
 See [behavior and limits](specs/behavior.md). The connected board identifies as
-CoreBoard 1.2 through eFuse. Final runtime acceptance remains pending.
+CoreBoard 1.2 through eFuse. [Validation evidence](specs/validation.md) separates
+observed UI/BLE behavior from unmeasured power, battery and offline RTC behavior.
 
 ## Source and build
 
