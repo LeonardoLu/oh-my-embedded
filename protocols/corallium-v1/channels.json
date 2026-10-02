@@ -1,0 +1,16 @@
+{
+  "protocol": "corallium",
+  "version": 1,
+  "encoding": "utf-8",
+  "framing": "jsonl",
+  "delimiter_hex": "0a",
+  "max_line_bytes": 2048,
+  "request_timeout_ms": 10000,
+  "max_in_flight": 1,
+  "ble": {
+    "service": "7D2A0001-7E6D-4C55-A8D2-6B6D5E8F9010",
+    "rx": {"uuid": "7D2A0002-7E6D-4C55-A8D2-6B6D5E8F9010", "properties": ["write"], "encryption_required": true},
+    "tx": {"uuid": "7D2A0003-7E6D-4C55-A8D2-6B6D5E8F9010", "properties": ["notify"], "default_chunk_bytes": 20}
+  },
+  "serial": {"optional": true, "app_supported": false, "baud_rate": 115200}
+}

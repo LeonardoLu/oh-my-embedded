@@ -31,3 +31,8 @@ Thumbs.db
 *.o
 *.a
 sdkconfig.old
+
+# ---- Xcode per-user state ----
+xcuserdata/
+*.xcuserstate
+DerivedData/
