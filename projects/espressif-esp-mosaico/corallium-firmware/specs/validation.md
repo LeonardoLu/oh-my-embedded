@@ -24,6 +24,9 @@ are replaced by explicit test doubles. Covered behavior includes:
 - Charging/unavailable power and runtime semantics and idle scheduling boundaries.
 - Generated factory scene traversal: removed actions have hidden ancestors and
   cannot become visible through their original child visibility bindings.
+- Settings scene generation: the update page, update bindings and actions are
+  absent. Firmware inspection rejects linked update-client symbols, the vendor
+  update component and its official manifest URL.
 
 The full ESP32-S31 firmware compiled and linked with the pinned ESP-IDF checkout,
 RISC-V toolchain `esp-16.1.0_20260609`, and the official board generator. The build
@@ -39,12 +42,17 @@ linker wrapping flags. It requires TinyUSB CDC and both factory
 auto-init/download options, the pre-application wrapper, console initialization
 and reset handlers to remain linked. This catches a build that silently omits
 USB startup even though the board declares the console device. Host-side USB
-enumeration and DTR/RTS reset behavior still require the physical device.
+enumeration and DTR/RTS reset behavior are separate physical-device checks.
 
 ## Hardware verification still required
 
-No identified ESP-Mosaico board was available to this firmware subtask. No serial
-port was opened and no image was flashed. Compilation does not establish display,
+The attached ESP32-S31 board reports CoreBoard version 1.2 through eFuse. A complete
+16 MiB backup was captured before writing, and the initial six-image installation
+was hash-verified while preserving NVS. Application USB CDC enumerated and exposed
+startup logs. Those logs identified a settings subscription before update-service
+initialization; the custom build now removes that service and retains weather
+initialization before UI subscriptions. The resulting firmware still requires
+final runtime verification. Compilation and flash verification do not establish
 BLE interoperability, sleep/wake, battery accuracy, RTC retention or achieved FPS.
 
 After confirming the CoreBoard revision, use the same device for comparisons:

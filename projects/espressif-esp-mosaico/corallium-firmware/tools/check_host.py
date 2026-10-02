@@ -50,5 +50,12 @@ if args.upstream:
     assert next(o for o in objects if o.get("name") == "launcher_flow")["page_count"] == 2
     assert any(o.get("bind") == "quick_ble_state" for o in objects), "BLE state label missing"
     print("Factory scene: removed actions have no visible/touchable route")
+    run([sys.executable, upstream / "components/mosaic_ui/apps/settings/scene/gen_scene.py"])
+    settings = json.loads((upstream / "components/mosaic_ui/apps/settings/scene/settings_480.json").read_text())
+    for obj in settings["objects"]:
+        encoded = json.dumps(obj).lower()
+        assert "settings_update" not in encoded, "Update page/action remains in Settings scene"
+        assert "software update" not in encoded, "Update entry remains in Settings scene"
+    print("Settings scene: update page, bindings and actions are absent")
 else:
     print("Protocol/scene checks require --upstream with configured factory checkout.")

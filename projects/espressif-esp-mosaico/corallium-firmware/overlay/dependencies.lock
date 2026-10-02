@@ -2008,14 +2008,6 @@ dependencies:
       path: components/trial_provider
       type: local
     version: '*'
-  update_check_service:
-    dependencies:
-    - name: idf
-      version: '>=6.0'
-    source:
-      path: components/update_check_service
-      type: local
-    version: '*'
   usb_hs_console:
     dependencies:
     - name: espressif/esp_tinyusb
@@ -2164,11 +2156,10 @@ direct_dependencies:
 - tda-2030/claw_video
 - tda-2030/esp_vision_core
 - trial_provider
-- update_check_service
 - usb_hs_console
 - weather_service
 - wechat_binding_service
 - wifi_manager
-manifest_hash: 8854ea6b5e48283425fefda979143828b5cec73bea84e770b06f12eee733058c
+manifest_hash: 12423b454a4e3be6c8f42e8401f2e9d3c21b0c08bfc5ea2b9c3b7f1833f2b8b0
 target: esp32s31
 version: 3.0.0

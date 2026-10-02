@@ -20,6 +20,12 @@ Hidden offscreen ancestor nodes preserve generated factory accessor ABI.
 Settings root exposes Network, Display, Battery and About. Claw/AI/IM/security
 integration rows are removed from the root mapping. Network's connection action
 controls the BLE window instead of an inactive AP configuration portal.
+About retains the locally installed firmware version, hardware identity and
+protocol capabilities. Software update checking and upgrade navigation are
+removed: no update page, update actions, background manifest client or official
+update URL is included in this build. Firmware is installed explicitly over USB.
+Weather initializes before the settings platform and Hub, so their initial
+subscriptions see an initialized provider.
 Battery shows charge, voltage, signed gauge current, discharge power and estimated
 runtime. Missing samples immediately invalidate telemetry. Cell discharge power
 is `millivolts * -average_current_mA / 1000`; charging and near-zero current are

@@ -21,7 +21,6 @@
 #include "nvs_flash.h"
 #include "wifi_manager.h"
 #include "weather_service.h"
-#include "update_check_service.h"
 
 static network_provisioning_service_handle_t network;
 static const char *TAG = "mosaico_boot";
@@ -66,13 +65,11 @@ void app_main(void) {
     ESP_ERROR_CHECK(app_settings_service_create(&settings));
     ESP_ERROR_CHECK(wifi_manager_init());
     ESP_ERROR_CHECK(network_provisioning_service_create(&network));
-    ESP_ERROR_CHECK(mosaic_settings_platform_init(&(mosaic_settings_platform_config_t){
-        .settings = settings, .network_provisioning = network, .save_config = save_config}));
+    /* Hub subscribes to weather during UI startup. */
     ESP_ERROR_CHECK(weather_service_init(&(weather_service_config_t){
         .user_agent = "ESP-Mosaico/0.1 https://github.com/esp-mosaico/esp-mosaico-claw", .refresh_interval_ms = 3600000, .stale_after_ms = 21600000}));
-    ESP_ERROR_CHECK(update_check_service_init(&(update_check_service_config_t){
-        .manifest_url = CONFIG_APP_UPDATE_MANIFEST_URL, .product = "esp-mosaico-factory-derivative",
-        .current_version = "0.1.0", .user_agent = "ESP-Mosaico/0.1", .timeout_ms = 10000, .max_body_size = 4096}));
+    ESP_ERROR_CHECK(mosaic_settings_platform_init(&(mosaic_settings_platform_config_t){
+        .settings = settings, .network_provisioning = network, .save_config = save_config}));
     ESP_ERROR_CHECK(app_settings_service_restore_display(settings));
     ESP_ERROR_CHECK(app_settings_service_restore_brightness(settings));
     ESP_ERROR_CHECK(mosaic_ui_start());

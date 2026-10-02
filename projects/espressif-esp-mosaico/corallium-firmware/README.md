@@ -2,8 +2,10 @@
 
 Factory-firmware derivative with a simpler launcher/settings/control center,
 Corallium BLE provisioning, offline app time synchronization, battery power/runtime
-telemetry and reduced background/rendering work. See [behavior and limits](specs/behavior.md).
-The physical CoreBoard revision is not yet confirmed; no hardware acceptance is claimed.
+telemetry and reduced background/rendering work. Official update checking and
+upgrade entries are removed; About still shows the installed version.
+See [behavior and limits](specs/behavior.md). The connected board identifies as
+CoreBoard 1.2 through eFuse. Final runtime acceptance remains pending.
 
 ## Source and build
 
@@ -73,6 +75,8 @@ overflow/NUL/timeout recovery, JSON recursion/UTF-8 guards, clock ranges, Wi-Fi 
 persistence and reboot enable state, response-shaped mutation rejection, charging
 telemetry, and renderer scheduling. Scene validation checks
 removed controls have hidden ancestors and no touchable route.
+Settings scene checks also require update navigation and actions to be absent;
+the linked-firmware check rejects the vendor updater and official manifest URL.
 
 For BLE, open the Bluetooth tile or hold the top key for 500 ms, then connect in
 Corallium within 120 seconds (the device advertises as ESP-Mosaico). Connect while adjacent to the device; the GATT link
