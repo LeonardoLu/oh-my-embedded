@@ -55,19 +55,39 @@ and reset handlers to remain linked. This catches a build that silently omits
 USB startup even though the board declares the console device. Host-side USB
 enumeration and DTR/RTS reset behavior are separate physical-device checks.
 
-## Hardware verification still required
+## Observed hardware behavior and remaining checks
 
-The attached ESP32-S31 board reports CoreBoard version 1.2 through eFuse. A complete
-16 MiB backup was captured before writing, and the initial six-image installation
-was hash-verified while preserving NVS. Application USB CDC enumerated and exposed
-startup logs. Those logs identified a settings subscription before update-service
-initialization; the custom build now removes that service and retains weather
-initialization before UI subscriptions. Further startup logs identified incorrect
-font ordinals in the Hub bundle; the build now orders and verifies those resources.
-The resource-corrected firmware reached Ready and connected to Wi-Fi on the
-identified unit. The revised controls, speaker path and persistent BLE behavior
-require renewed runtime verification. Compilation and flash verification do not establish
-BLE interoperability, sleep/wake, battery accuracy, RTC retention or achieved FPS.
+The identified ESP32-S31 board reports CoreBoard version 1.2 through eFuse. A
+complete 16 MiB backup was captured before writing. All six installed images were
+hash-verified while preserving NVS. The current firmware reaches Ready, initializes
+the native UI, exposes application USB CDC and remained running throughout the
+observed UI and BLE tests. No startup abort or missing-font failure recurred.
+The device's existing Wi-Fi configuration reconnects successfully.
+
+The Apple Development-signed macOS Corallium app discovered ESP-Mosaico and
+completed an encrypted connection. Device logs confirmed authentication success
+and notification subscription; the app received device.info, device.status and
+periodic status updates. App time synchronization returned success and displayed
+UTC+08:00 with source Corallium. A Wi-Fi configuration request returned success,
+progressed through connecting, and reported connected with a DHCP address.
+The app's visible activity log contains operation/result metadata, not Wi-Fi
+credentials. After more than two minutes enabled, disconnection and a new scan
+still allowed a successful connection. One intervening scan found no device;
+this observation does not establish a radio range or discovery-time guarantee.
+
+The official CDC normal-reset sequence completed a powered software restart.
+The saved enabled Bluetooth state was followed by discovery and another successful
+app connection; Wi-Fi rejoined and UTC+08:00 remained saved. Network time was
+already synchronized when the app read status, so this is not offline RTC-retention
+evidence. The saved-off and factory-reset BLE paths remain host-tested only.
+The CDC download-reset sequence also reached ROM USB, but its warm RAM-stub start
+did not respond; a cold BOOT/POWER entry was required for reliable flashing.
+
+Local volume interaction opened the official output codec on the physical board.
+Audible output, the final page layout and mute restoration still require user
+confirmation; a successful codec-open log alone is not acoustic acceptance.
+Compilation and these observations do not establish battery accuracy, calibrated
+power savings, RTC retention, long-term stability or achieved interactive FPS.
 
 After confirming the CoreBoard revision, use the same device for comparisons:
 
