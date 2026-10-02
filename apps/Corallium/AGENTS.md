@@ -2,6 +2,9 @@
 
 - Keep a single SwiftUI application target for macOS and iOS. Preserve the owner's
   bundle identifier and signing team; local unsigned builds may override signing.
+- macOS defaults to Automatic / Apple Development signing so code identity survives
+  rebuilds. Ad-hoc signing must be explicit and use a separate build directory;
+  never silently downgrade the app used for Bluetooth permission validation.
 - Protocol definitions live in `../../protocols`; capabilities come from the
   connected firmware, never from a model-name assumption.
 - BLE mutations are explicit user actions. One request in flight, bounded framing,

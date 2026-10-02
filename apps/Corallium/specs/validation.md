@@ -32,6 +32,22 @@ StopWatch 当前产品能力不包含 Wi-Fi，网络 UI 由固件声明隐藏，
 与设备功耗/续航需要分别验证。
 不将构建成功或串口枚举当作硬件验收。
 
+## macOS 开发签名
+
+默认 macOS 构建使用 Automatic / Apple Development，匹配现有证书的 OU 与项目团队
+`ZZM746LVXC`，保留原 bundle ID。缺少匹配证书时直接失败；显式 `macos-adhoc`
+用于单独目录的编译检查。无需修改系统隐私数据库或自定义放宽的签名要求。
+
+已构建 Debug 与 Release 两个 SHA-256 不同的 macOS 二进制，导出各自 designated
+requirement，分别通过 `codesign --verify --deep --strict -R` 校验另一个构建。
+两者均满足对方要求，签名条件包含 bundle ID、Apple 信任链和开发证书身份，
+不绑定某次构建的 cdhash。开发签名 App 的 sandbox 与 Bluetooth entitlement 均为 true；
+完整客户端自测与模拟集成通过。
+
+此验证覆盖签名要求的双向兼容性。TCC 首次允许与跨重编译授权保留是独立的系统
+实测项；从旧 ad-hoc App 切换到证书签名身份后，仍需用户首次允许蓝牙访问。
+依据：[Apple TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)。
+
 ## 菜单栏验证边界
 
 macOS 使用原生 SwiftUI MenuBarExtra，与窗口共享连接状态，包含打开窗口、校时、

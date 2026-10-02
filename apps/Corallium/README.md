@@ -11,9 +11,12 @@
 保留项目原有 bundle ID `com.github.leonardolu.Corallium` 与签名团队。
 
 ```sh
-# 本地 macOS ad-hoc 签名构建（保留 App Sandbox 与 Bluetooth entitlement）
+# macOS 开发签名构建（使用项目团队，保留 Sandbox 与 Bluetooth entitlement）
 bash apps/Corallium/tools/build.sh macos
 open tmp/corallium-build/Build/Products/Debug/Corallium.app
+
+# 无开发证书时的显式构建检查；输出隔离，不覆盖上面的开发签名 App
+bash apps/Corallium/tools/build.sh macos-adhoc
 
 # iOS 真机目标（编译验证，未签名、不可直接安装）
 bash apps/Corallium/tools/build.sh ios
@@ -24,8 +27,15 @@ bash apps/Corallium/tools/build.sh simulator
 iPhone 安装需在 Xcode 中使用用户的有效开发签名与真机目标。项目使用
 `NSBluetoothAlwaysUsageDescription`，macOS 开启 Bluetooth entitlement。
 首次扫描时系统请求蓝牙权限；若拒绝，App 显示系统设置中的恢复路径。
-本地 ad-hoc 构建在源码变化后代码签名哈希会改变，macOS 可能重新请求蓝牙授权；
-需在系统弹窗中允许当前构建，再进行真实扫描。
+macOS 默认使用项目的 Automatic / Apple Development 签名，开发证书需属于项目团队
+`ZZM746LVXC`，缺少匹配身份时构建直接失败，不会静默改用 ad-hoc。有效开发签名的
+designated requirement 以应用标识、开发证书身份和 Apple 信任链识别后续构建，避免每次重编译因
+二进制哈希变化被当作新身份。由旧 ad-hoc 切换到证书签名后仍需用户首次允许蓝牙。
+详见 [Apple TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)。
+
+`macos-adhoc` 只供无证书的编译检查，输出为
+`tmp/corallium-adhoc-build/Build/Products/Debug/Corallium.app`。它的身份与二进制哈希
+绑定，不用于验证跨重编译蓝牙授权保留，也不会覆盖用于实机测试的开发签名 App。
 
 设备端打开蓝牙连接窗口，在 Corallium 点击“扫描附近设备”，再点击实际发现的设备。
 App 只扫描指定 service UUID，握手后以 `capabilities` 决定可用操作；官方原厂或旧版
