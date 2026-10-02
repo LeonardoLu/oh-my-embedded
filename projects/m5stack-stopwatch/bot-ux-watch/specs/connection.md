@@ -42,7 +42,13 @@ RTC 或偏移保存失败返回 internal。写 RTC 前先持久化 `utcValid=fal
 状态回读同样校验换算后的 UTC；本地手动设定或自然走时超出协议范围时，返回
 valid=false、source/quality=unset、unix_ms=null，不发布越界时间。
 
-状态每五秒经已加密 BLE 发送，也可显式请求。uptime_ms 使用 ESP 64-bit 单调定时器，
+当前会话收到完整合法的 BLE device.info 请求并排入响应后，才启动每五秒的状态事件；
+连接、断连、关闭窗口都会重置此门槛。已绑定设备的加密与 CCCD 可在 App 准备接收前
+恢复，订阅数量不代表本次 App 就绪，故不能在握手前推送异步帧。状态也可显式请求。
+NimBLE 1.4.3 在 ENC_CHANGE 后恢复持久化 CCCD，RESTORE 订阅事件会填充
+getSubscribedCount 使用的列表。仅检查加密/订阅会使 App 从 JSONL 帧中途开始接收；
+保留同一绑定记录和原 App、仅替换握手门槛固件的实机往返确认了这一时序问题。
+uptime_ms 使用 ESP 64-bit 单调定时器，
 不会在 32-bit millis 的 49 天边界归零。电池百分比、电压和充电来自 Power；未获得电压
 时各项为 null。没有可靠电流计量，不宣称 power/runtime 能力，相关字段保持 null。
 串口允许本地物理配置，不要求 BLE 窗口。
@@ -55,8 +61,12 @@ valid=false、source/quality=unset、unix_ms=null，不发布越界时间。
 
 PlatformIO 构建检查真实 ESP32、NimBLE、ArduinoJson 和 LVGL 集成。`tools/check_lvgl.sh`
 包含 UTC/时区边界、闰日、2038 年之后、UTF-8、JSON 尾部输入及各 RTC/NVS 事务失败边界。
+会话事件测试覆盖恢复订阅但尚未握手、重连重置、关闭窗口与毫秒计数回绕。
 最终固件已在 StopWatch 上通过 USB JSONL 验证设备信息、时间、电池与不支持的 Wi-Fi
 请求；原生屏幕抓取验证连接页、滚动和协议页。软件复位后观察到有效 RTC 时间保留。
-最终版本的 Corallium mac app BLE 配对及往返验收仍待系统蓝牙授权，不能由串口或模拟
-响应替代。RTC 本次复位连续性不等同于耗尽电池后的保时承诺；真实手指触摸和完整续航
-仍是独立的硬件验证边界。
+Corallium mac app 在保留已有系统绑定的真实 BLE 连接上完成握手、读取能力/状态和
+时间同步，界面不显示本机不支持的 Wi-Fi 配置。设备关闭蓝牙后 App 断开，持续十五秒
+扫描未再次发现设备；重新开启后可再次发现并握手，未手动刷新时状态快照持续更新。
+首次配对不能由恢复已有绑定的测试替代。
+RTC 本次复位连续性不等同于耗尽电池后的保时承诺；真实手指触摸和完整续航仍是独立的
+硬件验证边界。

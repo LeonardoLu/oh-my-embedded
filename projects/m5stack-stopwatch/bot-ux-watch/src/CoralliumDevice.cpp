@@ -48,6 +48,7 @@ void CoralliumDevice::openWindow() {
 }
 void CoralliumDevice::closeWindow() {
     _windowUntil=0;
+    _events.reset();
     if(!_started) return;
     _encrypted=false;
     NimBLEDevice::stopAdvertising();
@@ -57,12 +58,14 @@ void CoralliumDevice::closeWindow() {
 }
 void CoralliumDevice::ServerCallbacks::onConnect(NimBLEServer* server,ble_gap_conn_desc* desc) {
     auto* self=_instance;
+    self->_events.reset();
     if(!self->windowOpen()) { server->disconnect(desc->conn_handle); return; }
     self->_connected=true; self->_encrypted=false; self->_connection=desc->conn_handle;
     NimBLEDevice::startSecurity(desc->conn_handle);
 }
 void CoralliumDevice::ServerCallbacks::onDisconnect(NimBLEServer*) {
     auto* self=_instance; self->_connected=self->_encrypted=false;
+    self->_events.reset();
     memset(self->_rxLine,0,sizeof(self->_rxLine));
     self->_rxLength=0; self->_rxOverflow=false; self->_disconnected=true;
 }
@@ -195,6 +198,7 @@ void CoralliumDevice::process(const char* line,bool serial) {
         timeStatus(output);
     } else { fail("unsupported","Unsupported operation"); return; }
     send(response,serial);
+    if(!serial&&!strcmp(op,"device.info")&&_outputLength) _events.handshake(millis());
 }
 void CoralliumDevice::update(uint32_t now) {
     if(_disconnected) {
@@ -222,8 +226,8 @@ void CoralliumDevice::update(uint32_t now) {
             process(_pending.line,false);
             memset(_pending.line,0,sizeof(_pending.line));
         }
-        else if(_encrypted&&now-_lastStatus>=5000) {
-            _lastStatus=now; DynamicJsonDocument event(2048);
+        else if(_encrypted&&_events.due(now)) {
+            DynamicJsonDocument event(2048);
             event["v"]=1; event["op"]="device.status"; status(event.createNestedObject("payload")); send(event,false);
         }
     }

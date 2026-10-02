@@ -5,6 +5,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include "Power.h"
+#include "CoralliumEventGate.h"
 
 // Transport callbacks only enqueue complete frames. RTC and NVS work
 // runs on the existing main task, never on NimBLE's host callback task.
@@ -43,7 +44,8 @@ private:
     Message _pending{};
     volatile bool _connected=false, _encrypted=false, _disconnected=false;
     volatile uint16_t _connection=0;
-    uint32_t _windowUntil=0, _lastNotify=0, _lastStatus=0;
+    uint32_t _windowUntil=0, _lastNotify=0;
+    corallium::EventGate _events;
     int16_t _offset=0;
     bool _started=false, _offsetKnown=false, _clockEditing=false;
     char _rxLine[2049]={}, _serialLine[2049]={}, _output[2049]={};

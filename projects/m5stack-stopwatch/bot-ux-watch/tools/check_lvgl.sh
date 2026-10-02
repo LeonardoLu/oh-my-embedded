@@ -34,3 +34,7 @@ c++ -std=c++11 -Wall -Wextra -Werror -I"$PROJECT/include" \
   "$PROJECT/test/test_corallium_clock_transaction.cpp" -o "$OUT/test_corallium_clock_transaction"
 "$OUT/test_corallium_clock_transaction"
 echo 'PASS Corallium RTC/NVS transaction failure boundaries'
+c++ -std=c++11 -Wall -Wextra -Werror -I"$PROJECT/include" \
+  "$PROJECT/test/test_corallium_event_gate.cpp" -o "$OUT/test_corallium_event_gate"
+"$OUT/test_corallium_event_gate"
+echo 'PASS Corallium BLE handshake event gate and reconnect cadence'
