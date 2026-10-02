@@ -17,6 +17,13 @@ connection, vibration and brightness. Music player, L/R slots, unsupported
 interconnect/low-power/ringtone controls have no visible or touchable route.
 Hidden offscreen ancestor nodes preserve generated factory accessor ABI.
 
+Scene bundles preserve the compiler's numeric font ordinals: `font10` follows
+`font9`. Each generated GSB font reference must match the GFB at that bundle
+ordinal, or resolve to the shared catalog when externalized. Build checks reject
+a font that exists at the wrong ordinal and verify the final MMAP flash image
+contains the validated assets. Fixed render policies use GSP's external override
+table, leaving its eight inline slots for per-app capacities.
+
 Settings root exposes Network, Display, Battery and About. Claw/AI/IM/security
 integration rows are removed from the root mapping. Network's connection action
 controls the BLE window instead of an inactive AP configuration portal.

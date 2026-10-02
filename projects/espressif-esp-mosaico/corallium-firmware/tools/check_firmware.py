@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--build", required=True, type=Path)
@@ -34,3 +35,5 @@ link = link_file.read_text()
 assert "--wrap=app_main" in link and "__wrap_app_main" in link, "Factory pre-app USB console wrapper is not linked"
 print(f"PASS: {elf.name} includes factory USB CDC initialization, console and auto-download reset hooks")
 print("PASS: vendor update component, client symbols and official manifest URL are absent")
+subprocess.run([sys.executable, str(Path(__file__).with_name("check_assets.py")),
+                "--build", str(build)], check=True)

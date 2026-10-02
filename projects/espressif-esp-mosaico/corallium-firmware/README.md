@@ -77,6 +77,8 @@ telemetry, and renderer scheduling. Scene validation checks
 removed controls have hidden ancestors and no touchable route.
 Settings scene checks also require update navigation and actions to be absent;
 the linked-firmware check rejects the vendor updater and official manifest URL.
+It also parses actual compiled font references and the MMAP flash image, rejecting
+wrong font ordinals, missing catalog members and stale staged resources.
 
 For BLE, open the Bluetooth tile or hold the top key for 500 ms, then connect in
 Corallium within 120 seconds (the device advertises as ESP-Mosaico). Connect while adjacent to the device; the GATT link

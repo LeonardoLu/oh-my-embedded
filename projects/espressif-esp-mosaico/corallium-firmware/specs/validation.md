@@ -27,6 +27,11 @@ are replaced by explicit test doubles. Covered behavior includes:
 - Settings scene generation: the update page, update bindings and actions are
   absent. Firmware inspection rejects linked update-client symbols, the vendor
   update component and its official manifest URL.
+- Actual GSPB/GSB/GFB resources: CRC, bounds and every font reference's ordinal and
+  content ID are checked before and after font externalization. The packed MMAP
+  image must match staged assets byte for byte. The checker rejects the captured
+  failing Hub bundle where shell glob order assigned `font10` to ordinal 2;
+  numeric font ordering corrects that mismatch.
 
 The full ESP32-S31 firmware compiled and linked with the pinned ESP-IDF checkout,
 RISC-V toolchain `esp-16.1.0_20260609`, and the official board generator. The build
@@ -51,7 +56,9 @@ The attached ESP32-S31 board reports CoreBoard version 1.2 through eFuse. A comp
 was hash-verified while preserving NVS. Application USB CDC enumerated and exposed
 startup logs. Those logs identified a settings subscription before update-service
 initialization; the custom build now removes that service and retains weather
-initialization before UI subscriptions. The resulting firmware still requires
+initialization before UI subscriptions. Further startup logs identified incorrect
+font ordinals in the Hub bundle; the build now orders and verifies those resources.
+The resulting firmware still requires
 final runtime verification. Compilation and flash verification do not establish
 BLE interoperability, sleep/wake, battery accuracy, RTC retention or achieved FPS.
 

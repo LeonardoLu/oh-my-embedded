@@ -83,6 +83,121 @@ index 764f30d..f992f6b 100644
          esp_timer
          freertos
          pthread
+diff --git a/components/mosaic_ui/apps/ai_create/scene/regenerate.sh b/components/mosaic_ui/apps/ai_create/scene/regenerate.sh
+index fa2e30a..b627ef9 100755
+--- a/components/mosaic_ui/apps/ai_create/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/ai_create/scene/regenerate.sh
+@@ -18,7 +18,7 @@ mkdir -p "$GENERATED_DIR"
+ 
+ "$GSPC" build "${STEM}_480.json" --scene-id 0 \
+     --profile "$PROFILE" -o "$OUT"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb
+ 
+diff --git a/components/mosaic_ui/apps/album/scene/regenerate.sh b/components/mosaic_ui/apps/album/scene/regenerate.sh
+index 5567015..4f6463d 100755
+--- a/components/mosaic_ui/apps/album/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/album/scene/regenerate.sh
+@@ -19,7 +19,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}.grb" ]]; then echo "$OUT/${STEM}.grb"; fi)
+diff --git a/components/mosaic_ui/apps/bluetooth/scene/regenerate.sh b/components/mosaic_ui/apps/bluetooth/scene/regenerate.sh
+index 3c94140..8fb672b 100755
+--- a/components/mosaic_ui/apps/bluetooth/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/bluetooth/scene/regenerate.sh
+@@ -21,7 +21,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}.grb" ]]; then echo "$OUT/${STEM}.grb"; fi)
+diff --git a/components/mosaic_ui/apps/breakout/scene/regenerate.sh b/components/mosaic_ui/apps/breakout/scene/regenerate.sh
+index 3ebe28e..ee19f5c 100755
+--- a/components/mosaic_ui/apps/breakout/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/breakout/scene/regenerate.sh
+@@ -17,7 +17,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb
+ 
+diff --git a/components/mosaic_ui/apps/camera/scene/regenerate.sh b/components/mosaic_ui/apps/camera/scene/regenerate.sh
+index e205e25..e3b1efa 100755
+--- a/components/mosaic_ui/apps/camera/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/camera/scene/regenerate.sh
+@@ -21,7 +21,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}_assets.grb" ]]; then echo "$OUT/${STEM}_assets.grb"; fi)
+diff --git a/components/mosaic_ui/apps/env/scene/regenerate.sh b/components/mosaic_ui/apps/env/scene/regenerate.sh
+index a1780f4..d00048a 100755
+--- a/components/mosaic_ui/apps/env/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/env/scene/regenerate.sh
+@@ -21,7 +21,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}_assets.grb" ]]; then echo "$OUT/${STEM}_assets.grb"; fi)
+diff --git a/components/mosaic_ui/apps/imu/scene/regenerate.sh b/components/mosaic_ui/apps/imu/scene/regenerate.sh
+index 6af9147..42d6447 100755
+--- a/components/mosaic_ui/apps/imu/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/imu/scene/regenerate.sh
+@@ -21,7 +21,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}_assets.grb" ]]; then echo "$OUT/${STEM}_assets.grb"; fi)
+diff --git a/components/mosaic_ui/apps/interact/scene/regenerate.sh b/components/mosaic_ui/apps/interact/scene/regenerate.sh
+index e8144c2..fa42470 100644
+--- a/components/mosaic_ui/apps/interact/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/interact/scene/regenerate.sh
+@@ -8,5 +8,5 @@ trap 'rm -rf "$scene_build_dir"' EXIT
+ "${GSPC:?set GSPC}" build interact_480.json --scene-id 0 --profile "${MOSAIC_SCENE_PROFILE:-../../../common/mosaic_rgb565_auto.yaml}" -o "$scene_build_dir"
+ generated_dir="${MOSAIC_GENERATED_DIR:-../generated}"
+ mkdir -p "$generated_dir"
+-"$GSPC" bundle -o "$generated_dir/interact.gspb" "$scene_build_dir/interact.gsb" "$scene_build_dir"/*.gfb "$scene_build_dir"/*.grb
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$generated_dir/interact.gspb" "$scene_build_dir/interact.gsb" "$scene_build_dir"/*.gfb "$scene_build_dir"/*.grb
+ cp "$scene_build_dir"/*_binds.h "$scene_build_dir"/*_actions.h "$scene_build_dir"/*_objects.h "$generated_dir/"
+diff --git a/components/mosaic_ui/apps/music/scene/regenerate.sh b/components/mosaic_ui/apps/music/scene/regenerate.sh
+index ceeba6c..2f97010 100755
+--- a/components/mosaic_ui/apps/music/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/music/scene/regenerate.sh
+@@ -17,7 +17,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}.grb" ]]; then echo "$OUT/${STEM}.grb"; fi)
 diff --git a/components/mosaic_ui/apps/settings/scene/gen_scene.py b/components/mosaic_ui/apps/settings/scene/gen_scene.py
 index af11a65..e95cc87 100644
 --- a/components/mosaic_ui/apps/settings/scene/gen_scene.py
@@ -313,6 +428,19 @@ index af11a65..e95cc87 100644
  
      # Notifications belong to the App stage rather than an individual
      # StackView page. Connection failures arrive after the password page has
+diff --git a/components/mosaic_ui/apps/settings/scene/regenerate.sh b/components/mosaic_ui/apps/settings/scene/regenerate.sh
+index 1ada0c3..57cb7b3 100755
+--- a/components/mosaic_ui/apps/settings/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/settings/scene/regenerate.sh
+@@ -22,7 +22,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}_assets.grb" ]]; then echo "$OUT/${STEM}_assets.grb"; fi)
 diff --git a/components/mosaic_ui/apps/settings/settings_app.c b/components/mosaic_ui/apps/settings/settings_app.c
 index d3b4859..c70fea6 100644
 --- a/components/mosaic_ui/apps/settings/settings_app.c
@@ -1119,6 +1247,58 @@ index d3b4859..c70fea6 100644
      .dynamic_image_slots =
          GSP_TEMPLATE_SETTINGS_ROOT_ROW_MAX_INSTANCES +
          GSP_SETTINGS_DYNAMIC_IMAGE_SLOTS,
+diff --git a/components/mosaic_ui/apps/setup_center/scene/regenerate.sh b/components/mosaic_ui/apps/setup_center/scene/regenerate.sh
+index d255a20..09a95ef 100755
+--- a/components/mosaic_ui/apps/setup_center/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/setup_center/scene/regenerate.sh
+@@ -19,7 +19,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}.grb" ]]; then echo "$OUT/${STEM}.grb"; fi)
+ 
+diff --git a/components/mosaic_ui/apps/tof/scene/regenerate.sh b/components/mosaic_ui/apps/tof/scene/regenerate.sh
+index 65771b0..5c2a576 100755
+--- a/components/mosaic_ui/apps/tof/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/tof/scene/regenerate.sh
+@@ -21,7 +21,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}_assets.grb" ]]; then echo "$OUT/${STEM}_assets.grb"; fi)
+diff --git a/components/mosaic_ui/apps/weather/scene/regenerate.sh b/components/mosaic_ui/apps/weather/scene/regenerate.sh
+index d50b552..b02d1df 100755
+--- a/components/mosaic_ui/apps/weather/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/weather/scene/regenerate.sh
+@@ -18,7 +18,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     "$OUT/${STEM}.grb"
+diff --git a/components/mosaic_ui/apps/works/scene/regenerate.sh b/components/mosaic_ui/apps/works/scene/regenerate.sh
+index d987489..19442ef 100755
+--- a/components/mosaic_ui/apps/works/scene/regenerate.sh
++++ b/components/mosaic_ui/apps/works/scene/regenerate.sh
+@@ -21,7 +21,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" -o "$OUT"
+ 
+ mkdir -p "$GENERATED_DIR"
+-"$GSPC" bundle -o "$GENERATED_DIR/${STEM}.gspb" \
++python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
+     "$OUT/${STEM}.gsb" \
+     "$OUT"/${STEM}_font*.gfb \
+     $(if [[ -f "$OUT/${STEM}_assets.grb" ]]; then echo "$OUT/${STEM}_assets.grb"; fi)
 diff --git a/components/mosaic_ui/common/mosaic_app_catalog.c b/components/mosaic_ui/common/mosaic_app_catalog.c
 index fec8cf3..1f29879 100644
 --- a/components/mosaic_ui/common/mosaic_app_catalog.c
@@ -1163,6 +1343,28 @@ index ec5650a..53fbdf8 100644
      endforeach()
  
      set(registry_dir "${binary_dir}/generated")
+diff --git a/components/mosaic_ui/common/mosaic_scene_build.cmake b/components/mosaic_ui/common/mosaic_scene_build.cmake
+index b5a0648..8df2f54 100644
+--- a/components/mosaic_ui/common/mosaic_scene_build.cmake
++++ b/components/mosaic_ui/common/mosaic_scene_build.cmake
+@@ -194,6 +194,8 @@ function(mosaic_setup_bundle_generation_for_target
+                     ${scene_source_deps}
+                     "${root}/common/scene_common.py"
+                     "${root}/common/font_paths.py"
++                    "${root}/common/bundle_fonts.py"
++                    "${root}/common/check_font_refs.py"
+                     "${root}/common/fonts/NotoSans-Regular.ttf"
+                     "${root}/common/fonts/DejaVuSans.ttf"
+                     "${root}/common/fonts/DejaVuSans-Bold.ttf"
+@@ -216,6 +218,8 @@ function(mosaic_setup_bundle_generation_for_target
+                 "${mosaic_gspc}" font-link ${intermediate_bundles}
+                 --output-dir "${linked_dir}"
+                 --catalog "${font_catalog}"
++        COMMAND "${Python3_EXECUTABLE}" "${root}/common/check_font_refs.py"
++                ${linked_bundles} --catalog "${font_catalog}"
+         DEPENDS ${intermediate_bundles} "${mosaic_gspc}"
+         COMMENT "mosaic: font-link app bundles"
+         VERBATIM)
 diff --git a/components/mosaic_ui/common/mosaic_system_flow.c b/components/mosaic_ui/common/mosaic_system_flow.c
 index 5967bf4..44a3185 100644
 --- a/components/mosaic_ui/common/mosaic_system_flow.c
@@ -1181,20 +1383,76 @@ index 5967bf4..44a3185 100644
      case MOSAIC_SYSTEM_BOOT_HOME:
          *ret_app_name = "mosaic-hub";
 diff --git a/components/mosaic_ui/core/mosaic_esp_platform.c b/components/mosaic_ui/core/mosaic_esp_platform.c
-index 79d0bd7..bb1d4cc 100644
+index 79d0bd7..11e0d30 100644
 --- a/components/mosaic_ui/core/mosaic_esp_platform.c
 +++ b/components/mosaic_ui/core/mosaic_esp_platform.c
-@@ -243,6 +243,10 @@ static esp_gsp_config_t app_config_for(
-         esp_gsp_config_field_id_t field_id;
-         uint32_t value;
-     } overrides[] = {
-+        {ESP_GSP_FIELD_ACTIVE_TICK_MS, 16U},
-+        {ESP_GSP_FIELD_IDLE_POLL_MS, 50U},
-+        {ESP_GSP_FIELD_POINTER_POLL_MS, 8U},
-+        {ESP_GSP_FIELD_ENABLE_TRANSITION_SNAPSHOTS, 1U},
-         {ESP_GSP_FIELD_FREETYPE_CACHE_GLYPHS,
+@@ -229,41 +229,35 @@ static esp_gsp_config_t app_config_for(
+         ? descriptor->image_cache_bytes : MOSAIC_DEFAULT_IMAGE_CACHE_BYTES;
+     config.disable_bundle_crc = CONFIG_MOSAIC_UI_DISABLE_BUNDLE_CRC;
+ 
+-    /* The Registry component deliberately hides its engineering Kconfig
+-     * surface.  Disable decode workers through the per-instance runtime
+-     * contract instead of relying on the hidden sdkconfig default. */
+-    esp_gsp_config_set_result_t result = esp_gsp_config_override_set(
+-        &config.overrides, ESP_GSP_FIELD_ENABLE_ASYNC_DECODE, 0U);
+-    if (result != ESP_GSP_CONFIG_SET_OK) {
+-        printf("mosaic_platform: disable async decode failed: %d\n",
+-            (int)result);
+-    }
+-
+-    const struct {
+-        esp_gsp_config_field_id_t field_id;
+-        uint32_t value;
+-    } overrides[] = {
+-        {ESP_GSP_FIELD_FREETYPE_CACHE_GLYPHS,
++    /* Constant policies live in an external table: the inline override
++     * capacity is eight entries, including per-App capacities below. */
++    static const esp_gsp_config_override_entry_t policies[] = {
++        {ESP_GSP_FIELD_ENABLE_ASYNC_DECODE, 0, 0U},
++        {ESP_GSP_FIELD_ACTIVE_TICK_MS, 0, 16U},
++        {ESP_GSP_FIELD_IDLE_POLL_MS, 0, 50U},
++        {ESP_GSP_FIELD_POINTER_POLL_MS, 0, 8U},
++        {ESP_GSP_FIELD_ENABLE_TRANSITION_SNAPSHOTS, 0, 1U},
++        {ESP_GSP_FIELD_FREETYPE_CACHE_GLYPHS, 0,
              MOSAIC_DYNAMIC_FONT_CACHE_GLYPHS},
-         {ESP_GSP_FIELD_FREETYPE_GLYPH_MAX_PX,
+-        {ESP_GSP_FIELD_FREETYPE_GLYPH_MAX_PX,
++        {ESP_GSP_FIELD_FREETYPE_GLYPH_MAX_PX, 0,
+             MOSAIC_DYNAMIC_FONT_GLYPH_MAX_PX},
+-        {ESP_GSP_FIELD_RENDER_TASK_STACK_SIZE_FREETYPE,
++        {ESP_GSP_FIELD_RENDER_TASK_STACK_SIZE_FREETYPE, 0,
+             MOSAIC_FREETYPE_RENDER_TASK_STACK_SIZE},
+-        {ESP_GSP_FIELD_RENDER_TASK_STACK_PSRAM, 1U},
+-        {ESP_GSP_FIELD_COMPONENT_INSTANCES, descriptor->instance_slots},
+-        {ESP_GSP_FIELD_DEFAULT_DYNAMIC_IMAGE_SLOTS,
+-            descriptor->dynamic_image_slots},
++        {ESP_GSP_FIELD_RENDER_TASK_STACK_PSRAM, 0, 1U},
+     };
+-    for (size_t i = 0; i < sizeof(overrides) / sizeof(overrides[0]); ++i) {
+-        if (overrides[i].value == 0U) {
+-            continue;
+-        }
+-        result = esp_gsp_config_override_set(&config.overrides,
+-            overrides[i].field_id, overrides[i].value);
+-        if (result != ESP_GSP_CONFIG_SET_OK) {
+-            printf("mosaic_platform: GSP override %u failed: %d\n",
+-                (unsigned)overrides[i].field_id, (int)result);
+-        }
++    esp_gsp_config_set_result_t result = esp_gsp_config_override_bind_external(
++        &config.overrides, policies, sizeof(policies) / sizeof(policies[0]));
++    if (result != ESP_GSP_CONFIG_SET_OK) {
++        printf("mosaic_platform: GSP policy table failed: %d\n", (int)result);
++    }
++    if (descriptor->instance_slots != 0U) {
++        (void)esp_gsp_config_override_set(&config.overrides,
++            ESP_GSP_FIELD_COMPONENT_INSTANCES, descriptor->instance_slots);
++    }
++    if (descriptor->dynamic_image_slots != 0U) {
++        (void)esp_gsp_config_override_set(&config.overrides,
++            ESP_GSP_FIELD_DEFAULT_DYNAMIC_IMAGE_SLOTS,
++            descriptor->dynamic_image_slots);
+     }
+     return config;
+ }
 diff --git a/components/mosaic_ui/core/mosaic_loader.c b/components/mosaic_ui/core/mosaic_loader.c
 index 5636bb0..362115d 100644
 --- a/components/mosaic_ui/core/mosaic_loader.c
@@ -1511,6 +1769,19 @@ index c54b3f5..d0761e3 100755
      return objs
  
  
+diff --git a/components/mosaic_ui/hub/scene/regenerate.sh b/components/mosaic_ui/hub/scene/regenerate.sh
+index db08a92..b1afaa0 100755
+--- a/components/mosaic_ui/hub/scene/regenerate.sh
++++ b/components/mosaic_ui/hub/scene/regenerate.sh
+@@ -32,7 +32,7 @@ trap 'rm -rf "$OUT"' EXIT
+     --profile "$PROFILE" \
+     -o "$OUT"
+ 
+-"$GSPC" bundle -o "$GENERATED_DIR/hub_480.gspb" \
++python3 "../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/hub_480.gspb" \
+     "$OUT/mosaic_hub.gsb" \
+     "$OUT"/mosaic_hub_font*.gfb \
+     "$OUT/mosaic_hub.grb"
 diff --git a/components/mosaic_ui/include/mosaic_settings.h b/components/mosaic_ui/include/mosaic_settings.h
 index 385a211..a085831 100644
 --- a/components/mosaic_ui/include/mosaic_settings.h
