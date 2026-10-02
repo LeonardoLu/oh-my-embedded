@@ -33,6 +33,14 @@ uses approximately 3.3 MiB, with about 58% of the smallest app partition free.
 Inactive vendor helpers can produce unused-function warnings; these are not
 treated as hardware evidence.
 
+`tools/check_firmware.py --build tmp/mosaico/claw/build` passed against the USB-enabled
+firmware. It checks the generated configuration, actual linked ELF symbols and
+linker wrapping flags. It requires TinyUSB CDC and both factory
+auto-init/download options, the pre-application wrapper, console initialization
+and reset handlers to remain linked. This catches a build that silently omits
+USB startup even though the board declares the console device. Host-side USB
+enumeration and DTR/RTS reset behavior still require the physical device.
+
 ## Hardware verification still required
 
 No identified ESP-Mosaico board was available to this firmware subtask. No serial
@@ -43,6 +51,7 @@ After confirming the CoreBoard revision, use the same device for comparisons:
 
 | Area | Procedure and observable result |
 | --- | --- |
+| USB | After leaving ROM download mode, application Type-C CDC must enumerate and expose startup logs. Reopen the console and verify the official DTR/RTS download-reset sequence returns to the ROM loader. |
 | BLE | Boot: no advertisement. Open local Bluetooth: ESP-Mosaico appears. Encrypted subscription/RX succeeds; unencrypted RX fails. Verify Connected state, local close, expiry, disconnect and reconnect framing. |
 | Wi-Fi | Set from app after local Wi-Fi off, join, inspect local SSID/IP, restart and confirm enabled state; wrong password reports failed; forget erases credentials and remains off after restart. Include a 32-byte SSID. |
 | Time | Set without internet; powered software reset should retain plausible RTC time with estimated quality. Full power removal must show invalid/--:-- until app or NTP sync. Measure drift against an external reference. |

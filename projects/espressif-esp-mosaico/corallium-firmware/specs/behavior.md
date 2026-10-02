@@ -29,6 +29,14 @@ whole-system power while charging, calibrated capacity or guaranteed battery lif
 
 ## Connections
 
+The factory USB HS console initializes through its `__wrap_app_main` hook before
+application startup. `USB_HS_CONSOLE_USB_CDC_AUTO_INIT` and its required
+`USB_HS_CONSOLE_USB_CDC_AUTO_DOWNLOAD` option are enabled. The board manager's
+`init_skip: true` remains intentional: the wrapper owns initialization. The
+vendor TinyUSB interface provides CDC diagnostics and its 303a:1001 DTR/RTS reset
+sequence for returning to the ROM downloader. This console is not advertised as
+a Corallium protocol transport; application commands use BLE.
+
 [Root v1 protocol](../../../../protocols/corallium-v1/README.md) is authoritative.
 BLE is discoverable only after the Bluetooth tile, Network's Bluetooth connection action or
 a 500 ms top-key hold. The 120-second window expires even while connected;

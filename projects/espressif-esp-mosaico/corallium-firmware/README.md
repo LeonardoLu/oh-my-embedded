@@ -40,6 +40,18 @@ idf.py -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.corallium' bmgr -c ./
 idf.py -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.corallium' build
 ```
 
+The overlay enables the factory `USB_HS_CONSOLE_USB_CDC_AUTO_DOWNLOAD` and
+`USB_HS_CONSOLE_USB_CDC_AUTO_INIT` options. These initialize Type-C TinyUSB CDC
+before `app_main` and retain the vendor DTR/RTS download-reset mechanism. When
+updating an existing build, enable both options in `idf.py menuconfig`; saved
+`sdkconfig` values take precedence over defaults. Verify the resulting ELF with
+the activated ESP-IDF toolchain:
+
+```sh
+# Run from the repository root after the build.
+python3 projects/espressif-esp-mosaico/corallium-firmware/tools/check_firmware.py --build tmp/mosaico/corallium-firmware/build
+```
+
 The pinned factory CMake applies its narrowly scoped IDF fixes to the selected
 SDK. Use a dedicated checkout of that IDF revision rather than a shared SDK.
 Flash only after confirming the physical board/revision and inspecting the
