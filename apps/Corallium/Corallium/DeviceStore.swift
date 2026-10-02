@@ -422,6 +422,13 @@ extension DeviceStore: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
         guard self.peripheral === peripheral, characteristic.uuid == tx?.uuid else { return }
         guard error == nil, characteristic.isNotifying else {
+            if let error = error as NSError? {
+                let knownDomains = ["CBErrorDomain", "CBATTErrorDomain", "NSOSStatusErrorDomain", "NSCocoaErrorDomain"]
+                log.record("ble.notify.failed", level: "error", metadata: [
+                    "domain": knownDomains.contains(error.domain) ? error.domain : "other",
+                    "code": String(error.code)
+                ])
+            }
             fail("无法订阅设备状态，请重新连接。", code: "notify_failed", disconnect: true); return
         }
         timeout?.cancel()

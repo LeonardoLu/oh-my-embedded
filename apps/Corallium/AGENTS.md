@@ -9,6 +9,8 @@
   connected firmware, never from a model-name assumption.
 - BLE mutations are explicit user actions. One request in flight, bounded framing,
   response timeout, no automatic mutation retries, no credentials in logs.
+- Connection guidance follows the device profile: Mosaico's saved BLE switch has
+  no time window; StopWatch retains its local connection window.
 - Daily JSONL logs belong under Application Support/<bundle identifier>/logs.
   The macOS sandbox may place Application Support inside the app container.
 - Demo mode must remain visually distinct and must never send BLE traffic.

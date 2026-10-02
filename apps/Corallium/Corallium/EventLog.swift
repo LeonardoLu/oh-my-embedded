@@ -16,7 +16,7 @@ final class EventLog: ObservableObject {
     let directory: URL
     private let iso = ISO8601DateFormatter()
     private let day = DateFormatter()
-    private let allowedKeys: Set<String> = ["operation", "request_id", "device_id", "model", "code", "mode", "state", "bytes", "count", "result"]
+    private let allowedKeys: Set<String> = ["operation", "request_id", "device_id", "model", "code", "domain", "mode", "state", "bytes", "count", "result"]
 
     init(directory: URL? = nil) {
         let bundleID = Bundle.main.bundleIdentifier ?? "com.github.leonardolu.Corallium"

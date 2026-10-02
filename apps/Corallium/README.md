@@ -40,7 +40,9 @@ designated requirement 以应用标识、开发证书身份和 Apple 信任链�
 `tmp/corallium-adhoc-build/Build/Products/Debug/Corallium.app`。它的身份与二进制哈希
 绑定，不用于验证跨重编译蓝牙授权保留，也不会覆盖用于实机测试的开发签名 App。
 
-设备端打开蓝牙连接窗口，在 Corallium 点击“扫描附近设备”，再点击实际发现的设备。
+在设备端开启蓝牙，在 Corallium 点击“扫描附近设备”，再点击实际发现的设备。
+StopWatch 使用本机开启的限时连接窗口；Mosaico 使用手动开关，默认关闭，开启后
+没有时间窗口且重启保留，直到用户关闭；恢复出厂会回到关闭状态。
 App 只扫描指定 service UUID，握手后以 `capabilities` 决定可用操作；官方原厂或旧版
 固件不因型号相同自动兼容。当前 StopWatch 仅开放时间同步和电池状态，没有 Wi-Fi
 入口。ESP-Mosaico 保留普通 2.4 GHz Wi-Fi 配置：通过 BLE 发送开放/个人密码网络
