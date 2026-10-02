@@ -2,6 +2,7 @@
 #include "corallium.h"
 #include "corallium_framing.h"
 #include "corallium_json_guard.h"
+#include "corallium_ble_session.h"
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,12 +11,14 @@
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
 #include "esp_timer.h"
+#include "esp_log.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
 #define LINE_LIMIT 2048
-#define WINDOW_US (120LL * 1000000)
+#define TAG "device_ble"
 static const uint8_t service_uuid[16] = {0x10,0x90,0x8f,0x5e,0x6d,0x6b,0xd2,0xa8,0x55,0x4c,0x6d,0x7e,0x01,0x00,0x2a,0x7d};
 static const uint8_t rx_uuid[16] = {0x10,0x90,0x8f,0x5e,0x6d,0x6b,0xd2,0xa8,0x55,0x4c,0x6d,0x7e,0x02,0x00,0x2a,0x7d};
 static const uint8_t tx_uuid[16] = {0x10,0x90,0x8f,0x5e,0x6d,0x6b,0xd2,0xa8,0x55,0x4c,0x6d,0x7e,0x03,0x00,0x2a,0x7d};
@@ -30,10 +33,9 @@ enum { SERVICE, RX_DECL, RX, TX_DECL, TX, CCCD, ATTR_COUNT };
 static uint16_t handles[ATTR_COUNT];
 static esp_gatt_if_t gatts_if = ESP_GATT_IF_NONE;
 static _Atomic uint16_t connection_id;
-static _Atomic uint32_t generation;
-static _Atomic bool connected, subscribed, encrypted, ready;
+static corallium_ble_session_t session;
+static _Atomic bool ready, advertising_pending;
 static bool adv_ready, scan_ready, service_ready;
-static _Atomic int64_t deadline;
 static QueueHandle_t requests;
 static corallium_stream_t incoming;
 static esp_bd_addr_t peer;
@@ -51,20 +53,48 @@ static esp_ble_adv_params_t advertising = {
     .adv_type = ADV_TYPE_IND, .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
     .channel_map = ADV_CHNL_ALL, .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
 };
-static void advertise(void) {
-    if (ready && !connected && deadline > esp_timer_get_time())
-        (void)esp_ble_gap_start_advertising(&advertising);
+static esp_err_t save_enabled(bool enabled) {
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("corallium", NVS_READWRITE, &handle);
+    if (err != ESP_OK) return err;
+    err = nvs_set_u8(handle, "ble_enabled", enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_commit(handle);
+    nvs_close(handle);
+    return err;
 }
-bool corallium_pairing_active(void) { return deadline > esp_timer_get_time(); }
-bool corallium_connected(void) { return connected && encrypted; }
-void corallium_close_pairing(void) {
-    deadline = 0;
-    (void)esp_ble_gap_stop_advertising();
-    if (connected) (void)esp_ble_gap_disconnect(peer);
+static void load_enabled(void) {
+    nvs_handle_t handle;
+    uint8_t enabled = 0;
+    esp_err_t err = nvs_open("corallium", NVS_READONLY, &handle);
+    if (err == ESP_OK) {
+        err = nvs_get_u8(handle, "ble_enabled", &enabled);
+        nvs_close(handle);
+    }
+    session.enabled = err == ESP_OK && enabled == 1;
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND)
+        ESP_LOGW(TAG, "BLE preference unavailable: %s", esp_err_to_name(err));
+}
+static void advertise(void) {
+    if (!ready || !session.enabled || session.connected || atomic_exchange(&advertising_pending, true)) return;
+    esp_err_t err = esp_ble_gap_start_advertising(&advertising);
+    if (err != ESP_OK) {
+        advertising_pending = false;
+        ESP_LOGW(TAG, "Advertising start rejected: %s", esp_err_to_name(err));
+    }
+}
+bool corallium_pairing_active(void) { return session.enabled; }
+bool corallium_connected(void) { return session.enabled && session.connected && session.encrypted; }
+esp_err_t corallium_close_pairing(void) {
+    esp_err_t err = corallium_ble_set_enabled(&session, false, save_enabled);
+    if (err != ESP_OK) return err;
+    if (ready) (void)esp_ble_gap_stop_advertising();
+    if (session.connected) (void)esp_ble_gap_disconnect(peer);
+    return ESP_OK;
 }
 esp_err_t corallium_open_pairing(void) {
     if (!ready) return ESP_ERR_INVALID_STATE;
-    deadline = esp_timer_get_time() + WINDOW_US;
+    esp_err_t err = corallium_ble_set_enabled(&session, true, save_enabled);
+    if (err != ESP_OK) return err;
     advertise();
     return ESP_OK;
 }
@@ -77,25 +107,37 @@ static void gap_event(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *para
         scan_ready = param->scan_rsp_data_cmpl.status == ESP_BT_STATUS_SUCCESS;
         ready = adv_ready && scan_ready && service_ready;
         advertise();
+    } else if (event == ESP_GAP_BLE_ADV_START_COMPLETE_EVT) {
+        if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS) {
+            advertising_pending = false;
+            ESP_LOGW(TAG, "Advertising start failed: status=%d", param->adv_start_cmpl.status);
+        } else if (!session.enabled || session.connected) {
+            (void)esp_ble_gap_stop_advertising();
+        }
+    } else if (event == ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT) {
+        advertising_pending = false;
+        advertise();
     } else if (event == ESP_GAP_BLE_SEC_REQ_EVT) {
-        (void)esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, corallium_pairing_active());
+        (void)esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, session.enabled && session.connected && !memcmp(peer, param->ble_security.ble_req.bd_addr, sizeof(peer)));
     } else if (event == ESP_GAP_BLE_AUTH_CMPL_EVT) {
-        encrypted = param->ble_security.auth_cmpl.success;
-        if (!encrypted) (void)esp_ble_gap_disconnect(param->ble_security.auth_cmpl.bd_addr);
+        if (!session.connected || memcmp(peer, param->ble_security.auth_cmpl.bd_addr, sizeof(peer))) return;
+        corallium_ble_authenticated(&session, param->ble_security.auth_cmpl.success);
+        ESP_LOGI(TAG, "Authentication complete: success=%d reason=%u", session.encrypted, param->ble_security.auth_cmpl.fail_reason);
+        if (!session.encrypted) (void)esp_ble_gap_disconnect(param->ble_security.auth_cmpl.bd_addr);
     }
 }
 static bool queue_line(const char *line, size_t length, void *context) {
     (void)context;
     static request_t message;
     memset(&message, 0, sizeof(message));
-    message.generation = generation;
+    message.generation = session.generation;
     memcpy(message.line, line, length);
     const bool accepted = xQueueSend(requests, &message, 0) == pdTRUE;
     memset(&message, 0, sizeof(message));
     return accepted;
 }
 static void receive(const uint8_t *bytes, size_t length) {
-    if (!encrypted || !subscribed || !corallium_pairing_active()) return;
+    if (!corallium_ble_can_exchange(&session)) return;
     if (!corallium_stream_feed(&incoming, bytes, length, esp_timer_get_time(), queue_line, NULL))
         (void)esp_ble_gap_disconnect(peer);
 }
@@ -125,47 +167,64 @@ static void gatt_event(esp_gatts_cb_event_t event, esp_gatt_if_t iface, esp_ble_
         ready = adv_ready && scan_ready && service_ready;
         advertise();
         break;
-    case ESP_GATTS_CONNECT_EVT:
-        if (connected || !corallium_pairing_active()) { (void)esp_ble_gap_disconnect(param->connect.remote_bda); break; }
+    case ESP_GATTS_CONNECT_EVT: {
+        if (!corallium_ble_accept_connection(&session)) { (void)esp_ble_gap_disconnect(param->connect.remote_bda); break; }
         connection_id = param->connect.conn_id;
         memcpy(peer, param->connect.remote_bda, sizeof(peer));
-        connected = true; encrypted = false; subscribed = false; ++generation;
-        (void)esp_ble_set_encryption(peer, ESP_BLE_SEC_ENCRYPT);
+        advertising_pending = false;
+        corallium_stream_reset(&incoming);
+        xQueueReset(requests);
+        esp_err_t err = esp_ble_set_encryption(peer, ESP_BLE_SEC_ENCRYPT);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Encryption start failed: %s", esp_err_to_name(err));
+            (void)esp_ble_gap_disconnect(peer);
+        }
         break;
+    }
     case ESP_GATTS_DISCONNECT_EVT:
-        connected = false; encrypted = false; subscribed = false; ++generation;
+        if (!session.connected || param->disconnect.conn_id != connection_id) break;
+        ESP_LOGI(TAG, "Disconnected: reason=%u", param->disconnect.reason);
+        corallium_ble_reset_connection(&session);
+        advertising_pending = false;
         corallium_stream_reset(&incoming);
         xQueueReset(requests);
         advertise();
         break;
     case ESP_GATTS_WRITE_EVT:
+        if (!session.connected || param->write.conn_id != connection_id || !session.enabled) break;
         if (param->write.is_prep) { (void)esp_ble_gap_disconnect(peer); break; }
-        if (param->write.handle == handles[CCCD] && param->write.len == 2)
-            subscribed = encrypted && param->write.value[0] == 1 && param->write.value[1] == 0;
-        else if (param->write.handle == handles[RX]) receive(param->write.value, param->write.len);
+        if (param->write.handle == handles[CCCD] && param->write.len == 2 && param->write.offset == 0) {
+            // GATT enforces encryption before this callback. Preserve the CCCD
+            // intent even when AUTH_CMPL dispatch is still pending; TX still
+            // requires both this flag and authenticated encryption.
+            session.notify_requested = param->write.value[0] == 1 && param->write.value[1] == 0;
+            ESP_LOGI(TAG, "Notification subscription: enabled=%d authenticated=%d", session.notify_requested, session.encrypted);
+        } else if (param->write.handle == handles[RX]) receive(param->write.value, param->write.len);
         break;
     default: break;
     }
 }
-static void send_json(cJSON *message, uint32_t session) {
+static bool send_json(cJSON *message, uint32_t session_generation) {
     char *text = cJSON_PrintUnformatted(message);
     cJSON_Delete(message);
-    if (!text) return;
-    size_t length = strlen(text);
+    if (!text) return false;
+    size_t length = strlen(text), pos = 0;
+    bool failed = false;
     if (length <= LINE_LIMIT) {
         /* Include LF in the final ATT packet without growing cJSON's buffer. */
-        for (size_t pos = 0; pos <= length && connected && encrypted && subscribed && corallium_pairing_active() && session == generation; ) {
+        for (; pos <= length && corallium_ble_can_exchange(&session) && session_generation == session.generation; ) {
             uint8_t packet[20]; size_t count = 0;
             while (count < sizeof(packet) && pos <= length) {
                 packet[count++] = pos == length ? '\n' : text[pos];
                 ++pos;
             }
             esp_err_t err = esp_ble_gatts_send_indicate(gatts_if, connection_id, handles[TX], count, packet, false);
-            if (err != ESP_OK) { (void)esp_ble_gap_disconnect(peer); break; }
+            if (err != ESP_OK) { failed = true; (void)esp_ble_gap_disconnect(peer); break; }
             vTaskDelay(pdMS_TO_TICKS(12));
         }
     }
     memset(text, 0, length); free(text);
+    return !failed && pos == length + 1 && corallium_ble_can_exchange(&session) && session_generation == session.generation;
 }
 static void worker(void *arg) {
     (void)arg;
@@ -173,30 +232,34 @@ static void worker(void *arg) {
     if (!message) { vTaskDelete(NULL); return; }
     int64_t last_status = 0;
     while (true) {
-        if (deadline && esp_timer_get_time() >= deadline) {
-            deadline = 0;
-            (void)esp_ble_gap_stop_advertising();
-            if (connected) (void)esp_ble_gap_disconnect(peer);
-        }
         if (xQueueReceive(requests, message, pdMS_TO_TICKS(250)) == pdTRUE) {
-            if (message->generation == generation && connected && encrypted && corallium_pairing_active()) {
+            if (message->generation == session.generation && corallium_ble_can_exchange(&session)) {
                 const char *end = NULL;
                 cJSON *request = corallium_json_safe(message->line) ? cJSON_ParseWithOpts(message->line, &end, true) : NULL;
-                send_json(corallium_dispatch(request), message->generation);
+                cJSON *response = corallium_dispatch(request);
+                const cJSON *op = cJSON_GetObjectItemCaseSensitive(response, "op");
+                bool handshake = cJSON_IsString(op) && !strcmp(op->valuestring, "device.info") &&
+                                 cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(response, "ok"));
+                bool sent = send_json(response, message->generation);
+                if (handshake && sent && message->generation == session.generation) {
+                    session.application_generation = message->generation;
+                    last_status = esp_timer_get_time();
+                }
                 cJSON_Delete(request);
             }
             memset(message, 0, sizeof(*message));
-        } else if (connected && subscribed && encrypted && esp_timer_get_time() - last_status > 5000000) {
+        } else if (corallium_ble_can_publish(&session) && esp_timer_get_time() - last_status > 5000000) {
             cJSON *event = cJSON_CreateObject();
             cJSON_AddNumberToObject(event, "v", 1);
             cJSON_AddStringToObject(event, "op", "device.status");
             cJSON_AddItemToObject(event, "payload", corallium_status());
-            send_json(event, generation);
+            send_json(event, session.generation);
             last_status = esp_timer_get_time();
         }
     }
 }
 esp_err_t corallium_start(void) {
+    load_enabled();
     requests = xQueueCreate(1, sizeof(request_t));
     if (!requests) return ESP_ERR_NO_MEM;
     esp_bt_controller_config_t config = BT_CONTROLLER_INIT_CONFIG_DEFAULT();

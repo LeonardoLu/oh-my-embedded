@@ -10,7 +10,11 @@
   "ble": {
     "service": "7D2A0001-7E6D-4C55-A8D2-6B6D5E8F9010",
     "rx": {"uuid": "7D2A0002-7E6D-4C55-A8D2-6B6D5E8F9010", "properties": ["write"], "encryption_required": true},
-    "tx": {"uuid": "7D2A0003-7E6D-4C55-A8D2-6B6D5E8F9010", "properties": ["notify"], "default_chunk_bytes": 20}
+    "tx": {"uuid": "7D2A0003-7E6D-4C55-A8D2-6B6D5E8F9010", "properties": ["notify"], "default_chunk_bytes": 20},
+    "device_profiles": {
+      "m5stack-stopwatch": {"admission": "local_connection_window", "initial_enabled": false, "persist_enabled": false, "window_seconds": 300},
+      "espressif-esp-mosaico": {"admission": "local_switch", "initial_enabled": false, "persist_enabled": true, "window_seconds": null}
+    }
   },
   "serial": {"optional": true, "app_supported": false, "baud_rate": 115200}
 }

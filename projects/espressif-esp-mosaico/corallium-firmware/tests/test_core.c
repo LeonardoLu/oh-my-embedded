@@ -5,6 +5,58 @@
 #include "corallium_metrics.h"
 #include "corallium_render_policy.h"
 #include "corallium_json_guard.h"
+#include "corallium_ble_session.h"
+static bool saved_enabled;
+static int save_error;
+static int save_ble(bool enabled) {
+    if (save_error) return save_error;
+    saved_enabled = enabled;
+    return 0;
+}
+static void test_ble_lifecycle(void) {
+    corallium_ble_session_t ble = {0};
+    assert(!ble.enabled && !corallium_ble_accept_connection(&ble));
+    save_error = 7;
+    assert(corallium_ble_set_enabled(&ble, true, save_ble) == 7);
+    assert(!ble.enabled && !saved_enabled); // Failed NVS save must not report on.
+    save_error = 0;
+    assert(corallium_ble_set_enabled(&ble, true, save_ble) == 0);
+    assert(saved_enabled && corallium_ble_accept_connection(&ble));
+    assert(!corallium_ble_accept_connection(&ble)); // One active peer only.
+    uint32_t first = ble.generation;
+    ble.notify_requested = true; // Encrypted GATT callback before AUTH_CMPL dispatch.
+    assert(!corallium_ble_can_exchange(&ble));
+    corallium_ble_authenticated(&ble, true);
+    assert(corallium_ble_can_exchange(&ble) && !corallium_ble_can_publish(&ble));
+    ble.application_generation = first;
+    assert(corallium_ble_can_publish(&ble));
+    save_error = 8;
+    assert(corallium_ble_set_enabled(&ble, false, save_ble) == 8);
+    assert(saved_enabled && ble.enabled && corallium_ble_can_exchange(&ble));
+    save_error = 0;
+    corallium_ble_reset_connection(&ble);
+    assert(ble.enabled && !corallium_ble_can_exchange(&ble));
+    assert(corallium_ble_accept_connection(&ble)); // No deadline or physical re-enable.
+    corallium_ble_authenticated(&ble, true); // Reverse callback order also works.
+    ble.notify_requested = true;
+    ble.application_generation = first; // Late completion from old connection.
+    assert(corallium_ble_can_exchange(&ble) && !corallium_ble_can_publish(&ble));
+    ble.application_generation = ble.generation;
+    assert(corallium_ble_can_publish(&ble));
+    corallium_ble_session_t rebooted = {0};
+    rebooted.enabled = saved_enabled;
+    assert(rebooted.enabled && corallium_ble_accept_connection(&rebooted));
+    assert(!corallium_ble_can_publish(&rebooted)); // Saved on does not restore a session.
+    assert(corallium_ble_set_enabled(&ble, false, save_ble) == 0);
+    assert(!ble.enabled && !saved_enabled && !corallium_ble_can_exchange(&ble));
+    corallium_ble_authenticated(&ble, true); // Late auth cannot reopen a disabled switch.
+    assert(!ble.encrypted);
+    corallium_ble_reset_connection(&ble);
+    assert(!corallium_ble_accept_connection(&ble));
+    corallium_ble_session_t before_stack_init = {0};
+    assert(corallium_ble_set_enabled(&before_stack_init, false, save_ble) == 0);
+    assert(!saved_enabled); // Factory reset works without initializing Bluetooth.
+}
 static unsigned received;
 static size_t received_length;
 static char received_line[2049];
@@ -13,6 +65,7 @@ static bool line(const char *text, size_t size, void *context) {
     memcpy(received_line, text, size + 1); return true;
 }
 int main(void) {
+    test_ble_lifecycle();
     assert(corallium_json_safe("{\"ssid\":\"珊瑚\"}"));
     assert(corallium_json_safe("{\"text\":\"\\\\u0000\"}"));
     assert(!corallium_json_safe("{\"text\":\"\\u0000\"}"));
@@ -52,5 +105,5 @@ int main(void) {
     assert(corallium_dispatch_interval_ms(true, false, 1999999) == 16);
     assert(corallium_dispatch_interval_ms(false, false, 6000000) == 16);
     assert(corallium_dispatch_interval_ms(true, true, 6000000) == 100);
-    puts("framing, UTF-8, overflow recovery, telemetry and render policy passed");
+    puts("BLE lifecycle/persistence, framing, UTF-8, overflow recovery, telemetry and render policy passed");
 }

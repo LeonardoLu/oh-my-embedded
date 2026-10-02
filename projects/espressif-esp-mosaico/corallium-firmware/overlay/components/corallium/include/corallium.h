@@ -6,9 +6,11 @@
 #include "cJSON.h"
 
 esp_err_t corallium_start(void);
-/* The only admission gate: invoked by a physical button or the BLE tile. */
+/* Persistent manual BLE switch; default off. Saved on state resumes on boot.
+ * Both operations save first and leave the running switch unchanged on error.
+ * close is also safe before BLE initialization (factory-reset path). */
 esp_err_t corallium_open_pairing(void);
-void corallium_close_pairing(void);
+esp_err_t corallium_close_pairing(void);
 bool corallium_pairing_active(void);
 bool corallium_connected(void);
 bool corallium_time_valid(void);

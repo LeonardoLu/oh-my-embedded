@@ -35,6 +35,17 @@ class ContractTests(unittest.TestCase):
     def test_schema(self):
         Draft202012Validator.check_schema(SCHEMA)
 
+    def test_device_admission_policies(self):
+        watch, mosaico = (CHANNELS["ble"]["device_profiles"][model] for model in
+                          ("m5stack-stopwatch", "espressif-esp-mosaico"))
+        self.assertFalse(watch["initial_enabled"])
+        self.assertFalse(watch["persist_enabled"])
+        self.assertEqual(watch["window_seconds"], 300)
+        self.assertEqual(mosaico["admission"], "local_switch")
+        self.assertFalse(mosaico["initial_enabled"])
+        self.assertTrue(mosaico["persist_enabled"])
+        self.assertIsNone(mosaico["window_seconds"])
+
     def test_complete_session(self):
         pending = {}
         seen = set()
