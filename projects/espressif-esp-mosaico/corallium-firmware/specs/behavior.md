@@ -11,10 +11,12 @@ trial authentication, camera and expansion-manager services. Shared factory
 components and legacy scene binding definitions remain private dependencies;
 this patch does not claim to purge every inactive library/asset from flash.
 
-The home shortcuts are Weather, Settings and IMU. Launcher has two pages; the
-interaction-board page is removed. Pull-down controls are Wi-Fi, actual BLE
-connection, vibration and brightness. Music player, L/R slots, unsupported
-interconnect/low-power/ringtone controls have no visible or touchable route.
+Home displays clock/weather information without duplicate app shortcuts. The
+adjacent launcher page is the single entry for Settings, IMU, Album, Bricks and
+Weather. The interaction-board page is removed. Pull-down buttons form two
+columns: Wi-Fi/Bluetooth, then mute/vibration. Volume and brightness sliders sit
+below. Music player, L/R slots and unsupported interconnect/low-power controls
+have no visible or touchable route.
 Hidden offscreen ancestor nodes preserve generated factory accessor ABI.
 
 Scene bundles preserve the compiler's numeric font ordinals: `font10` follows
@@ -24,17 +26,19 @@ a font that exists at the wrong ordinal and verify the final MMAP flash image
 contains the validated assets. Fixed render policies use GSP's external override
 table, leaving its eight inline slots for per-app capacities.
 
-Settings root exposes Network, Display, Battery and About. Claw/AI/IM/security
+Settings root exposes Network, Display, Battery, Corallium and About. Claw/AI/IM/security
 integration rows are removed from the root mapping. Network's connection action
-controls the BLE window instead of an inactive AP configuration portal.
-About retains the locally installed firmware version, hardware identity and
-protocol capabilities. Software update checking and upgrade navigation are
+controls the persistent BLE switch instead of an inactive AP configuration portal.
+About retains the locally installed firmware version and hardware identity;
+Corallium opens its own protocol version, channel and capability detail view. Software update checking and upgrade navigation are
 removed: no update page, update actions, background manifest client or official
 update URL is included in this build. Firmware is installed explicitly over USB.
 Weather initializes before the settings platform and Hub, so their initial
 subscriptions see an initialized provider.
 Battery shows charge, voltage, signed gauge current, discharge power and estimated
-runtime. Missing samples immediately invalidate telemetry. Cell discharge power
+runtime. Compact labels `Disch. Pwr` and `Runtime` fit the detail columns; values
+retain mW/min units and a runtime estimate prefix. `Charging` and `--` represent
+unavailable discharge measurements. Missing samples immediately invalidate telemetry. Cell discharge power
 is `millivolts * -average_current_mA / 1000`; charging and near-zero current are
 unavailable. Runtime uses BQ27220 TimeToEmpty; 0xffff, charging or insufficient
 load yields unavailable. These are gauge measurements/estimates, not USB power,
@@ -51,14 +55,15 @@ sequence for returning to the ROM downloader. This console is not advertised as
 a Corallium protocol transport; application commands use BLE.
 
 [Root v1 protocol](../../../../protocols/corallium-v1/README.md) is authoritative.
-BLE is discoverable only after the Bluetooth tile, Network's Bluetooth connection action or
-a 500 ms top-key hold. The 120-second window expires even while connected;
-the tile/network action can also close it. Holding the physical key extends it.
-The broadcast name is ESP-Mosaico. Pull-down text distinguishes Bluetooth off,
-Discoverable and Connected. Corallium branding appears only in About's protocol
-version/capability rows, not routine hardware controls. RX and notification subscription require encrypted GATT,
-secure-connections Just Works has no MITM identity guarantee. No persistent bond
-is required. Service and characteristic UUIDs exactly match the root contract.
+BLE defaults off. The Bluetooth tile, Network action or a 500 ms top-key hold
+changes the switch; successful changes persist before runtime state changes.
+Startup restores the saved switch, factory reset clears it, and there is no
+connection deadline. Disconnection resumes advertising while enabled. Pull-down
+text distinguishes Bluetooth off, Bluetooth on and Connected. The broadcast name
+is ESP-Mosaico. Corallium branding belongs to the independent protocol settings
+entry/detail, not routine controls. RX and notification subscription require
+encrypted GATT; secure-connections Just Works has no MITM identity guarantee.
+No persistent bond is required. UUIDs exactly match the root contract.
 
 Firmware limits JSONL frames to 2048 bytes, accepts fragmented UTF-8, discards
 oversized/NUL/expired partial lines through the next delimiter, serializes output
@@ -69,7 +74,8 @@ ASCII ID, required types, duplicate top-level/payload keys, empty read/forget
 payloads, integer timestamp/offset and Wi-Fi byte lengths before mutation. Passwords
 are never returned or printed. One request may be in flight; queue overrun closes
 the connection rather than losing a mutation response. Status notifications every
-five seconds stop with the connection window.
+five seconds require an enabled, encrypted, subscribed connection and begin only
+after the session's device.info response has completed.
 
 The Wi-Fi manager is STA-only; BLE replaces automatic soft-AP fallback.
 No stored SSID starts with the radio off. Network settings or wifi.set can enable
@@ -91,7 +97,13 @@ RTC-derived time reports `source=rtc`, `quality=estimated`; app/NTP sync reports
 
 ## Power and rendering
 
-The unused amplifier is held off, and camera/Claw/ASR/external-module background
+The output-only speaker service uses the official ES8311 board DAC/PA path.
+Only a local volume release or unmute requests a 100 ms confirmation; startup
+and background activity are silent. Codec volume and mute apply to actual PCM
+output. The DAC, I2S output and PA close after feedback, and no audio capture or
+continuous mixer task starts. Volume zero persists mute; the previous nonzero
+volume is stored separately for unmute across restart. Save errors are surfaced
+and the UI refreshes the actual state. Camera/Claw/ASR/external-module background
 work is absent. GPIO60 stays on because its rail is shared with the display.
 Wi-Fi modem sleep is used after association. DFS permits 80–320 MHz so render work
 can retain peak frequency. Automatic light sleep is deliberately disabled until

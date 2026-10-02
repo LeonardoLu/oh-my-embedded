@@ -80,7 +80,13 @@ the linked-firmware check rejects the vendor updater and official manifest URL.
 It also parses actual compiled font references and the MMAP flash image, rejecting
 wrong font ordinals, missing catalog members and stale staged resources.
 
-For BLE, open the Bluetooth tile or hold the top key for 500 ms, then connect in
-Corallium within 120 seconds (the device advertises as ESP-Mosaico). Connect while adjacent to the device; the GATT link
+For BLE, toggle the Bluetooth tile or hold the top key for 500 ms. The device
+advertises as ESP-Mosaico until switched off; its switch survives restart and
+defaults off after factory reset. Connect while adjacent to the device; the GATT link
 uses encrypted Just Works. [Validation scope](specs/validation.md) records actual
 evidence and remaining hardware checks.
+
+The pull-down has two columns of Wi-Fi/Bluetooth and mute/vibration buttons,
+with volume and brightness sliders below. Volume release and unmute play a short
+local confirmation; startup stays silent. Muting and the prior volume survive
+restart. Settings has separate Battery, Corallium protocol and About entries.

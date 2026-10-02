@@ -22,8 +22,14 @@ are replaced by explicit test doubles. Covered behavior includes:
   empty forget payload; integer time/offset limits; 32-byte SSID and password
   boundaries; failed saves; persistent Wi-Fi enable/disable delegation.
 - Charging/unavailable power and runtime semantics and idle scheduling boundaries.
-- Generated factory scene traversal: removed actions have hidden ancestors and
-  cannot become visible through their original child visibility bindings.
+- The actual output-only speaker worker against explicit codec/RTOS test doubles:
+  silent startup/restore, no output while muted, bounded 100 ms local PCM, and
+  codec close after feedback or a partially opened codec failure. This checks
+  control flow, not physical sound/power.
+- Generated factory scene traversal: removed actions have hidden ancestors,
+  retained apps have one launcher entry, two-column controls/sliders match the
+  actual pointer hit regions, and compact Battery labels fit their compiled font.
+  About and the independent protocol detail have separate navigation routes.
 - Settings scene generation: the update page, update bindings and actions are
   absent. Firmware inspection rejects linked update-client symbols, the vendor
   update component and its official manifest URL.
@@ -58,8 +64,9 @@ startup logs. Those logs identified a settings subscription before update-servic
 initialization; the custom build now removes that service and retains weather
 initialization before UI subscriptions. Further startup logs identified incorrect
 font ordinals in the Hub bundle; the build now orders and verifies those resources.
-The resulting firmware still requires
-final runtime verification. Compilation and flash verification do not establish
+The resource-corrected firmware reached Ready and connected to Wi-Fi on the
+identified unit. The revised controls, speaker path and persistent BLE behavior
+require renewed runtime verification. Compilation and flash verification do not establish
 BLE interoperability, sleep/wake, battery accuracy, RTC retention or achieved FPS.
 
 After confirming the CoreBoard revision, use the same device for comparisons:
@@ -67,7 +74,8 @@ After confirming the CoreBoard revision, use the same device for comparisons:
 | Area | Procedure and observable result |
 | --- | --- |
 | USB | After leaving ROM download mode, application Type-C CDC must enumerate and expose startup logs. Reopen the console and verify the official DTR/RTS download-reset sequence returns to the ROM loader. |
-| BLE | Boot: no advertisement. Open local Bluetooth: ESP-Mosaico appears. Encrypted subscription/RX succeeds; unencrypted RX fails. Verify Connected state, local close, expiry, disconnect and reconnect framing. |
+| BLE | Fresh/reset device stays off. Enable locally: ESP-Mosaico appears and stays discoverable beyond two minutes. Encrypted subscription/RX succeeds; unencrypted RX fails. Verify saved on/off after reboot, Connected state, local close, disconnect/reconnect framing and no status event before device.info completes. |
+| Audio/UI | Confirm two button columns and both sliders respond at their visible positions. Releasing volume/unmuting sounds once; mute produces silence and restores the previous level after reboot. No startup/background sound or microphone task. Confirm shortened Battery values and independent protocol page, with one app entry per function. |
 | Wi-Fi | Set from app after local Wi-Fi off, join, inspect local SSID/IP, restart and confirm enabled state; wrong password reports failed; forget erases credentials and remains off after restart. Include a 32-byte SSID. |
 | Time | Set without internet; powered software reset should retain plausible RTC time with estimated quality. Full power removal must show invalid/--:-- until app or NTP sync. Measure drift against an external reference. |
 | Power | Compare stable brightness/network/load on the same supply. Record independent supply measurements and gauge discharge telemetry separately; charging runtime must be unavailable. Exercise screen timeout and touch/button wake. |

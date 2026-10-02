@@ -7,7 +7,7 @@
 #include "app_factory_reset.h"
 #include "claw_paths.h"
 #include "corallium.h"
-#include "driver/gpio.h"
+#include "mosaico_audio.h"
 #include "esp_board_manager_includes.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -44,14 +44,16 @@ void app_main(void) {
     ESP_ERROR_CHECK(app_config_init());
     bool reset_pending = false;
     ESP_ERROR_CHECK(app_factory_reset_is_pending(&reset_pending));
-    if (reset_pending) ESP_ERROR_CHECK(app_config_reset_all());
+    if (reset_pending) {
+        ESP_ERROR_CHECK(corallium_close_pairing());
+        ESP_ERROR_CHECK(app_config_reset_all());
+    }
     ESP_ERROR_CHECK(mosaico_bsp_bmgr_init());
     ESP_ERROR_CHECK(esp_board_manager_init());
-    /* Keep the unused speaker amplifier off. GPIO60 also powers the display;
-     * it must not be cut just to disable the external expansion rails. */
-    const gpio_config_t amp = {.pin_bit_mask = 1ULL << 45, .mode = GPIO_MODE_OUTPUT};
-    ESP_ERROR_CHECK(gpio_config(&amp));
-    ESP_ERROR_CHECK(gpio_set_level(45, 0));
+    /* Audio output uses the official DAC/PA driver. GPIO60 powers the display
+     * and must remain enabled independently of speaker or expansion usage. */
+    esp_err_t audio_err = mosaico_audio_init();
+    if (audio_err != ESP_OK) ESP_LOGW(TAG, "Speaker unavailable: %s", esp_err_to_name(audio_err));
     ESP_ERROR_CHECK(app_fs_init());
     if (reset_pending) {
         ESP_ERROR_CHECK(app_fs_factory_reset());
@@ -70,6 +72,7 @@ void app_main(void) {
         .user_agent = "ESP-Mosaico/0.1 https://github.com/esp-mosaico/esp-mosaico-claw", .refresh_interval_ms = 3600000, .stale_after_ms = 21600000}));
     ESP_ERROR_CHECK(mosaic_settings_platform_init(&(mosaic_settings_platform_config_t){
         .settings = settings, .network_provisioning = network, .save_config = save_config}));
+    if (audio_err == ESP_OK) ESP_ERROR_CHECK(app_settings_service_restore_audio(settings));
     ESP_ERROR_CHECK(app_settings_service_restore_display(settings));
     ESP_ERROR_CHECK(app_settings_service_restore_brightness(settings));
     ESP_ERROR_CHECK(mosaic_ui_start());
@@ -96,5 +99,5 @@ void app_main(void) {
     esp_err_t err = esp_pm_configure(&power);
     if (err != ESP_OK) ESP_LOGW(TAG, "DFS unavailable: %s", esp_err_to_name(err));
 #endif
-    ESP_LOGI(TAG, "Ready; BLE off until Bluetooth tile or 500 ms top-key hold (120 s window)");
+    ESP_LOGI(TAG, "Ready; Bluetooth switch restored; toggle in drawer or hold top key 500 ms");
 }

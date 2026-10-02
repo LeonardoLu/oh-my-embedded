@@ -71,6 +71,173 @@ index fa951ad..8f5748d 100644
          }
          return ESP_ERR_INVALID_ARG;
      }
+diff --git a/components/app_settings_service/CMakeLists.txt b/components/app_settings_service/CMakeLists.txt
+index 1156f46..7ddb922 100644
+--- a/components/app_settings_service/CMakeLists.txt
++++ b/components/app_settings_service/CMakeLists.txt
+@@ -5,7 +5,7 @@ idf_component_register(
+         app_claw
+         app_config
+         app_system_config
+-        audio_hub
++        mosaico_audio
+         display_service
+         settings
+         wifi_manager
+diff --git a/components/app_settings_service/app_settings_service.c b/components/app_settings_service/app_settings_service.c
+index 1d7b9ca..cc719fb 100644
+--- a/components/app_settings_service/app_settings_service.c
++++ b/components/app_settings_service/app_settings_service.c
+@@ -11,7 +11,7 @@
+ 
+ #include "app_config.h"
+ #include "app_system_config.h"
+-#include "audio_hub.h"
++#include "mosaico_audio.h"
+ #include "display_service.h"
+ #include "esp_check.h"
+ #include "esp_log.h"
+@@ -116,19 +116,19 @@ esp_err_t app_settings_service_set_volume(
+     ESP_RETURN_ON_FALSE(
+         xSemaphoreTake(handle->lock, pdMS_TO_TICKS(1000)) == pdTRUE,
+         ESP_ERR_TIMEOUT, TAG, "settings service busy");
+-    audio_mixer_handle_t mixer = NULL;
+-    esp_err_t err = audio_hub_get_mixer(&mixer);
+-    if (err == ESP_OK) {
+-        err = audio_mixer_set_output_volume(mixer, volume);
+-    }
++    esp_err_t err = mosaico_audio_set_volume(volume);
+     if (err == ESP_OK && persist) {
+         app_system_config_t config;
+         err = app_system_config_load(&config);
+         if (err == ESP_OK) {
++            const int saved_volume = config.volume;
+             config.volume = (uint8_t)volume;
++            if (volume > 0) config.unmuted_volume = (uint8_t)volume;
+             err = app_system_config_save(&config);
++            if (err != ESP_OK) (void)mosaico_audio_set_volume(saved_volume);
+         }
+     }
++    if (err == ESP_OK && persist && volume > 0) (void)mosaico_audio_preview();
+     xSemaphoreGive(handle->lock);
+     return err;
+ }
+@@ -409,6 +409,7 @@ esp_err_t app_settings_service_get_snapshot(
+     ret_snapshot->rotation = system_config.rotation;
+     ret_snapshot->brightness = system_config.brightness;
+     ret_snapshot->volume = system_config.volume;
++    ret_snapshot->unmuted_volume = system_config.unmuted_volume;
+     ret_snapshot->screen_timeout_ms = system_config.screen_timeout_ms;
+     ret_snapshot->vibration_enabled = system_config.vibration_enabled;
+     ret_snapshot->boot_stage = system_config.boot_stage;
+@@ -416,11 +417,10 @@ esp_err_t app_settings_service_get_snapshot(
+     if (ret_snapshot->display_available) {
+         (void)display_service_get_rotation(&ret_snapshot->rotation);
+     }
+-    audio_mixer_handle_t mixer = NULL;
+-    ret_snapshot->audio_available = audio_hub_is_started() &&
+-        audio_hub_get_mixer(&mixer) == ESP_OK;
++    ret_snapshot->audio_available = mosaico_audio_available();
+     if (ret_snapshot->audio_available) {
+-        (void)audio_mixer_get_output_volume(mixer, &ret_snapshot->volume);
++        const int volume = mosaico_audio_get_volume();
++        if (volume >= 0) ret_snapshot->volume = volume;
+     }
+     app_settings_fill_network(ret_snapshot, config);
+     app_settings_fill_im(ret_snapshot, config);
+diff --git a/components/app_settings_service/include/app_settings_service.h b/components/app_settings_service/include/app_settings_service.h
+index 7f8f15f..0e55da5 100644
+--- a/components/app_settings_service/include/app_settings_service.h
++++ b/components/app_settings_service/include/app_settings_service.h
+@@ -52,6 +52,7 @@ typedef struct {
+ typedef struct {
+     uint16_t rotation;
+     int volume;
++    int unmuted_volume;
+     int brightness;
+     uint32_t screen_timeout_ms;
+     bool vibration_enabled;
+diff --git a/components/app_system_config/app_system_config.c b/components/app_system_config/app_system_config.c
+index dd6b8d2..34ab71b 100644
+--- a/components/app_system_config/app_system_config.c
++++ b/components/app_system_config/app_system_config.c
+@@ -16,6 +16,7 @@
+ #define SYSTEM_ROTATION_KEY   "sys_rotation"
+ #define SYSTEM_BRIGHTNESS_KEY "sys_brightness"
+ #define SYSTEM_VOLUME_KEY     "sys_volume"
++#define SYSTEM_UNMUTED_VOLUME_KEY "sys_unmute_vol"
+ #define SYSTEM_SCREEN_TIMEOUT_KEY "sys_screen_to"
+ #define SYSTEM_VIBRATION_KEY  "sys_vibration"
+ #define SYSTEM_WIFI_ENABLED_KEY "sys_wifi_en"
+@@ -88,6 +89,7 @@ void app_system_config_defaults(app_system_config_t *config)
+         .rotation = 0,
+         .brightness = 100,
+         .volume = 80,
++        .unmuted_volume = 80,
+         .screen_timeout_ms = SYSTEM_SCREEN_TIMEOUT_DEFAULT_MS,
+         .vibration_enabled = true,
+         .wifi_enabled = true,
+@@ -103,6 +105,7 @@ esp_err_t app_system_config_load(app_system_config_t *config)
+     int rotation = config->rotation;
+     int brightness = config->brightness;
+     int volume = config->volume;
++    int unmuted_volume = config->unmuted_volume;
+     int screen_timeout = config->screen_timeout_ms;
+     int vibration = config->vibration_enabled;
+     int wifi_enabled = config->wifi_enabled;
+@@ -113,6 +116,7 @@ esp_err_t app_system_config_load(app_system_config_t *config)
+         {SYSTEM_ROTATION_KEY, "ui_rotation", 0, 270, 0, &rotation},
+         {SYSTEM_BRIGHTNESS_KEY, NULL, 0, 100, 100, &brightness},
+         {SYSTEM_VOLUME_KEY, "audio_volume", 0, 100, 80, &volume},
++        {SYSTEM_UNMUTED_VOLUME_KEY, NULL, 1, 100, 80, &unmuted_volume},
+         {SYSTEM_SCREEN_TIMEOUT_KEY, NULL, 0, SYSTEM_SCREEN_TIMEOUT_MAX_MS,
+          SYSTEM_SCREEN_TIMEOUT_DEFAULT_MS, &screen_timeout},
+         {SYSTEM_VIBRATION_KEY, NULL, 0, 1, 1, &vibration},
+@@ -132,6 +136,7 @@ esp_err_t app_system_config_load(app_system_config_t *config)
+     config->rotation = (uint16_t)rotation;
+     config->brightness = (uint8_t)brightness;
+     config->volume = (uint8_t)volume;
++    config->unmuted_volume = volume > 0 ? (uint8_t)volume : (uint8_t)unmuted_volume;
+     config->screen_timeout_ms = (uint32_t)screen_timeout;
+     config->vibration_enabled = vibration != 0;
+     config->wifi_enabled = wifi_enabled != 0;
+@@ -145,6 +150,7 @@ esp_err_t app_system_config_save(const app_system_config_t *config)
+                             (config->rotation == 0 || config->rotation == 90 ||
+                              config->rotation == 180 || config->rotation == 270) &&
+                             config->brightness <= 100 && config->volume <= 100 &&
++                            config->unmuted_volume > 0 && config->unmuted_volume <= 100 &&
+                             screen_timeout_valid(config->screen_timeout_ms),
+                         ESP_ERR_INVALID_ARG, TAG, "invalid system config");
+     ESP_RETURN_ON_ERROR(write_int(SYSTEM_BOOT_STAGE_KEY, config->boot_stage),
+@@ -155,6 +161,8 @@ esp_err_t app_system_config_save(const app_system_config_t *config)
+                         TAG, "save brightness");
+     ESP_RETURN_ON_ERROR(write_int(SYSTEM_VOLUME_KEY, config->volume),
+                         TAG, "save volume");
++    ESP_RETURN_ON_ERROR(write_int(SYSTEM_UNMUTED_VOLUME_KEY, config->unmuted_volume),
++                        TAG, "save unmuted volume");
+     ESP_RETURN_ON_ERROR(write_int(SYSTEM_SCREEN_TIMEOUT_KEY,
+                                   (int)config->screen_timeout_ms),
+                         TAG, "save screen timeout");
+@@ -174,6 +182,7 @@ esp_err_t app_system_config_reset(void)
+         SYSTEM_ROTATION_KEY,
+         SYSTEM_BRIGHTNESS_KEY,
+         SYSTEM_VOLUME_KEY,
++        SYSTEM_UNMUTED_VOLUME_KEY,
+         SYSTEM_SCREEN_TIMEOUT_KEY,
+         SYSTEM_VIBRATION_KEY,
+         SYSTEM_WIFI_ENABLED_KEY,
+diff --git a/components/app_system_config/include/app_system_config.h b/components/app_system_config/include/app_system_config.h
+index d37a9b9..1f2ba80 100644
+--- a/components/app_system_config/include/app_system_config.h
++++ b/components/app_system_config/include/app_system_config.h
+@@ -25,6 +25,7 @@ typedef struct {
+     uint16_t rotation;
+     uint8_t brightness;
+     uint8_t volume;
++    uint8_t unmuted_volume;
+     uint32_t screen_timeout_ms;
+     bool vibration_enabled;
+     bool wifi_enabled;
 diff --git a/components/mosaic_ui/CMakeLists.txt b/components/mosaic_ui/CMakeLists.txt
 index 764f30d..f992f6b 100644
 --- a/components/mosaic_ui/CMakeLists.txt
@@ -199,7 +366,7 @@ index ceeba6c..2f97010 100755
      "$OUT"/${STEM}_font*.gfb \
      $(if [[ -f "$OUT/${STEM}.grb" ]]; then echo "$OUT/${STEM}.grb"; fi)
 diff --git a/components/mosaic_ui/apps/settings/scene/gen_scene.py b/components/mosaic_ui/apps/settings/scene/gen_scene.py
-index af11a65..e95cc87 100644
+index af11a65..6846c45 100644
 --- a/components/mosaic_ui/apps/settings/scene/gen_scene.py
 +++ b/components/mosaic_ui/apps/settings/scene/gen_scene.py
 @@ -57,8 +57,7 @@ PAGE_INTEGRATIONS_MODEL = 9
@@ -251,6 +418,15 @@ index af11a65..e95cc87 100644
                        events=phone_events))
      objs.append({
          "type": "keyboard",
+@@ -734,7 +727,7 @@ def _web_nav(objs, page, title, name):
+                       color=MUTED, align="center", name=f"{name}_title")
+     if name == "nav_settings_detail":
+         title_obj["bind"] = "settings_detail_title"
+-        title_obj["font_charset"] = "AboutDiagnosticSafe ModeBattery"
++        title_obj["font_charset"] = "AboutDiagnosticSafe ModeBatteryCorallium"
+     objs.append(title_obj)
+ 
+ 
 @@ -983,8 +976,7 @@ def _build_detail(objs, page):
          "callback": "settings_detail_row",
          "bg_color": BG, "radius": 0,
@@ -442,7 +618,7 @@ index 1ada0c3..57cb7b3 100755
      "$OUT"/${STEM}_font*.gfb \
      $(if [[ -f "$OUT/${STEM}_assets.grb" ]]; then echo "$OUT/${STEM}_assets.grb"; fi)
 diff --git a/components/mosaic_ui/apps/settings/settings_app.c b/components/mosaic_ui/apps/settings/settings_app.c
-index d3b4859..c70fea6 100644
+index d3b4859..5de2a1f 100644
 --- a/components/mosaic_ui/apps/settings/settings_app.c
 +++ b/components/mosaic_ui/apps/settings/settings_app.c
 @@ -5,6 +5,9 @@
@@ -484,7 +660,7 @@ index d3b4859..c70fea6 100644
      settings_wlan_state_t wlan;
  } settings_ui_state_t;
  
-@@ -210,19 +205,6 @@ static size_t s_wlan_network_count;
+@@ -210,23 +205,11 @@ static size_t s_wlan_network_count;
  static esp_gsp_list_t s_wlan_list = ESP_GSP_LIST_NONE;
  static esp_gsp_list_t s_root_list = ESP_GSP_LIST_NONE;
  static esp_gsp_list_t s_detail_list = ESP_GSP_LIST_NONE;
@@ -504,7 +680,12 @@ index d3b4859..c70fea6 100644
  typedef enum {
      SETTINGS_DETAIL_ABOUT,
      SETTINGS_DETAIL_SAFE_MODE,
-@@ -345,14 +327,6 @@ esp_err_t mosaic_settings_factory_reset(void)
+     SETTINGS_DETAIL_BATTERY,
++    SETTINGS_DETAIL_PROTOCOL,
+ } settings_detail_kind_t;
+ 
+ static settings_detail_kind_t s_detail_kind = SETTINGS_DETAIL_ABOUT;
+@@ -345,14 +328,6 @@ esp_err_t mosaic_settings_factory_reset(void)
      return s_state.ops.factory_reset(s_state.ops.user_ctx);
  }
  
@@ -519,11 +700,14 @@ index d3b4859..c70fea6 100644
  esp_err_t mosaic_settings_get_snapshot(
      mosaic_settings_snapshot_t *ret_snapshot)
  {
-@@ -843,7 +817,14 @@ static const settings_detail_row_t s_about_rows[] = {
+@@ -843,7 +818,17 @@ static const settings_detail_row_t s_about_rows[] = {
      {"GSP", "--", false, false, false},
      {"Display", "2.16\" 480×480", false, false, false},
      {"Serial", "--", false, false, false},
 -    {"Update", "", false, true, true},
++};
++
++static const settings_detail_row_t s_protocol_rows[] = {
 +    {"Protocol", "Corallium v1", false, false, false},
 +    {"Channel", "ble", false, false, false},
 +    {"Time sync", "time.set", false, false, false},
@@ -531,20 +715,30 @@ index d3b4859..c70fea6 100644
 +    {"Wi-Fi erase", "wifi.forget", false, false, false},
 +    {"Cell status", "battery", false, false, false},
 +    {"Cell power", "power", false, false, false},
-+    {"Cell runtime", "runtime", false, false, false},
++    {"Runtime", "runtime", false, false, false},
  };
  
  static const settings_detail_row_t s_safe_rows[] = {
-@@ -857,6 +838,8 @@ static const settings_detail_row_t s_battery_rows[] = {
+@@ -857,6 +842,8 @@ static const settings_detail_row_t s_battery_rows[] = {
      {"Charge", "--", false, false, false},
      {"Voltage", "--", false, false, false},
      {"Current", "--", false, false, false},
-+    {"Discharge power", "--", false, false, false},
-+    {"Runtime (est.)", "--", false, false, false},
++    {"Disch. Pwr", "--", false, false, false},
++    {"Runtime", "--", false, false, false},
  };
  
  static const settings_detail_row_t *settings_detail_rows(size_t *count)
-@@ -903,33 +886,6 @@ static gsp_err_t settings_detail_bind_item(
+@@ -868,6 +855,9 @@ static const settings_detail_row_t *settings_detail_rows(size_t *count)
+     case SETTINGS_DETAIL_BATTERY:
+         *count = sizeof(s_battery_rows) / sizeof(s_battery_rows[0]);
+         return s_battery_rows;
++    case SETTINGS_DETAIL_PROTOCOL:
++        *count = sizeof(s_protocol_rows) / sizeof(s_protocol_rows[0]);
++        return s_protocol_rows;
+     case SETTINGS_DETAIL_ABOUT:
+     default:
+         *count = sizeof(s_about_rows) / sizeof(s_about_rows[0]);
+@@ -903,33 +893,6 @@ static gsp_err_t settings_detail_bind_item(
          case 4:
              value = s_state.snapshot.serial_number[0] != '\0' ? s_state.snapshot.serial_number : "--";
              break;
@@ -578,7 +772,7 @@ index d3b4859..c70fea6 100644
          default:
              break;
          }
-@@ -952,6 +908,19 @@ static gsp_err_t settings_detail_bind_item(
+@@ -952,6 +915,19 @@ static gsp_err_t settings_detail_bind_item(
                       (int)battery->current_ma);
              value = value_text;
              break;
@@ -587,26 +781,43 @@ index d3b4859..c70fea6 100644
 +                snprintf(value_text, sizeof(value_text), "%.0f mW",
 +                         -(double)battery->voltage_mv * battery->current_ma / 1000.0);
 +                value = value_text;
-+            } else value = "Unavailable";
++            } else value = battery->charging ? "Charging" : "--";
 +            break;
 +        case 4:
 +            if (!battery->charging && battery->current_ma < -2 && battery->time_to_empty_min != UINT16_MAX) {
 +                snprintf(value_text, sizeof(value_text), "~%u min", battery->time_to_empty_min);
 +                value = value_text;
-+            } else value = battery->charging ? "Charging" : "Unavailable";
++            } else value = battery->charging ? "Charging" : "--";
 +            break;
          default:
              break;
          }
-@@ -1017,6 +986,7 @@ typedef struct {
+@@ -990,7 +966,7 @@ static void settings_detail_list_attach(esp_gsp_handle_t ui)
+ static void settings_open_detail(esp_gsp_handle_t ui,
+                                  settings_detail_kind_t kind)
+ {
+-    static const char *titles[] = {"About", "Safe Mode", "Battery"};
++    static const char *titles[] = {"About", "Safe Mode", "Battery", "Corallium"};
+     s_detail_kind = kind;
+     size_t count = 0;
+     (void)settings_detail_rows(&count);
+@@ -1017,6 +993,7 @@ typedef struct {
      .icon_size = sizeof(settings_root_icon_##_name), \
  }
  
-+static const uint8_t s_visible_root_rows[] = {2, 3, 6, 7};
++static const uint8_t s_visible_root_rows[] = {2, 3, 6, 8, 7};
  static const settings_root_row_t s_root_rows[] = {
      SETTINGS_ROOT_ROW("AI Model", ai),
      SETTINGS_ROOT_ROW("IM Channels", channels),
-@@ -1073,9 +1043,8 @@ static gsp_err_t settings_root_list_bind_item(
+@@ -1026,6 +1003,7 @@ static const settings_root_row_t s_root_rows[] = {
+     SETTINGS_ROOT_ROW("Security", security),
+     SETTINGS_ROOT_ROW("Battery", battery),
+     SETTINGS_ROOT_ROW("About", about),
++    SETTINGS_ROOT_ROW("Corallium", network),
+ };
+ 
+ static const char *settings_wlan_summary(void)
+@@ -1073,9 +1051,8 @@ static gsp_err_t settings_root_list_bind_item(
      void *user_ctx)
  {
      (void)user_ctx;
@@ -618,7 +829,7 @@ index d3b4859..c70fea6 100644
      char value[16] = "";
      const char *value_text = value;
      switch (item_index) {
-@@ -1141,7 +1110,7 @@ static void settings_root_list_attach(esp_gsp_handle_t ui)
+@@ -1141,7 +1118,7 @@ static void settings_root_list_attach(esp_gsp_handle_t ui)
          return;
      }
      (void)esp_gsp_list_set_total(
@@ -627,7 +838,7 @@ index d3b4859..c70fea6 100644
      settings_root_list_refresh(ui);
  }
  
-@@ -2086,449 +2055,6 @@ static void settings_refresh_about_detail(esp_gsp_handle_t ui)
+@@ -2086,449 +2063,6 @@ static void settings_refresh_about_detail(esp_gsp_handle_t ui)
      }
  }
  
@@ -1077,7 +1288,7 @@ index d3b4859..c70fea6 100644
  static void settings_refresh_battery_detail(esp_gsp_handle_t ui)
  {
      if (s_state.ops.get_battery == NULL ||
-@@ -2936,10 +2462,8 @@ static void settings_dispatch_call(
+@@ -2936,10 +2470,8 @@ static void settings_dispatch_call(
  {
      switch (event->data.call.action_id) {
      case GSP_ACT_ID_SETTINGS_ROOT_ROW: {
@@ -1090,16 +1301,20 @@ index d3b4859..c70fea6 100644
          if (item <= 1U) {
              settings_open_integration(ui, item == 0U);
              return;
-@@ -2982,8 +2506,6 @@ static void settings_dispatch_call(
+@@ -2982,8 +2514,10 @@ static void settings_dispatch_call(
          if (item == 7U) {
              settings_refresh_snapshot(ui);
              settings_open_detail(ui, SETTINGS_DETAIL_ABOUT);
 -            s_state.update_notice_sequence =
 -                s_state.snapshot.update.sequence;
++            return;
++        }
++        if (item == 8U) {
++            settings_open_detail(ui, SETTINGS_DETAIL_PROTOCOL);
              return;
          }
          static const uint16_t pages[] = {
-@@ -3108,11 +2630,6 @@ static void settings_dispatch_call(
+@@ -3108,11 +2642,6 @@ static void settings_dispatch_call(
          }
          return;
      case GSP_ACT_ID_SETTINGS_DETAIL_ROW:
@@ -1111,7 +1326,7 @@ index d3b4859..c70fea6 100644
          if (s_detail_kind == SETTINGS_DETAIL_SAFE_MODE &&
                  event->data.call.item == 3U) {
              (void)mosaic_top_notice_show(
-@@ -3120,15 +2637,6 @@ static void settings_dispatch_call(
+@@ -3120,15 +2649,6 @@ static void settings_dispatch_call(
                  SETTINGS_NOTICE_DURATION_MS);
          }
          return;
@@ -1127,7 +1342,7 @@ index d3b4859..c70fea6 100644
      case GSP_ACT_ID_WLAN_TOGGLE:
          if (event->timestamp_us - s_state.wlan_toggle_last_us < 100000) {
              return;
-@@ -3185,17 +2693,16 @@ static void settings_dispatch_call(
+@@ -3185,17 +2705,17 @@ static void settings_dispatch_call(
          settings_wlan_cancel_password(ui);
          return;
      case GSP_ACT_ID_WLAN_PHONE_SETUP_OPEN:
@@ -1143,19 +1358,20 @@ index d3b4859..c70fea6 100644
 -        s_state.rendered_phone_qr[0] = '\0';
 -        settings_wlan_phone_refresh(ui);
 +#if defined(ESP_PLATFORM)
-+        if (corallium_pairing_active()) {
-+            corallium_close_pairing();
-+            (void)mosaic_top_notice_show(ui, &s_top_notice, "Bluetooth off",
-+                "Connection window closed", SETTINGS_NOTICE_DURATION_MS);
-+        } else if (corallium_open_pairing() == ESP_OK) {
-+            (void)mosaic_top_notice_show(ui, &s_top_notice, "ESP-Mosaico",
-+                "Discoverable for 120 seconds", SETTINGS_NOTICE_DURATION_MS);
++        {
++            const esp_err_t err = corallium_pairing_active() ?
++                corallium_close_pairing() : corallium_open_pairing();
++            (void)mosaic_top_notice_show(ui, &s_top_notice,
++                err != ESP_OK ? "Bluetooth unavailable" :
++                corallium_pairing_active() ? "Bluetooth on" : "Bluetooth off",
++                err != ESP_OK ? "Unable to save switch" : "Setting saved across restart",
++                SETTINGS_NOTICE_DURATION_MS);
 +        }
 +#endif
          return;
      case GSP_ACT_ID_WLAN_PHONE_SETUP_CLOSE:
          s_state.wlan_phone_active = false;
-@@ -3480,10 +2987,6 @@ static void settings_event(
+@@ -3480,10 +3000,6 @@ static void settings_event(
          s_root_list = ESP_GSP_LIST_NONE;
          s_wlan_list = ESP_GSP_LIST_NONE;
          s_detail_list = ESP_GSP_LIST_NONE;
@@ -1166,7 +1382,7 @@ index d3b4859..c70fea6 100644
          s_state.wlan_scan_compact_valid = false;
          s_wlan_network_count = 0;
          s_state.display_page_active = false;
-@@ -3500,11 +3003,7 @@ static void settings_event(
+@@ -3500,11 +3016,7 @@ static void settings_event(
          s_state.integration_rendered_progress = UINT8_MAX;
          s_state.rendered_channel_qr[0] = '\0';
          s_state.rendered_phone_qr[0] = '\0';
@@ -1178,7 +1394,7 @@ index d3b4859..c70fea6 100644
          s_state.wlan_scan_revision =
              s_state.snapshot.network.scan_revision;
          settings_root_list_attach(ui);
-@@ -3527,10 +3026,6 @@ static void settings_event(
+@@ -3527,10 +3039,6 @@ static void settings_event(
          settings_wlan_refresh_status(ui);
          settings_root_list_refresh(ui);
          settings_refresh_about_detail(ui);
@@ -1189,7 +1405,7 @@ index d3b4859..c70fea6 100644
          uint16_t model_top = 0U;
          if (s_detail_kind == SETTINGS_DETAIL_BATTERY &&
                  esp_gsp_stack_view_get_top(
-@@ -3592,15 +3087,6 @@ static void settings_event(
+@@ -3592,15 +3100,6 @@ static void settings_event(
                  }
              }
          }
@@ -1205,7 +1421,7 @@ index d3b4859..c70fea6 100644
          if (settings_wlan_reconcile_navigation(ui)) {
              break;
          }
-@@ -3678,11 +3164,9 @@ static void settings_event(
+@@ -3678,11 +3177,9 @@ static void settings_event(
          (void)settings_wlan_set_loading(ui, false);
          settings_wlan_password_detach(ui);
          settings_wlan_list_park(ui);
@@ -1217,7 +1433,7 @@ index d3b4859..c70fea6 100644
          s_state.wlan_scan_compact_valid = false;
          s_state.wlan_notice_pending = false;
          s_state.wlan_notice_title = NULL;
-@@ -3719,11 +3203,8 @@ static void settings_event(
+@@ -3719,11 +3216,8 @@ static void settings_event(
  
  static bool settings_back(esp_gsp_handle_t ui, int64_t timestamp_us)
  {
@@ -1230,7 +1446,7 @@ index d3b4859..c70fea6 100644
      s_state.integration_page = 0;
      /* Return false so the loader performs the normal Settings StackView pop. */
      return false;
-@@ -3742,14 +3223,13 @@ const mosaic_app_descriptor_t mosaic_settings_app = {
+@@ -3742,14 +3236,13 @@ const mosaic_app_descriptor_t mosaic_settings_app = {
      .root_stack_key = GSP_OBJ_KEY_SETTINGS_STACK,
      .disable_swipe = true,
      .root_header_in_stack = false,
@@ -1520,7 +1736,7 @@ index 5636bb0..362115d 100644
                  mosaic_runtime_active_app(s_runtime) == mosaic_app_root();
              if (hub_foreground != s_hub_foreground) {
 diff --git a/components/mosaic_ui/hub/mosaic_hub_app.c b/components/mosaic_ui/hub/mosaic_hub_app.c
-index a862484..4a17cf1 100644
+index a862484..3d8664c 100644
 --- a/components/mosaic_ui/hub/mosaic_hub_app.c
 +++ b/components/mosaic_ui/hub/mosaic_hub_app.c
 @@ -19,6 +19,9 @@
@@ -1541,25 +1757,35 @@ index a862484..4a17cf1 100644
  static void* s_battery_timer;
  static void* s_aod_hint_timer;
  static void* s_lock_poll_timer;
-@@ -78,6 +82,8 @@ static int32_t s_quick_tap_y0;
+@@ -78,6 +82,10 @@ static int32_t s_quick_tap_y0;
  static int32_t s_quick_level;
  static bool s_quick_wlan = true;
  static bool s_quick_vibration = true;
++static bool s_quick_muted;
++static int s_quick_restore_volume = 40;
 +static bool s_quick_bluetooth;
 +static bool s_quick_ble_connected;
  static bool s_agent_configured;
  static mosaic_ui_haptic_cb_t s_haptic_callback;
  static void *s_haptic_user_ctx;
-@@ -387,6 +393,8 @@ static void mosaic_hub_quick_level_render(
+@@ -383,10 +391,16 @@ static void mosaic_hub_quick_level_render(
+     const int clamped = level < 0 ? 0 : level > 100 ? 100 : level;
+     (void)esp_gsp_component_set_value(ui, fill, clamped);
+     (void)esp_gsp_component_set_value(ui, input, clamped);
++    char text[8];
++    (void)snprintf(text, sizeof(text), "%d%%", clamped);
++    (void)esp_gsp_set_text(ui, input == GSP_OBJ_KEY_QUICK_VOLUME_INPUT ?
++        GSP_BIND_QUICK_VOLUME_TEXT : GSP_BIND_QUICK_BRIGHTNESS_TEXT, text);
+ }
  
  static void mosaic_hub_quick_render(esp_gsp_handle_t ui)
  {
 +    (void)esp_gsp_set_text(ui, GSP_BIND_QUICK_BLE_STATE,
-+        s_quick_ble_connected ? "Connected" : s_quick_bluetooth ? "Discoverable" : "Bluetooth off");
++        s_quick_ble_connected ? "Connected" : s_quick_bluetooth ? "Bluetooth\nOn" : "Bluetooth\nOff");
      mosaic_hub_quick_toggle_render(ui, GSP_OBJ_KEY_QUICK_WLAN,
          GSP_OBJ_KEY_QUICK_WLAN_OFF, GSP_OBJ_KEY_QUICK_WLAN_ON, s_quick_wlan,
          UINT32_C(0xFA60));
-@@ -395,7 +403,7 @@ static void mosaic_hub_quick_render(esp_gsp_handle_t ui)
+@@ -395,17 +409,16 @@ static void mosaic_hub_quick_render(esp_gsp_handle_t ui)
          UINT32_C(0xFA60));
      mosaic_hub_quick_toggle_render(ui, GSP_OBJ_KEY_QUICK_BLUETOOTH,
          GSP_OBJ_KEY_QUICK_BLUETOOTH_OFF, GSP_OBJ_KEY_QUICK_BLUETOOTH_ON,
@@ -1568,7 +1794,40 @@ index a862484..4a17cf1 100644
      (void)esp_gsp_component_set_color(
          ui, GSP_OBJ_KEY_QUICK_LOW_POWER,
          UINT32_C(0x39E7));
-@@ -871,6 +879,16 @@ static void mosaic_hub_charge_refresh(esp_gsp_handle_t ui)
+     mosaic_hub_quick_toggle_render(ui, GSP_OBJ_KEY_QUICK_RINGTONE,
+         GSP_OBJ_KEY_QUICK_RINGTONE_OFF, GSP_OBJ_KEY_QUICK_RINGTONE_ON,
+-        false, UINT32_C(0xF9C6));
+-    (void)esp_gsp_component_set_visible(
+-        ui, GSP_OBJ_KEY_QUICK_RINGTONE_OFF, true);
+-    (void)esp_gsp_component_set_visible(
+-        ui, GSP_OBJ_KEY_QUICK_RINGTONE_ON, false);
++        s_quick_muted, UINT32_C(0xF9C6));
++    (void)esp_gsp_component_set_visible(ui, GSP_OBJ_KEY_QUICK_RINGTONE_OFF, !s_quick_muted);
++    (void)esp_gsp_component_set_visible(ui, GSP_OBJ_KEY_QUICK_RINGTONE_ON, s_quick_muted);
++    (void)esp_gsp_set_text(ui, GSP_BIND_QUICK_MUTE_STATE, s_quick_muted ? "Muted" : "Sound");
+     mosaic_hub_quick_toggle_render(ui, GSP_OBJ_KEY_QUICK_VIBRATION,
+         GSP_OBJ_KEY_QUICK_VIBRATION_OFF, GSP_OBJ_KEY_QUICK_VIBRATION_ON,
+         s_quick_vibration, UINT32_C(0xFA60));
+@@ -432,6 +445,10 @@ static void mosaic_hub_system_status_apply(
+         return;
+     }
+     s_quick_vibration = snapshot->vibration_enabled;
++    if (!s_quick_volume_drag) {
++        s_quick_muted = snapshot->volume == 0;
++        if (snapshot->unmuted_volume > 0) s_quick_restore_volume = snapshot->unmuted_volume;
++    }
+     s_agent_configured = mosaic_hub_agent_is_configured(snapshot);
+     /* Non-persistent slider updates apply immediately to hardware, while the
+      * settings snapshot intentionally keeps the last persisted value until
+@@ -447,6 +464,7 @@ static void mosaic_hub_system_status_apply(
+             ui, GSP_OBJ_KEY_QUICK_VOLUME_FILL,
+             GSP_OBJ_KEY_QUICK_VOLUME_INPUT, snapshot->volume);
+     }
++    mosaic_hub_quick_render(ui);
+     (void)esp_gsp_set_visible(
+         ui, GSP_BIND_STATUS_AGENT, s_agent_configured);
+     (void)esp_gsp_set_visible(
+@@ -871,6 +889,16 @@ static void mosaic_hub_charge_refresh(esp_gsp_handle_t ui)
  
  static void mosaic_hub_clock_apply(esp_gsp_handle_t ui)
  {
@@ -1585,7 +1844,7 @@ index a862484..4a17cf1 100644
      time_t now = time(NULL);
      struct tm local = {0};
      if (localtime_r(&now, &local) == NULL) {
-@@ -898,6 +916,11 @@ static void mosaic_hub_clock_apply(esp_gsp_handle_t ui)
+@@ -898,6 +926,11 @@ static void mosaic_hub_clock_apply(esp_gsp_handle_t ui)
      };
      (void)gsp_analog_clock_set_time(ui, &s_home_clock, hour, minute, second);
  
@@ -1597,7 +1856,7 @@ index a862484..4a17cf1 100644
      /* AOD = Figma 首页1-熄屏 (single bold HH:MM). */
      (void)gsp_mosaic_hub_aod_clock_set_text(ui, aod_clock);
      char aod_date[32];
-@@ -1045,8 +1068,16 @@ bool mosaic_hub_handle_action(uint16_t action_id)
+@@ -1045,8 +1078,16 @@ bool mosaic_hub_handle_action(uint16_t action_id)
          return true;
      }
      if (action_id == GSP_ACT_ID_QUICK_BLUETOOTH_TOGGLE) {
@@ -1605,53 +1864,95 @@ index a862484..4a17cf1 100644
 -        mosaic_hub_quick_feedback("Not Supported");
 +#if defined(ESP_PLATFORM)
 +        esp_err_t err = ESP_OK;
-+        if (corallium_pairing_active()) corallium_close_pairing();
++        if (corallium_pairing_active()) err = corallium_close_pairing();
 +        else err = corallium_open_pairing();
 +        s_quick_bluetooth = corallium_pairing_active();
 +        s_quick_ble_connected = corallium_connected() && s_quick_bluetooth;
 +        mosaic_hub_quick_render(s_hub_ui);
 +        mosaic_hub_quick_feedback(err != ESP_OK ? "Bluetooth unavailable" :
-+            s_quick_bluetooth ? "Discoverable for 120s" : "Bluetooth off");
++            s_quick_bluetooth ? "Bluetooth on" : "Bluetooth off");
 +#endif
          return true;
      }
      if (action_id == GSP_ACT_ID_QUICK_LOW_POWER_TOGGLE) {
-@@ -1099,11 +1130,8 @@ static uint16_t mosaic_hub_quick_action_at(int32_t x, int32_t y)
+@@ -1055,8 +1096,11 @@ bool mosaic_hub_handle_action(uint16_t action_id)
+         return true;
+     }
+     if (action_id == GSP_ACT_ID_QUICK_RINGTONE_TOGGLE) {
+-        /* Notification/ringtone audio is not implemented on this board. */
+-        mosaic_hub_quick_feedback("Not Supported");
++        const int volume = s_quick_muted ? s_quick_restore_volume : 0;
++        const esp_err_t err = mosaic_settings_set_volume(volume, true);
++        mosaic_hub_system_status_refresh(s_hub_ui);
++        mosaic_hub_quick_feedback(err == ESP_OK ?
++            (volume == 0 ? "Muted" : "Sound on") : "Volume save failed");
+         return true;
+     }
+     if (action_id == GSP_ACT_ID_QUICK_VIBRATION_TOGGLE) {
+@@ -1099,11 +1143,9 @@ static uint16_t mosaic_hub_quick_action_at(int32_t x, int32_t y)
          uint16_t action;
      } buttons[] = {
          { 34,  62, GSP_ACT_ID_QUICK_WLAN_TOGGLE },
 -        { 138, 62, GSP_ACT_ID_QUICK_JOIN_TOGGLE },
-         { 34, 154, GSP_ACT_ID_QUICK_BLUETOOTH_TOGGLE },
+-        { 34, 154, GSP_ACT_ID_QUICK_BLUETOOTH_TOGGLE },
 -        { 138, 154, GSP_ACT_ID_QUICK_LOW_POWER_TOGGLE },
 -        { 34, 246, GSP_ACT_ID_QUICK_RINGTONE_TOGGLE },
 -        { 138, 246, GSP_ACT_ID_QUICK_VIBRATION_TOGGLE },
-+        { 34, 246, GSP_ACT_ID_QUICK_VIBRATION_TOGGLE },
++        {266,  62, GSP_ACT_ID_QUICK_BLUETOOTH_TOGGLE },
++        { 34, 154, GSP_ACT_ID_QUICK_RINGTONE_TOGGLE },
++        {266, 154, GSP_ACT_ID_QUICK_VIBRATION_TOGGLE },
      };
      for (size_t index = 0; index < sizeof(buttons) / sizeof(buttons[0]);
           ++index) {
-@@ -1131,9 +1159,9 @@ static bool mosaic_hub_intercept_pointer(
+@@ -1131,9 +1173,9 @@ static bool mosaic_hub_intercept_pointer(
                                     &drawer_open) != ESP_GSP_OK) {
              drawer_open = false;
          }
 -        if (drawer_open && y >= 298 && y <= 450) {
 -            s_quick_volume_drag = x >= 270 && x < 342;
 -            s_quick_brightness_drag = x >= 374 && x < 446;
-+        if (drawer_open && y >= 178 && y <= 330) {
-+            s_quick_volume_drag = false;
-+            s_quick_brightness_drag = x >= 322 && x < 394;
++        if (drawer_open && y >= 280 && y <= 432) {
++            s_quick_volume_drag = x >= 34 && x < 106;
++            s_quick_brightness_drag = x >= 266 && x < 338;
          }
          if (drawer_open && !s_quick_volume_drag &&
              !s_quick_brightness_drag) {
-@@ -1173,7 +1201,7 @@ static bool mosaic_hub_intercept_pointer(
+@@ -1173,7 +1215,7 @@ static bool mosaic_hub_intercept_pointer(
       * progress layers. The native slider continues to own drag semantics;
       * these updates only keep the clipped visual fill in sync. */
      if (pressed && (s_quick_brightness_drag || s_quick_volume_drag)) {
 -        const int32_t value = ((450 - y) * 100 + 76) / 152;
-+        const int32_t value = ((330 - y) * 100 + 76) / 152;
++        const int32_t value = ((432 - y) * 100 + 76) / 152;
          s_quick_level = value < 0 ? 0 : value > 100 ? 100 : value;
          if (s_quick_brightness_drag) {
              mosaic_hub_quick_level_render(
-@@ -1204,6 +1232,14 @@ static bool mosaic_hub_intercept_pointer(
+@@ -1184,18 +1226,22 @@ static bool mosaic_hub_intercept_pointer(
+             mosaic_hub_quick_level_render(
+                 ui, GSP_OBJ_KEY_QUICK_VOLUME_FILL,
+                 GSP_OBJ_KEY_QUICK_VOLUME_INPUT, s_quick_level);
+-            (void)mosaic_settings_set_volume(s_quick_level, false);
++            if (mosaic_settings_set_volume(s_quick_level, false) == ESP_OK) {
++                s_quick_muted = s_quick_level == 0;
++                mosaic_hub_quick_render(ui);
++            }
+         }
+     }
+     if (!pressed && s_pointer_down) {
+         if (s_quick_brightness_drag) {
+             (void)mosaic_settings_set_brightness(s_quick_level, true);
+         } else if (s_quick_volume_drag) {
+-            (void)mosaic_settings_set_volume(s_quick_level, true);
+-            mosaic_hub_quick_render(ui);
++            if (mosaic_settings_set_volume(s_quick_level, true) != ESP_OK)
++                mosaic_hub_quick_feedback("Volume save failed");
+         }
+         s_quick_brightness_drag = false;
+         s_quick_volume_drag = false;
++        mosaic_hub_system_status_refresh(ui);
+     }
+     s_pointer_down = pressed;
+ 
+@@ -1204,6 +1250,14 @@ static bool mosaic_hub_intercept_pointer(
  
  static void mosaic_hub_clock_tick(esp_gsp_handle_t ui, void *user_ctx)
  {
@@ -1666,7 +1967,7 @@ index a862484..4a17cf1 100644
      (void)user_ctx;
      mosaic_hub_clock_apply(ui);
  }
-@@ -1272,6 +1308,7 @@ static void mosaic_hub_aod_hint_tick(esp_gsp_handle_t ui, void *user_ctx)
+@@ -1272,6 +1326,7 @@ static void mosaic_hub_aod_hint_tick(esp_gsp_handle_t ui, void *user_ctx)
  
  static void mosaic_hub_start_timers(esp_gsp_handle_t ui)
  {
@@ -1675,7 +1976,7 @@ index a862484..4a17cf1 100644
          s_clock_timer = esp_gsp_timer_create(
              ui, MOSAIC_CLOCK_TICK_MS, mosaic_hub_clock_tick, NULL);
 diff --git a/components/mosaic_ui/hub/scene/gen_scenes.py b/components/mosaic_ui/hub/scene/gen_scenes.py
-index c54b3f5..d0761e3 100755
+index c54b3f5..60cecd7 100755
 --- a/components/mosaic_ui/hub/scene/gen_scenes.py
 +++ b/components/mosaic_ui/hub/scene/gen_scenes.py
 @@ -120,7 +120,7 @@ STACK_PAGE_COUNT = 3
@@ -1687,23 +1988,48 @@ index c54b3f5..d0761e3 100755
  
  # Shared app-icon grid (Figma 时钟 bottom / 应用界面). Coords are relative to
  # the PageFlow layer (stage y=56); absolute screen y = 56 + value.
-@@ -300,11 +300,11 @@ def build_clock_face(objs, parent):
+@@ -264,11 +264,11 @@ def build_aod_face(objs, parent):
+ 
+ def build_clock_face(objs, parent):
+     """mosaico-prototype H1: weather copy at left, live clock at right."""
+-    card_x, card_y = 13, 10
++    card_x, card_y = 13, 70
+     card_w = 454
+     objs.append(container(
+         parent, card_x, card_y, card_w, 209, bg='#242425', radius=40,
+-        name='clock_card', callback='app_weather',
++        name='clock_card',
+     ))
+ 
+     # Match the runtime's unavailable state on the very first frame. Live
+@@ -300,23 +300,9 @@ def build_clock_face(objs, parent):
      orb_x, orb_y = card_x + 262, card_y + 20
      append_home_clock(objs, parent, orb_x, orb_y)  # demo 12:24
  
 -    # Web H1 order: Camera / CLAW / Works.
-+    # Corallium home shortcuts.
-     shortcuts = (
+-    shortcuts = (
 -        (ICON_COLS[0], 'camera', 'Camera', 'app_camera'),
 -        (ICON_COLS[1], 'claw', 'CLAW', 'app_ai_create'),
 -        (ICON_COLS[2], 'skills', 'Works', 'app_works'),
-+        (ICON_COLS[0], 'weather', 'Weather', 'app_weather'),
-+        (ICON_COLS[1], 'settings', 'Settings', 'app_settings'),
-+        (ICON_COLS[2], 'imu', 'IMU', 'app_imu'),
-     )
-     for x, icon, text, cb in shortcuts:
-         objs.append(image(
-@@ -384,8 +384,6 @@ def build_apps1_content(objs, parent):
+-    )
+-    for x, icon, text, cb in shortcuts:
+-        objs.append(image(
+-            parent, f'{ASSETS}/icons/{icon}.png',
+-            x, ICON_ROW_BOT_Y, ICON_SIZE, ICON_SIZE,
+-            name=f'clock_shortcut_{icon}', callback=cb,
+-        ))
+-        objs.append(label(
+-            parent, x, ICON_ROW_BOT_Y + ICON_SIZE + ICON_LABEL_GAP,
+-            ICON_SIZE, ICON_LABEL_H, text, size=16,
+-            color='#D6D6DE', align='center', callback=cb,
+-        ))
++    # Apps have a single entry in the adjacent launcher grid.
++    objs.append(label(parent, 40, 346, 400, 32, 'Swipe left for apps',
++                      size=20, color='#B7B7BE', align='center'))
+ 
+ 
+ def stack_pop_btn(objs, parent, *, x=12, y=14, w=72, h=44, text='Back'):
+@@ -384,8 +370,6 @@ def build_apps1_content(objs, parent):
           'callback': 'app_imu'},
          {'name': 'app_album', 'icon': 'album', 'text': 'Album',
           'callback': 'app_album'},
@@ -1712,7 +2038,7 @@ index c54b3f5..d0761e3 100755
          {'name': 'app_breakout', 'icon': 'bricks', 'text': 'Bricks',
           'callback': 'app_breakout'},
          {'name': 'app_weather', 'icon': 'weather', 'text': 'Weather',
-@@ -394,6 +392,33 @@ def build_apps1_content(objs, parent):
+@@ -394,6 +378,44 @@ def build_apps1_content(objs, parent):
  
  
  def build_quick_content(objs, parent):
@@ -1722,31 +2048,51 @@ index c54b3f5..d0761e3 100755
 +    objs.append(layer(parent, -480, -480, 1, 1, name='retired_factory_controls', hidden=True))
 +    for obj in objs[start:]:
 +        name = obj.get('name', '')
-+        if name in ('quick_media_group', 'quick_slot_group') or name.startswith(('quick_join', 'quick_low_power', 'quick_ringtone')):
-+            obj['hidden'] = True
-+            obj['parent'] = retired
-+        if name == 'quick_connectivity_group': obj['h'] = 418
-+        if name == 'quick_level_group': obj.update(y=54, h=418)
-+    # The original volume control is kept offscreen for generated accessor ABI.
++        if name in ('quick_media_group', 'quick_slot_group') or name.startswith(('quick_join', 'quick_low_power')):
++            obj.update(hidden=True, parent=retired)
++        if name == 'quick_connectivity_group': obj.update(w=456, h=194, radius=36)
++        if name == 'quick_level_group': obj.update(x=12, y=264, w=456, h=184, radius=36)
++    group = next(i for i,o in enumerate(objs) if o.get('name') == 'quick_connectivity_group')
++    # Two columns, two rows: Wi-Fi / Bluetooth, mute / vibration.
++    offsets = {'quick_bluetooth': (232, -92), 'quick_ringtone': (0, -92),
++               'quick_vibration': (128, -92)}
++    for obj in objs[start:]:
++        for prefix, (dx, dy) in offsets.items():
++            if obj.get('name', '').startswith(prefix):
++                obj['x'] += dx; obj['y'] += dy
++    objs.append(label(group, 106, 28, 116, 40, 'Wi-Fi', size=21))
++    objs.append(label(group, 338, 16, 106, 56, 'Bluetooth\nOff', size=19,
++                      bind='quick_ble_state', font_charset='Bluetooth OnOffConnected'))
++    objs.append(label(group, 106, 120, 116, 40, 'Sound', size=21,
++                      bind='quick_mute_state', font_charset='SoundMuted'))
++    objs.append(label(group, 338, 120, 116, 40, 'Vibration', size=21))
 +    level = next(i for i,o in enumerate(objs) if o.get('name') == 'quick_level_group')
 +    for obj in objs[start:]:
 +        if obj.get('parent') == level:
-+            if obj.get('x', 0) < 100: obj.update(hidden=True, parent=retired)
-+            else: obj['x'] -= 52; obj['y'] += 102
-+    group = next(i for i,o in enumerate(objs) if o.get('name') == 'quick_connectivity_group')
-+    for obj in objs[start:]:
-+        if obj.get('name', '').startswith('quick_vibration'): obj['x'] -= 104
-+    objs.append(label(group, 20, 294, 180, 34, 'Bluetooth off', size=21, align='center', bind='quick_ble_state'))
-+    objs.append(label(group, 20, 334, 180, 52, 'Tap to open/close\n120-second window', size=17, align='center'))
-+    objs.append(label(level, 12, 28, 196, 34, 'Brightness', size=23, align='center'))
-+    objs.append(label(level, 12, 336, 196, 48, 'Auto sleep in\nDisplay settings', size=17, align='center'))
++            if obj.get('x', 0) >= 100: obj['x'] += 128
++            obj['y'] -= 6
++    objs.append(label(level, 108, 55, 116, 34, 'Volume', size=20))
++    objs.append(label(level, 340, 55, 110, 34, 'Brightness', size=20))
++    objs.append(label(level, 108, 90, 110, 32, '0%', size=20,
++                      bind='quick_volume_text', font_charset='0123456789%'))
++    objs.append(label(level, 340, 90, 110, 32, '0%', size=20,
++                      bind='quick_brightness_text', font_charset='0123456789%'))
 +
 +
 +def _factory_quick_content(objs, parent):
      """C1 control center from the Mosaico interaction prototype."""
      # Keep a sliver of the covered page visible and round only the lower edge.
      # The square cap hides the top corners of the rounded panel while it remains
-@@ -805,10 +830,7 @@ def build_hub_objects():
+@@ -591,7 +613,7 @@ def build_quick_content(objs, parent):
+         feedback, 120, 14, 240, 30, '', size=18, color='#FCFCFF',
+         align='center', name='quick_feedback_text',
+         bind='quick_feedback_text',
+-        font_charset='Wi-Fi OnOffVibrationNot Supported',
++        font_charset='Wi-Fi OnOffVibrationNot SupportedBluetooth unavailableonoffConnectedMuteSoundVolume save failed',
+     ))
+ 
+ 
+@@ -805,10 +827,7 @@ def build_hub_objects():
      apps2_main = len(objs)
      objs.append(layer(flow, CONTENT_W * 2, 0, CONTENT_W, CONTENT_H,
                        name='launcher_flow_tab2'))
@@ -1758,7 +2104,7 @@ index c54b3f5..d0761e3 100755
  
      # Fixed chrome is authored after PageFlow content so it remains topmost.
      status_bar(objs, launcher_page, ASSETS)
-@@ -875,6 +897,10 @@ def build_hub_objects():
+@@ -875,6 +894,10 @@ def build_hub_objects():
          bind='lock_screen_charge_visible',
      ))
      build_charging_content(objs, lock_charge)
@@ -1783,7 +2129,7 @@ index db08a92..b1afaa0 100755
      "$OUT"/mosaic_hub_font*.gfb \
      "$OUT/mosaic_hub.grb"
 diff --git a/components/mosaic_ui/include/mosaic_settings.h b/components/mosaic_ui/include/mosaic_settings.h
-index 385a211..a085831 100644
+index 385a211..9a14c4d 100644
 --- a/components/mosaic_ui/include/mosaic_settings.h
 +++ b/components/mosaic_ui/include/mosaic_settings.h
 @@ -23,9 +23,6 @@ extern "C" {
@@ -1796,7 +2142,7 @@ index 385a211..a085831 100644
  #define MOSAIC_SETTINGS_WIFI_SCAN_MAX   20U
  #define MOSAIC_SETTINGS_PHONE_QR_LEN    512U
  #define MOSAIC_SETTINGS_BATTERY_SUBSCRIBER_MAX 4U
-@@ -125,25 +122,6 @@ typedef void (*mosaic_battery_event_cb_t)(
+@@ -125,31 +122,13 @@ typedef void (*mosaic_battery_event_cb_t)(
  typedef void (*mosaic_wifi_event_cb_t)(
      const mosaic_settings_network_t *info, void *user_ctx);
  
@@ -1822,7 +2168,14 @@ index 385a211..a085831 100644
  typedef struct {
      char software_version[MOSAIC_SETTINGS_VERSION_LEN];
      char serial_number[MOSAIC_SETTINGS_SERIAL_LEN];
-@@ -170,7 +148,6 @@ typedef struct {
+     uint16_t rotation;
+     int brightness;
+     int volume;
++    int unmuted_volume;
+     uint32_t screen_timeout_ms;
+     bool vibration_enabled;
+     bool display_available;
+@@ -170,7 +149,6 @@ typedef struct {
          bool supports_vision;
      } llm;
      mosaic_settings_battery_t battery;
@@ -1830,7 +2183,7 @@ index 385a211..a085831 100644
  } mosaic_settings_snapshot_t;
  
  typedef struct {
-@@ -182,8 +159,6 @@ typedef struct {
+@@ -182,8 +160,6 @@ typedef struct {
      esp_err_t (*set_vibration)(void *user_ctx, bool enabled);
      esp_err_t (*set_screen_timeout)(void *user_ctx, uint32_t timeout_ms);
      esp_err_t (*factory_reset)(void *user_ctx);
@@ -1839,7 +2192,7 @@ index 385a211..a085831 100644
      esp_err_t (*set_wifi_enabled)(void *user_ctx, bool enabled);
      /** Optional cached/live battery read. When NULL, get_battery falls back
       * to the last notify cache, then get_snapshot. */
-@@ -217,7 +192,6 @@ esp_err_t mosaic_settings_set_volume(int volume, bool persist);
+@@ -217,7 +193,6 @@ esp_err_t mosaic_settings_set_volume(int volume, bool persist);
  esp_err_t mosaic_settings_set_vibration(bool enabled);
  esp_err_t mosaic_settings_set_screen_timeout(uint32_t timeout_ms);
  esp_err_t mosaic_settings_factory_reset(void);
@@ -1934,19 +2287,20 @@ index 97540be..bfb892e 100644
      ESP_LOGI(TAG, "Reopening AP after STA disconnect (was closed via close_on_sta)");
      esp_err_t err = esp_wifi_set_mode(WIFI_MODE_APSTA);
 diff --git a/main/CMakeLists.txt b/main/CMakeLists.txt
-index b881d05..8ebae58 100644
+index b881d05..7577f21 100644
 --- a/main/CMakeLists.txt
 +++ b/main/CMakeLists.txt
-@@ -2,6 +2,8 @@ idf_component_register(
+@@ -2,6 +2,9 @@ idf_component_register(
      SRC_DIRS "." "platform"
      INCLUDE_DIRS "." "platform"
      PRIV_REQUIRES
 +        corallium
++        mosaico_audio
 +        esp_pm
          app_settings_service
          app_system_config
          audio_hub
-@@ -20,6 +22,5 @@ idf_component_register(
+@@ -20,6 +23,5 @@ idf_component_register(
          mosaico_boot_splash
          nvs_flash
          weather_service
@@ -2013,7 +2367,7 @@ index 5059a81..ca35fa1 100644
      }
  
 diff --git a/main/platform/mosaic_button_platform.c b/main/platform/mosaic_button_platform.c
-index 5d67e12..309026c 100644
+index 5d67e12..9fd3055 100644
 --- a/main/platform/mosaic_button_platform.c
 +++ b/main/platform/mosaic_button_platform.c
 @@ -12,6 +12,7 @@
@@ -2024,19 +2378,20 @@ index 5d67e12..309026c 100644
  
  #define MOSAIC_ACTION_BUTTON_DEVICE     "button_power"
  #define MOSAIC_AI_BUTTON_LONG_PRESS_MS  500U
-@@ -72,9 +73,9 @@ static void ai_button_long_press_cb(void *button_handle, void *user_data)
+@@ -72,9 +73,10 @@ static void ai_button_long_press_cb(void *button_handle, void *user_data)
      (void)button_handle;
      (void)user_data;
  
 -    esp_err_t err = mosaic_ui_open_ai_create();
-+    esp_err_t err = corallium_open_pairing();
++    esp_err_t err = corallium_pairing_active() ?
++        corallium_close_pairing() : corallium_open_pairing();
      if (err != ESP_OK) {
 -        ESP_LOGW(TAG, "queue AI Create failed: %s", esp_err_to_name(err));
 +        ESP_LOGW(TAG, "queue Bluetooth failed: %s", esp_err_to_name(err));
      }
  }
  
-@@ -117,7 +118,7 @@ esp_err_t mosaic_button_platform_init(void)
+@@ -117,7 +119,7 @@ esp_err_t mosaic_button_platform_init(void)
  #if CONFIG_ESP_BOARD_DEV_BUTTON_SUPPORT
      ESP_RETURN_ON_ERROR(register_action_button(), TAG,
                          "register action button");
@@ -2046,7 +2401,7 @@ index 5d67e12..309026c 100644
      return ESP_OK;
  #else
 diff --git a/main/platform/mosaic_settings_platform.c b/main/platform/mosaic_settings_platform.c
-index 9979be7..695ed66 100644
+index 9979be7..e0be13b 100644
 --- a/main/platform/mosaic_settings_platform.c
 +++ b/main/platform/mosaic_settings_platform.c
 @@ -26,7 +26,6 @@
@@ -2075,7 +2430,15 @@ index 9979be7..695ed66 100644
  static void copy_scan_status(mosaic_settings_network_t *network)
  {
      portENTER_CRITICAL(&s_scan_lock);
-@@ -225,31 +215,10 @@ static esp_err_t get_snapshot(
+@@ -176,6 +166,7 @@ static esp_err_t get_snapshot(
+          * output is independently mapped to the safe 10..100 range. */
+         ret_snapshot->brightness = snapshot->brightness;
+         ret_snapshot->volume = snapshot->volume;
++        ret_snapshot->unmuted_volume = snapshot->unmuted_volume;
+         ret_snapshot->screen_timeout_ms = snapshot->screen_timeout_ms;
+         ret_snapshot->vibration_enabled = snapshot->vibration_enabled;
+         ret_snapshot->display_available = snapshot->display_available;
+@@ -225,31 +216,10 @@ static esp_err_t get_snapshot(
      }
  
      (void)mosaic_battery_platform_get(&ret_snapshot->battery);
@@ -2107,7 +2470,7 @@ index 9979be7..695ed66 100644
  static esp_err_t get_battery(
      void *user_ctx, mosaic_settings_battery_t *ret_battery)
  {
-@@ -683,7 +652,6 @@ esp_err_t mosaic_settings_platform_init(
+@@ -683,7 +653,6 @@ esp_err_t mosaic_settings_platform_init(
          .set_vibration = set_vibration,
          .set_screen_timeout = set_screen_timeout,
          .factory_reset = factory_reset,
@@ -2115,7 +2478,7 @@ index 9979be7..695ed66 100644
          .set_wifi_enabled = set_wifi_enabled,
          .get_battery = get_battery,
          .get_wifi_status = get_wifi_status,
-@@ -695,9 +663,6 @@ esp_err_t mosaic_settings_platform_init(
+@@ -695,9 +664,6 @@ esp_err_t mosaic_settings_platform_init(
          .request_network_reconfigure = request_network_reconfigure,
          .user_ctx = config->settings,
      }), TAG, "configure settings ops");
