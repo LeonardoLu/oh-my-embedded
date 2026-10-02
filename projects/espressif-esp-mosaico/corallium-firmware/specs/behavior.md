@@ -11,11 +11,12 @@ trial authentication, camera and expansion-manager services. Shared factory
 components and legacy scene binding definitions remain private dependencies;
 this patch does not claim to purge every inactive library/asset from flash.
 
-Home displays clock/weather information without duplicate app shortcuts. The
-adjacent launcher page is the single entry for Settings, IMU, Album, Bricks and
-Weather. The interaction-board page is removed. Pull-down buttons form two
-columns: Wi-Fi/Bluetooth, then mute/vibration. Volume and brightness sliders sit
-below. Music player, L/R slots and unsupported interconnect/low-power controls
+Home displays clock/weather information and opens Weather when its weather card
+is tapped. Weather, Settings and IMU shortcuts sit along the bottom. The adjacent
+launcher retains Settings, IMU, Album, Bricks and Weather. The interaction-board
+page is removed. Pull-down buttons form two columns: Wi-Fi/Bluetooth, then
+mute/vibration. Buttons contain only centered icons; volume and brightness
+sliders and their values sit below. Music player, L/R slots and unsupported interconnect/low-power controls
 have no visible or touchable route.
 Hidden offscreen ancestor nodes preserve generated factory accessor ABI.
 
@@ -58,8 +59,8 @@ a Corallium protocol transport; application commands use BLE.
 BLE defaults off. The Bluetooth tile, Network action or a 500 ms top-key hold
 changes the switch; successful changes persist before runtime state changes.
 Startup restores the saved switch, factory reset clears it, and there is no
-connection deadline. Disconnection resumes advertising while enabled. Pull-down
-text distinguishes Bluetooth off, Bluetooth on and Connected. The broadcast name
+connection deadline. Disconnection resumes advertising while enabled. The pull-down Bluetooth icon uses grey for off, orange for enabled and green
+for connected, without a text label. The broadcast name
 is ESP-Mosaico. Corallium branding belongs to the independent protocol settings
 entry/detail, not routine controls. RX and notification subscription require
 encrypted GATT; secure-connections Just Works has no MITM identity guarantee.

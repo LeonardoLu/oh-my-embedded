@@ -86,7 +86,10 @@ defaults off after factory reset. Connect while adjacent to the device; the GATT
 uses encrypted Just Works. [Validation scope](specs/validation.md) records actual
 evidence and remaining hardware checks.
 
-The pull-down has two columns of Wi-Fi/Bluetooth and mute/vibration buttons,
+The pull-down has two columns of centered Wi-Fi/Bluetooth and mute/vibration icons,
 with volume and brightness sliders below. Volume release and unmute play a short
 local confirmation; startup stays silent. Muting and the prior volume survive
 restart. Settings has separate Battery, Corallium protocol and About entries.
+
+Home retains Weather, Settings and IMU shortcuts; tapping its weather card also
+opens Weather. The adjacent launcher continues to expose the remaining apps.

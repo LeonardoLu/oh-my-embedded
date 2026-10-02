@@ -52,11 +52,15 @@ if args.upstream:
         if not hidden(index):
             assert "Corallium" not in str(obj.get("text", "")), "Protocol branding leaked into daily UI"
     assert next(o for o in objects if o.get("name") == "launcher_flow")["page_count"] == 2
-    assert not any(o.get("name", "").startswith("clock_shortcut_") for o in objects), "Duplicate home shortcuts remain"
-    assert "callback" not in next(o for o in objects if o.get("name") == "clock_card")
+    for icon in ("weather", "settings", "imu"):
+        shortcut = next(o for o in objects if o.get("name") == "clock_shortcut_" + icon)
+        assert shortcut.get("callback") == "app_" + icon, f"Home shortcut route missing: {icon}"
+    assert next(o for o in objects if o.get("name") == "clock_card").get("callback") == "app_weather"
     for name in ("app_weather", "app_settings", "app_imu", "app_album", "app_breakout"):
         assert sum(o.get("name") == name for o in objects) == 1, f"Launcher entry duplicated/missing: {name}"
-    assert any(o.get("bind") == "quick_ble_state" for o in objects), "BLE state label missing"
+    group = next(i for i, o in enumerate(objects) if o.get("name") == "quick_connectivity_group")
+    assert not any(o.get("parent") == group and o.get("type") == "label" for o in objects), "Quick buttons must remain icon-only"
+    assert not any(o.get("bind") in ("quick_ble_state", "quick_mute_state") for o in objects)
     def position(obj):
         x, y = obj.get("x", 0), obj.get("y", 0)
         parent = obj.get("parent", -1)
@@ -66,20 +70,19 @@ if args.upstream:
             if ancestor.get("name") == "quick_drawer": break
             parent = ancestor.get("parent", -1)
         return x, y
-    for name, xy in {"quick_wlan": (34, 62), "quick_bluetooth": (266, 62),
-                     "quick_ringtone": (34, 154), "quick_vibration": (266, 154),
+    for name, xy in {"quick_wlan": (90, 62), "quick_bluetooth": (318, 62),
+                     "quick_ringtone": (90, 154), "quick_vibration": (318, 154),
                      "quick_volume_input": (34, 280), "quick_brightness_input": (266, 280)}.items():
         index, obj = next((i, o) for i, o in enumerate(objects) if o.get("name") == name)
         assert not hidden(index), f"Required control hidden: {name}"
         assert position(obj) == xy, f"Control and pointer hit test disagree: {name} {position(obj)}"
-    from PIL import ImageFont
-    import importlib.util
-    font_path = upstream / "components/mosaic_ui/common/font_paths.py"
-    spec = importlib.util.spec_from_file_location("mosaic_font_paths", font_path)
-    font_paths = importlib.util.module_from_spec(spec); spec.loader.exec_module(font_paths)
-    ble_font = ImageFont.truetype(str(font_paths.DEJAVU_SANS), 19)
-    assert all(ble_font.getlength(text) <= 106 for text in ("Bluetooth", "On", "Off", "Connected"))
-    print("Factory scene: removed actions hidden; two-column controls and volume/brightness hit targets match")
+    for name in ("quick_wlan", "quick_bluetooth", "quick_ringtone", "quick_vibration"):
+        tile = next(o for o in objects if o.get("name") == name)
+        for state in ("off", "on"):
+            icon = next(o for o in objects if o.get("name") == name + "_" + state)
+            assert abs((icon["x"] * 2 + icon["w"]) - (tile["x"] * 2 + tile["w"])) <= 1
+            assert abs((icon["y"] * 2 + icon["h"]) - (tile["y"] * 2 + tile["h"])) <= 1
+    print("Factory scene: Home routes restored; icon-only buttons centered; control/slider hit regions match")
     run([sys.executable, upstream / "components/mosaic_ui/apps/settings/scene/gen_scene.py"])
     settings = json.loads((upstream / "components/mosaic_ui/apps/settings/scene/settings_480.json").read_text())
     for obj in settings["objects"]:

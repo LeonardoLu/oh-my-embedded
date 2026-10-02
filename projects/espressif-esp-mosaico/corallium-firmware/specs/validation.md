@@ -27,8 +27,10 @@ are replaced by explicit test doubles. Covered behavior includes:
   codec close after feedback or a partially opened codec failure. This checks
   control flow, not physical sound/power.
 - Generated factory scene traversal: removed actions have hidden ancestors,
-  retained apps have one launcher entry, two-column controls/sliders match the
-  actual pointer hit regions, and compact Battery labels fit their compiled font.
+  retained apps keep their launcher entries and Home provides its three requested
+  shortcuts plus a Weather card route. Icon-only buttons are centered in two
+  columns; controls/sliders match pointer hit regions and compact Battery labels
+  fit their compiled font.
   About and the independent protocol detail have separate navigation routes.
 - Settings scene generation: the update page, update bindings and actions are
   absent. Firmware inspection rejects linked update-client symbols, the vendor
@@ -95,7 +97,7 @@ After confirming the CoreBoard revision, use the same device for comparisons:
 | --- | --- |
 | USB | After leaving ROM download mode, application Type-C CDC must enumerate and expose startup logs. Reopen the console and verify the official DTR/RTS download-reset sequence returns to the ROM loader. |
 | BLE | Fresh/reset device stays off. Enable locally: ESP-Mosaico appears and stays discoverable beyond two minutes. Encrypted subscription/RX succeeds; unencrypted RX fails. Verify saved on/off after reboot, Connected state, local close, disconnect/reconnect framing and no status event before device.info completes. |
-| Audio/UI | Confirm two button columns and both sliders respond at their visible positions. Releasing volume/unmuting sounds once; mute produces silence and restores the previous level after reboot. No startup/background sound or microphone task. Confirm shortened Battery values and independent protocol page, with one app entry per function. |
+| Audio/UI | Confirm two button columns and both sliders respond at their visible positions. Releasing volume/unmuting sounds once; mute produces silence and restores the previous level after reboot. No startup/background sound or microphone task. Confirm shortened Battery values and independent protocol page, with the three Home shortcuts and a working Weather card. |
 | Wi-Fi | Set from app after local Wi-Fi off, join, inspect local SSID/IP, restart and confirm enabled state; wrong password reports failed; forget erases credentials and remains off after restart. Include a 32-byte SSID. |
 | Time | Set without internet; powered software reset should retain plausible RTC time with estimated quality. Full power removal must show invalid/--:-- until app or NTP sync. Measure drift against an external reference. |
 | Power | Compare stable brightness/network/load on the same supply. Record independent supply measurements and gauge discharge telemetry separately; charging runtime must be unavailable. Exercise screen timeout and touch/button wake. |
