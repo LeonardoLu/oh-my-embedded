@@ -32,6 +32,9 @@ macOS 默认使用项目的 Automatic / Apple Development 签名，开发证书�
 designated requirement 以应用标识、开发证书身份和 Apple 信任链识别后续构建，避免每次重编译因
 二进制哈希变化被当作新身份。由旧 ad-hoc 切换到证书签名后仍需用户首次允许蓝牙。
 详见 [Apple TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)。
+已用两个不同二进制实测：开发签名 Debug 获得蓝牙许可后，退出并启动同身份的 Release，
+立即扫描到真实 StopWatch，未再次等待授权。签名校验与系统实测证据见
+[验证说明](specs/validation.md#macos-开发签名)。
 
 `macos-adhoc` 只供无证书的编译检查，输出为
 `tmp/corallium-adhoc-build/Build/Products/Debug/Corallium.app`。它的身份与二进制哈希

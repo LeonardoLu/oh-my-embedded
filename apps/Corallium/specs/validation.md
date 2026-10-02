@@ -10,7 +10,7 @@ DerivedData、完整构建输出、测试输出与截图保存在忽略的 `tmp/
 自测已通过，包括根协议的 7 条 Mosaico 入站会话向量、未知读数与 StopWatch 能力向量、UTF-8 任意分片、
 超长行恢复、非法 envelope、字节边界、时间范围、RTC estimated 有效时间与冷启动
 checkpoint 拒绝、单请求关联、迟到/重复响应、
-两天 JSONL 追加与凭据排除。mac App 模拟集成序列已通过，包括时间同步、
+两天 JSONL 追加与凭据排除。mac App 模拟集成序列已通过，包括
 StopWatch 时间同步、Mosaico Wi-Fi connecting→connected、移除网络、型号切换与会话清理。
 StopWatch 无 Wi-Fi 能力时不发送配置请求。异步断言等待实际状态，
 每步具有 5 秒上限，避免依赖窗口初始化所占用的主线程时长。
@@ -44,8 +44,12 @@ requirement，分别通过 `codesign --verify --deep --strict -R` 校验另一�
 不绑定某次构建的 cdhash。开发签名 App 的 sandbox 与 Bluetooth entitlement 均为 true；
 完整客户端自测与模拟集成通过。
 
-此验证覆盖签名要求的双向兼容性。TCC 首次允许与跨重编译授权保留是独立的系统
-实测项；从旧 ad-hoc App 切换到证书签名身份后，仍需用户首次允许蓝牙访问。
+签名要求的双向兼容性与 TCC 实际授权保留分别取得了证据。用户首次允许开发签名
+Debug 的蓝牙访问后，正常退出该 App，通过 CUA 启动独立目录中的 Release。
+两个二进制 SHA-256 不同；Release 点击扫描后立即进入 poweredOn（state=5），
+发现真实 StopWatch，未出现新的授权等待。相应系统日志时间段也未出现 Corallium
+TCC 授权提示或签名要求不匹配记录，确认本次 Debug→Release 实际复用了已授予的权限。
+从旧 ad-hoc App 切换到证书签名身份仍需用户首次允许蓝牙访问。
 依据：[Apple TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)。
 
 ## 菜单栏验证边界
