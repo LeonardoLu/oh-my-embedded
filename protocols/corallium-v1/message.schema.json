@@ -455,7 +455,10 @@
                 "maximum": 4102444799999
               },
               "quality": {
-                "const": "synchronized"
+                "enum": [
+                  "synchronized",
+                  "estimated"
+                ]
               },
               "source": {
                 "enum": [

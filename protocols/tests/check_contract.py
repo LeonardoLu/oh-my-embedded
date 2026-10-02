@@ -60,6 +60,15 @@ class ContractTests(unittest.TestCase):
         self.assertIsNone(frame["payload"]["time"]["unix_ms"])
         self.assertTrue(all(value is None for value in frame["payload"]["battery"].values()))
 
+    def test_warm_rtc_quality(self):
+        frame = json.loads((CONTRACT / "examples/warm-rtc-status.json").read_text())
+        validate(frame)
+        self.assertTrue(frame["payload"]["time"]["valid"])
+        self.assertEqual(frame["payload"]["time"]["quality"], "estimated")
+        frame["payload"]["time"]["source"] = "checkpoint"
+        with self.assertRaises(Exception):
+            validate(frame)
+
     def test_invalid_time_and_boolean_integer(self):
         for milliseconds in (-1, 4102444800000, True, "1790946000000"):
             with self.assertRaises(Exception):

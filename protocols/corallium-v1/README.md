@@ -84,6 +84,9 @@ time.set 只接受 UTC `1577836800000 <= unix_ms < 4102444800000`（2020–2099�
 固定值而不是时区规则，夏令时切换后需再次同步。RTC 没有有效值时不能用编译
 时间或持久化旧时间冒充准确时间。断电时长未知的 checkpoint 只能标 estimated，
 不能通过 valid=true 暗示连续走时。
+持续供电且由 RTC 连续走时的时间可以 valid=true；SoC RTC 的未校准漂移可通过
+quality=estimated 表达。App 必须同时尊重有效性与质量，不能把 estimated 标为
+“刚刚同步”，也不能把暖重启保时推广成完全断电后仍可保时。
 
 WiFiStatus 为 `{state, ssid, ip, rssi}`：state 为 `disconnected`、`connecting`、
 `connected` 或 `failed`；其余三个未知时为 null，rssi 单位 dBm。`wifi.set`
