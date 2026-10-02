@@ -59,8 +59,9 @@ a Corallium protocol transport; application commands use BLE.
 BLE defaults off. The Bluetooth tile, Network action or a 500 ms top-key hold
 changes the switch; successful changes persist before runtime state changes.
 Startup restores the saved switch, factory reset clears it, and there is no
-connection deadline. Disconnection resumes advertising while enabled. The pull-down Bluetooth icon uses grey for off, orange for enabled and green
-for connected, without a text label. The broadcast name
+connection deadline. Disconnection resumes advertising while enabled. The pull-down Bluetooth icon stays grey while off and orange while enabled.
+A non-interactive lower-right `1` badge appears only while its single supported
+peer is connected; disconnect hides the badge without changing the enabled color. The broadcast name
 is ESP-Mosaico. Corallium branding belongs to the independent protocol settings
 entry/detail, not routine controls. RX and notification subscription use ordinary
 GATT Write/Read permissions without pairing or encryption. Firmware does not

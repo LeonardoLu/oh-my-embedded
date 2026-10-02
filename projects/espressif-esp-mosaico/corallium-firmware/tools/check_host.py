@@ -82,7 +82,13 @@ if args.upstream:
             icon = next(o for o in objects if o.get("name") == name + "_" + state)
             assert abs((icon["x"] * 2 + icon["w"]) - (tile["x"] * 2 + tile["w"])) <= 1
             assert abs((icon["y"] * 2 + icon["h"]) - (tile["y"] * 2 + tile["h"])) <= 1
-    print("Factory scene: Home routes restored; icon-only buttons centered; control/slider hit regions match")
+    badge_index, badge = next((i, o) for i, o in enumerate(objects) if o.get("name") == "quick_ble_badge")
+    count = next(o for o in objects if o.get("name") == "quick_ble_badge_count")
+    assert badge.get("hidden") and badge.get("bind_target") == "visible"
+    assert badge.get("bind") == "quick_ble_badge_visible" and count.get("text") == "1"
+    assert count.get("parent") == badge_index and position(badge) == (368, 112)
+    assert all(not o.get("events") and not o.get("callback") for o in (badge, count)), "BLE badge must not capture touch"
+    print("Factory scene: Home routes, centered icons, hit regions and one-peer decorative badge verified")
     run([sys.executable, upstream / "components/mosaic_ui/apps/settings/scene/gen_scene.py"])
     settings = json.loads((upstream / "components/mosaic_ui/apps/settings/scene/settings_480.json").read_text())
     for obj in settings["objects"]:
