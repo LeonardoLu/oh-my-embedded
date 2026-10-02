@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "id": "watch-info",
+  "op": "device.info",
+  "ok": true,
+  "payload": {
+    "device_id": "fixture-watch-001",
+    "model": "m5stack-stopwatch",
+    "name": "StopWatch",
+    "firmware": "1.0.0",
+    "capabilities": ["time.set", "battery"],
+    "channels": ["ble", "serial"]
+  }
+}

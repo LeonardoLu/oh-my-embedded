@@ -8,6 +8,7 @@
 | [M5Stack StopWatch](m5stack-stopwatch/README.md) | [bot-ux-watch](m5stack-stopwatch/bot-ux-watch/README.md) | RTC 陪伴时钟、触摸设置、功耗管理 | [项目规格](m5stack-stopwatch/bot-ux-watch/specs/README.md) |
 | [M5Stack Core2](m5stack-core2/README.md) | [bot-ux-codex-core2](m5stack-core2/bot-ux-codex-core2/README.md) | Codex Micro 兼容 BLE HID 控制器 | [项目规格](m5stack-core2/bot-ux-codex-core2/specs/README.md) |
 | [M5Stack Core2](m5stack-core2/README.md) | [pps](m5stack-core2/pps/README.md) | 官方 PPS 演示适配、串口诊断与供电验证 | [项目规格](m5stack-core2/pps/specs/README.md) |
+| [Espressif ESP-Mosaico](espressif-esp-mosaico/README.md) | [corallium-firmware](espressif-esp-mosaico/corallium-firmware/README.md) | 基于官方出厂固件的功能裁剪、BLE 伴侣连接、功耗和时间管理 | [项目规格](espressif-esp-mosaico/corallium-firmware/specs/behavior.md) |
 | 跨设备 | [shared-libs](shared-libs/README.md) | BotUx、UI、字体、手势与声音组件 | [共享集成规格](shared-libs/specs/README.md) |
 
 设备层 `specs/` 记录硬件与装配；工程层 `specs/` 记录功能和验证；共享库的

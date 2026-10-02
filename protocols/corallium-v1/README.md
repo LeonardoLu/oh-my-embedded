@@ -68,6 +68,12 @@ DeviceInfo 包含 `device_id`（设备内稳定标识，不使用易变串口路
 能力还包括 `battery`、`power`、`runtime`；后两者意味着可能提供对应读数，
 不代表每种供电/采样状态都有有效值。
 
+StopWatch 仅声明 `time.set`、`battery`，通过 BLE 校时和读取状态，不提供
+普通 Wi-Fi 配网或 Wi-Fi Aware。ESP-Mosaico 提供 `wifi.set`、`wifi.forget`
+以及可用的电池功率/续航能力。App 必须按能力显示操作，不能根据通用状态结构
+推断设备支持 Wi-Fi。`session.jsonl` 展示 Mosaico 的完整配网会话，
+`stopwatch-info.json` 展示 StopWatch 的能力边界。
+
 DeviceStatus 包含 `time`、`wifi`、`battery` 和 `uptime_ms`（启动以来单调毫秒）。
 
 | TimeStatus 字段 | 类型与含义 |
@@ -94,6 +100,8 @@ SSID 长度为 1–32 UTF-8 字节；password 为 0 或 8–63 UTF-8 字节。v1
 开放或个人密码网络，不支持企业认证和 64 位 hex PSK。必须先验证再修改存储。
 成功回复表示已接收异步连接请求；只有后续 status.connected 表示联网成功。
 forget 清除设备存储的配置并断开 Wi-Fi，不改变 BLE 连接和已同步 RTC。
+未声明 Wi-Fi 能力的设备保留该结构以兼容 v1，返回 `disconnected` 及三个 null；
+App 隐藏其网络入口和状态卡。
 
 BatteryStatus 为 `{percent, charging, millivolts, power_mw, runtime_min}`，每项
 可为 null；percent 为 0–100，charging 为布尔，电压单位 mV。power_mw 表示

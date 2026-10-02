@@ -60,6 +60,12 @@ class ContractTests(unittest.TestCase):
         self.assertIsNone(frame["payload"]["time"]["unix_ms"])
         self.assertTrue(all(value is None for value in frame["payload"]["battery"].values()))
 
+    def test_stopwatch_capabilities(self):
+        frame = json.loads((CONTRACT / "examples/stopwatch-info.json").read_text())
+        validate(frame)
+        self.assertEqual(frame["payload"]["model"], "m5stack-stopwatch")
+        self.assertEqual(set(frame["payload"]["capabilities"]), {"time.set", "battery"})
+
     def test_warm_rtc_quality(self):
         frame = json.loads((CONTRACT / "examples/warm-rtc-status.json").read_text())
         validate(frame)

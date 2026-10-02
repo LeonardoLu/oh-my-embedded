@@ -10,6 +10,8 @@
 
 ```text
 DEVICES.md                         设备与配件清单
+protocols/                         App/设备消息、数据结构与 BLE 信道合同
+apps/Corallium/                     macOS/iOS 伴侣 App（窗口与 mac 状态栏）
 projects/
   README.md / AGENTS.md             工程导航与公共约定
   m5stack-stopwatch/
@@ -25,6 +27,7 @@ projects/
     bot-ux/                        Bot 动画组件及规格
     ux-components/                 UI、输入、字体和声音组件及规格
     specs/                         共享集成决策与验证边界
+  espressif-esp-mosaico/             官方出厂固件的可复现衍生工程
 tools/                             跨工程检查、抓帧与 HID 诊断
 wiki/bot-ux/                        双语原生动画图鉴
 tmp/                               临时文件与构建记录（gitignored）
@@ -49,6 +52,12 @@ sh tools/check_host.sh
 两个陪伴应用通过 `lib_extra_dirs = ../../shared-libs` 使用共享库。
 PPS 保留项目私有的上游 `lib/M5Module-PPS` 驱动。
 新设备根据其 SDK 选择工具链，仓库不要求所有设备使用 M5Unified 或 PlatformIO。
+
+[Corallium](apps/Corallium/README.md) 通过 [Corallium v1](protocols/README.md)
+实现能力驱动的 BLE 时间同步与状态读取；ESP-Mosaico 另支持 Wi-Fi 配置，
+StopWatch 仅使用 BLE。macOS/iOS 构建和 App
+测试方式在应用 README；[ESP-Mosaico](projects/espressif-esp-mosaico/README.md)
+保留官方系统并使用自己的 ESP-IDF 工具链，构建方式见设备入口。
 
 主机检查覆盖输入时序、RTC、字体/形状、动画、HID 报文、灯效与声音；
 产物在 `tmp/host-checks/`。实机验证和烧录方式见各工程 README 与 specs。
