@@ -1,0 +1,8 @@
+menu "Corallium"
+    config CORALLIUM_PERF_LOG
+        bool "Log five-second native renderer frame and busy-time samples"
+        default n
+        help
+            Emits corallium_perf JSON records for tools/analyze_performance.py.
+            Enable only while measuring; it adds serial I/O and is not an FPS guarantee.
+endmenu

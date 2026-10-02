@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/esp-mosaico/esp-mosaico-claw.git",
+  "revision": "9ea326da1f2a017ba81f1d391862f977b355a03e",
+  "esp_claw_revision": "d9ada36bbc1904999b690d8ac456be23fc28518f",
+  "esp_idf_repository": "https://github.com/espressif/esp-idf.git",
+  "esp_idf_revision": "7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe",
+  "target": "esp32s31",
+  "license": "Apache-2.0",
+  "patches": ["patches/0001-corallium-product.patch"]
+}
