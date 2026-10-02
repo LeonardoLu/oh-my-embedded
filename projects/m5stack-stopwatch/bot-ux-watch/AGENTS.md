@@ -22,6 +22,10 @@ projects/m5stack-stopwatch/bot-ux-watch/
   include/Power.h          # M5PM1 readings + brightness
   src/main.cpp             # face/settings/editors + input/frame loop
   src/WatchFace.cpp
+  include/WatchLvgl.h      # native LVGL settings widgets and input
+  include/CoralliumDevice.h # BLE/serial protocol endpoint
+  src/WatchLvgl.cpp
+  src/CoralliumDevice.cpp
   src/Settings.cpp
   src/Power.cpp
   test/test_calendar_math.cpp
@@ -68,24 +72,20 @@ official bot treatment uses dark pill eyes.
   compact battery panel. Tap the panel to dismiss it; otherwise it closes after six
   seconds. Double-tap the visible time within 420 ms to open settings; panel taps and
   non-tap gestures cancel the pending clock tap.
-- Settings is a five-page horizontal launcher for Time, Bot, Display, Sound and
-  Power. Each page shows one 200 px RGB565 icon on black with a name, position
-  dots and fixed chevrons. It follows the finger, projects release velocity and
-  eases to exact page centers; a horizontal drag cannot activate an item. B cycles all five pages and A
-  opens the selected one. Time and Bot Personality use four-row vertical lists. Shared
-  ScrollModel follows vertical finger displacement with bounded inertia; draw and
-  hit tests use the same offset, and a drag cannot activate a row. One centered
-  Done control sits outside list scrolling on every non-face screen;
-  editors save through it and hardware Long A remains the cancel path. Buttons
-  remain optional shortcuts. Touch feedback clears after release; only hardware
-  button navigation keeps a selected row visible. Rows place labels on the left
-  and current values on the right. Preview editors show up to two rows and scroll
-  additional rows in their 120 px lower viewport.
-  `ux::PointerSession` owns each settings sequence: 20 px vertical travel promotes
-  list scrolling. Otherwise, release inside the captured original target within
-  one second activates it, including after small drift or leaving and re-entering.
-  Cancel inertia before target capture; use WatchControls for hit geometry.
-  Color surfaces retain the pointer through drag and cannot activate Done.
+- Settings uses LVGL 8.4 native vertical lists for Time, Bot, Display, Sound,
+  Power and Connection. Editors use LVGL switches, buttons, sliders or keyboard controls.
+  `WatchLvgl` owns draw/hit geometry and click-vs-scroll arbitration. `main.cpp`
+  retains screen state, editor snapshots, RTC validation and save/cancel policy.
+  Done/Cancel remain outside scrolling. A opens the selected menu row; B advances
+  and reveals it. In editors A/B change the selected field, Long A cancels and
+  Long B saves. Native touching clears the hardware navigation marker.
+- Connection opens BLE explicitly for five minutes; advertise as StopWatch.
+  Daily device UI must not use the app name. Only the separate protocol page
+  names Corallium v1 and supported time.set/battery capabilities. Encrypted GATT RX and serial
+  JSONL implement root protocols/corallium-v1. CoralliumDevice handles requests on
+  the main task; NimBLE callbacks only assemble/queue. Do not add ordinary Wi-Fi as a substitute for Apple-compatible Wi-Fi Aware;
+  this ESP32-S3/SDK firmware has no Wi-Fi backend or capability.
+  Preserve watch NVS and flash partition layout. Offset lives in corallium NVS.
 - Any touch or A/B press wakes from doze and is consumed, so it cannot trigger the
   control underneath. When Power saving applies, independent persisted dim and
   display-off timers use 5 s, 15 s, 1 min, 5 min, 10 min or 15 min choices and
@@ -107,13 +107,13 @@ official bot treatment uses dark pill eyes.
   has no permanent percentage; its factory-inspired top panel slides in over 300 ms
   and shows percentage and a gauge on a measured-level green/yellow/red fill;
   charging adds a separate bolt. Rendering and hit testing share its geometry.
-- Settings is the horizontal Time, Bot, Display, Sound and Power hierarchy described
+- Settings is the vertical Time, Bot, Display, Sound, Power and Connection hierarchy described
   in `specs/settings.md`. Time owns time/date/format; Display owns
   brightness, theme, indicator, button feedback and both layout controls; Sound owns
   master/startup/button/alert switches; Power owns the complete idle and forced-sleep policy.
   Personality includes expression, action, shape, eye style, HSV color, action amount
   and speed, naming, English/Chinese UI, all 1,120 independent combinations and a live
-  gaze selector. Chinese mode also localizes keyboard action labels. The HSV picker
+  gaze selector. The native keyboard enters up to 16 ASCII name characters. The HSV sliders
   previews live and Done persists it.
 - NVS persists 12/24-hour format, seconds, theme, shape, eye style, custom HSV body
   color, expression, animation, wrist response, motion amount/speed, brightness,
@@ -132,20 +132,19 @@ official bot treatment uses dark pill eyes.
 - Rendering targets 16 ms active / 33 ms preview / 250 ms dozing. The face pushes only
   the bot region; disjoint clock/status regions redraw when their values change. A fixed 466×90
   HUD canvas (83,880 bytes) provides coverage text/shapes without panel readback.
-  Launcher motion pushes its 466×280 content band; Time and Personality scrolling push
-  their 466×264 list band. Static chrome stays cached. Serial
+  Settings use a 466×24 LVGL draw buffer and native dirty-area invalidation. Serial
   `PERF` summaries report real frame timing for hardware validation.
 - Serial `c` remains raw RGB565 capture. Diagnostic pages accept `vNN` plus newline:
   0 face, 1 settings, 2 personality, 3 expression, 4 appearance, 5 motion, 6 color,
   7 display, 8 last settings item, 9 scrolled personality, 10 battery panel, 11 format,
   12 name, 13 combinations, 14 layout, 15 language, 16 Chinese face, 17 swapped
-  face, 18 fractional carousel, 19 animated carousel timing, 20 Happy/Joy/Wave
+  face, 18/19 settings list (legacy carousel IDs), 20 Happy/Joy/Wave
   preview, 21 gaze, 22 Thinking dots, 23 Time, 24 Sound and 25 lower Power rows.
   `contact 1|0 x y` replays raw contact through `TouchContact`, gesture arbitration
   and the current screen handler; `physical` returns to CST820B sampling.
-  `td/tm/tu x y` remains a direct UI-pointer diagnostic. Optional `@N` is echoed in
+  Optional `@N` is echoed in
   the `UI seq=N` acknowledgement. `ui` reads state; `sound N` previews a cue.
-  Both replay paths remain separate from hardware touch-controller acceptance.
+  Contact replay remains separate from hardware touch-controller acceptance.
   Language/layout diagnostics restore settings when leaving; no NVS write.
   Single digits remain accepted for compatibility; page selection never saves NVS.
 
@@ -153,6 +152,9 @@ official bot treatment uses dark pill eyes.
 
 - Match existing code style; keep comments purposeful. No per-frame heap allocation.
 - Keep the state machine in `main.cpp`; modules are plain classes.
+- Run tools/check_lvgl.sh after widget/input edits; it compiles real LVGL with
+  a native M5 display adapter. Legacy carousel/control tests are retained fixtures,
+  not evidence for the current LVGL rendering or physical touch behavior.
 - Persist settings with `Preferences` (NVS). Do not over-engineer edge cases.
 - Keep the topical contracts in `specs/README.md` consistent with the implementation.
   Specs explain current facts, decisions, causes and verification limits. Raw

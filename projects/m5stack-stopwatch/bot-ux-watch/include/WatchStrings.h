@@ -3,6 +3,9 @@
 namespace watchstrings {
 struct Entry { const char* en; const char* zh; };
 static const Entry entries[] = {
+    {"CONNECTION","连接"},{"BLUETOOTH STATUS","蓝牙状态"},{"WAITING","等待"},
+    {"CANCEL","取消"},{"BLUETOOTH","蓝牙"},{"CONNECTED","已连接"},{"ON (5 MIN)","开启5分钟"},
+    {"SECONDS","秒数"},
     {"TIME","时间"},{"DATE","日期"},{"FORMAT","时间格式"},{"BOT","伙伴"},
     {"DISPLAY","显示"},{"SOUND","声音"},{"POWER","省电"},{"LAYOUT","布局"},{"DONE","完成"},{"BACK","返回"},
     {"EXPRESSION","表情"},{"ACTION","动作"},{"APPEARANCE","外观"},{"COLOR","颜色"},

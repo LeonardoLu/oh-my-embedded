@@ -35,7 +35,7 @@
 | 模式 | Off 时执行 | 唤醒 |
 | --- | --- | --- |
 | Touch + keys（默认） | AMOLED panel sleep，MCU 保持原始输入轮询 | 触摸、A、B、电源/Home |
-| Keys only | panel sleep 后进入 ESP32 light sleep | A/B 的 EXT1 any-low；每秒定时醒来检查 PMIC 电源键与 VBUS |
+| Keys only | panel sleep 后进入 ESP32 light sleep；蓝牙连接窗口活动时保持轮询 | A/B 的 EXT1 any-low；每秒定时醒来检查 PMIC 电源键与 VBUS |
 
 A/B 为 GPIO2/GPIO1，触摸和 PMIC IRQ 不进入 EXT1 mask。电源键及电源变化可能需要
 等待下一次一秒轮询。低电平按键已按住时不再次进入 level-triggered sleep。

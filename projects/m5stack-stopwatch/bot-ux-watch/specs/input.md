@@ -8,14 +8,10 @@
 - 应用关闭 `M5.Touch` 的轮询，每 8 ms 从 `M5.Display.getTouch()` 采样原始接触。
   `TouchContact` 生成按下、移动、释放边沿，并在释放时保留最后有效坐标。
   这样应用不依赖固定版本 SDK 的 flick/hold 分类及其再次接触识别行为。
-- 设置页面由 `ux::PointerSession` 捕获一个目标。按下和释放都属于同一目标，
-  且时长不超过 1,000 ms，才可点击；小幅移动、移出后移回可以保留点击资格。
-- 垂直列表移动达到 20 px 后由滚动接管，整个序列不再点击。捕获目标前先停止惯性，
-  绘制和命中测试使用相同滚动偏移，避免内容移动后点击落在另一行。
-- HSV 颜色面板在拖动期间保留指针，不把释放转交给 Done。翻页手势阈值见
-  [设置](settings.md)。
-- 表盘静止长按在 3 秒时取消点击资格，不打开个性化。实体键和非表盘长按使用
-  2 秒阈值；1–2 秒的释放不能补发点击。
+- 设置及所有编辑器的控件由 LVGL indev 接收同一校准坐标流。原生滚动容器拥有
+  移动/惯性，按钮监听 SHORT_CLICKED，滚动不会再点击原行；HSV slider 独占拖动。
+- 页面切换和唤醒消费会 reset LVGL 输入设备，避免释放落入新页。
+- 表盘静止长按在 3 秒时取消点击资格，不打开个性化。实体键仍保留 2 秒长按阈值。
 
 ## 表盘入口
 
@@ -33,15 +29,15 @@
 
 ## 返回、取消与唤醒
 
-每个非表盘页面有固定 Done。编辑器 Done 保存，长 A 取消；Home 取消草稿并回表盘。
+每个非表盘页面有固定 Done。编辑器同时有可触摸 Cancel，长 A 也可取消；Home 取消草稿并回表盘。
 唤醒边沿只恢复显示，不能同时选情绪、点击设置或执行 Home。应用等待完整释放后
 才重新接受控制，并吸收电源键唤醒后同一次按压迟到的 SDK click 事件。
 
 ## 实现与验证依据
 
 [TouchContact.h](../include/TouchContact.h)、[InputSemantics.h](../include/InputSemantics.h)、
-[WatchControls.h](../include/WatchControls.h)、[PowerPolicy.h](../include/PowerPolicy.h)
+[WatchLvgl.cpp](../src/WatchLvgl.cpp)、[PowerPolicy.h](../include/PowerPolicy.h)
 与 [main.cpp](../src/main.cpp) 定义实际路径。
-`test_touch_contact`、`test_input_semantics`、`test_ui_controls` 和 `test_power_policy`
+`test_touch_contact`、`test_input_semantics`、`test_lvgl_settings` 和 `test_power_policy`
 覆盖接触边沿、再次接触、拖动排他、超时、命中与唤醒消费。
-串口 `contact` 和 `td/tm/tu` 只能验证应用输入链路，不能证明 CST820B 或手指触摸可靠性。
+串口 `contact 1|0 x y` 只能验证应用输入链路，不能证明 CST820B 或手指触摸可靠性。

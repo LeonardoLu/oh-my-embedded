@@ -4,8 +4,8 @@
 #include "WatchEdgeGeometry.h"
 
 enum class Screen : uint8_t { Face, Settings, Personalize, Editor, TimeSettings };
-enum class Editor : uint8_t { None, Time, Date, Format, Expression, Appearance, Motion, Color, Display, Name, Preview, Layout, Language, Gaze, Sound, Power };
-enum class MenuItem : uint8_t { Time, Personalize, Display, Sound, Power, Done, Count };
+enum class Editor : uint8_t { None, Time, Date, Format, Expression, Appearance, Motion, Color, Display, Name, Preview, Layout, Language, Gaze, Sound, Power, Connection, Protocol };
+enum class MenuItem : uint8_t { Time, Personalize, Display, Sound, Power, Connection, Done, Count };
 enum class TimeItem : uint8_t { Time, Date, Format, Back, Count };
 enum class PersonalItem : uint8_t { Expression, Action, Appearance, Color, Name, Language, Preview, Gaze, Intensity, Speed, Back, Count };
 

@@ -12,3 +12,4 @@
 | [clock.md](clock.md) | RTC 有效性、写入验证与保电取舍 |
 | [companion.md](companion.md) | 自动/手动情绪、临时视线与腕动 |
 | [rendering.md](rendering.md) | 圆屏几何、缓存与局部刷新 |
+| [connection.md](connection.md) | BLE/串口信道、本地连接设置、时间偏移与状态 |

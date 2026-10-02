@@ -14,6 +14,7 @@ public:
     bool rtcHoldReady() const { return _rtcHoldReady; }
     uint8_t bootKeyConfig() const { return _bootKeyCfg; }
     uint8_t bootOffConfig() const { return _bootOffCfg; }
+    uint16_t batteryMillivolts() const { return _filteredMv; }
     uint8_t batteryPct() const { return _batteryPct; }
     bool charging() const { return _charging; }
     bool externalPower() const { return _externalPower; }

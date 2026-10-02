@@ -13,6 +13,7 @@ RTC 时钟、日期、电量/充电、Bot 陪伴及触摸设置。没有秒表�
 ```sh
 pio run -d projects/m5stack-stopwatch/bot-ux-watch
 sh tools/check_host.sh
+sh projects/m5stack-stopwatch/bot-ux-watch/tools/check_lvgl.sh
 ```
 
 安装到设备时，先用 `pio device list` 确认端口，再执行：
@@ -36,24 +37,23 @@ together for three seconds to open settings. Bot personalization is available
 from the Bot page in Settings. Hold B to dim the face;
 the next touch/button press wakes it without activating a control.
 
-The watch samples raw display contacts every 8 ms and derives its own press/release
-edges. A captured control activates on release inside its original target within
-one second; 20 px of vertical list travel instead begins scrolling, and stationary
-face holds become long presses after three seconds. Button and non-face holds
-retain the two-second threshold. Lists follow the finger with
-continuous pixel scrolling and inertia, while a scroll gesture never also clicks a
-row.
+The watch samples raw display contacts every 8 ms. The face retains its contact
+and gesture state machine; every settings screen uses LVGL 8.4 native pointer
+input, vertical scrolling, buttons, sliders and text entry. A drag never also
+activates a row. The Time, Bot, Display, Sound, Power and Connection entries share
+a vertical card list. Editors keep fixed Cancel/Done buttons outside the list and
+retain live Bot previews. A/B remain shortcuts; Home cancels unsaved edits.
 
-Swipe down from the top edge for the compact battery/charging panel. Double-tap
-the visible time to open settings. Settings, Bot Personality and every editor keep
-a single fixed Done control outside the scrolling content, with native antialiased
-text, rounded touch targets and a live HSV body-color picker. Settings and
-Personality use their dedicated horizontal and vertical navigation; preview
-editors show two rows and scroll additional choices. A touch clears persistent
-button selection and shows only the captured
-control’s pressed fill. The M5PM1 power button
-returns directly to the face and cancels unsaved editor changes. Its green status
-LED is an independent persisted display option, off by default.
+Swipe down from the top edge for battery/charging, or double-tap the visible time
+for settings. Connection → Bluetooth explicitly opens a five-minute BLE window;
+the Bluetooth name is StopWatch. Connection also shows status and the remaining
+window, with a separate protocol information page.
+The macOS/iOS app can synchronize the RTC and read battery/status using
+[Corallium v1](../../../protocols/corallium-v1/README.md). Serial `ble on`/`ble off`
+are diagnostic equivalents. This ESP32-S3/SDK combination does not provide the
+required Apple-compatible Wi-Fi Aware, so this firmware has no Wi-Fi functionality.
+See [connection behavior and limitations](specs/connection.md).
+
 Time and `yyyy/mm/dd {weekday}` share one region. A hideable Bot description
 occupies the opposite region; Layout swaps the two. Time/date use the RTC;
 preferences use NVS. Auto starts with Idle for 5–15 seconds, then LookingAround for 30–60 seconds,

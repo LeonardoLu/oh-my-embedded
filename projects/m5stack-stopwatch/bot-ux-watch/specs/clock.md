@@ -35,8 +35,10 @@ L1 同时供给 IMU，这是保时与关机功耗之间的取舍；电池耗尽�
 
 - `rtc` 返回读取结果、快照有效性、状态、标志、日历与保电状态。
 - `rtc set YYYY-MM-DDTHH:MM:SS` 显式设定本地时间，仅验证写入成功返回 `RTC set=1`。
-- [sync_rtc.py](../tools/sync_rtc.py) 发送主机本地时间并读取偏差；固件不做时区转换。
+- [sync_rtc.py](../tools/sync_rtc.py) 发送主机本地时间并读取偏差；该诊断指令不做时区转换。
   Keys-only 息屏期间串口不可依赖，先用相应实体键唤醒再校时。
+- Corallium `time.set` 接收 UTC 毫秒和分钟偏移，写入同一 RTC，并保存固定偏移用于状态反向转换；
+  [通信规格](connection.md) 说明范围、编辑冲突和持久化失败行为。
 - `test_rtc_clock` 覆盖 VLF、BCD、读取/写入失败、两种确认顺序、取消、闰日与跨午夜。
   `test_power_policy` 覆盖保电位读改写及重试。
 

@@ -21,6 +21,8 @@
 #include "WatchEdgeGeometry.h"
 #include "WatchFeedbackPatch.h"
 #include "WatchUi.h"
+#include "WatchLvgl.h"
+#include "CoralliumDevice.h"
 #include "WatchControls.h"
 #include "WatchSettingsCarousel.h"
 #include "WatchSettingsDirectCanvas.h"
@@ -63,7 +65,7 @@ constexpr uint8_t kAudioPowerIo = 2;     // M5IOE1 G3, zero-based index.
 constexpr uint8_t kAudioAmplifierIo = 9; // M5IOE1 G10, zero-based index.
 
 const char* const kMenuLabels[(uint8_t)MenuItem::Count] = {
-    "TIME", "BOT", "DISPLAY", "SOUND", "POWER", "DONE"
+    "TIME", "BOT", "DISPLAY", "SOUND", "POWER", "CONNECTION", "DONE"
 };
 const char* const kTimeLabels[(uint8_t)TimeItem::Count] = {
     "TIME", "DATE", "FORMAT", "BACK"
@@ -81,6 +83,8 @@ M5Canvas previewSprite(&M5.Display);
 WatchFace face;
 botux::BotUx previewBot;
 Settings settings;
+WatchLvgl settingsUi;
+CoralliumDevice companion;
 Power power;
 watchbuttons::Feedback _buttonFeedback;
 lgfx::rgb565_t* _buttonFeedbackScratch = nullptr;
@@ -537,6 +541,7 @@ static uint8_t powerClockHour() {
 }
 
 static void resetUiPointer() {
+    settingsUi.resetPointer();
     _faceTracking=false; _pointer.cancel(); _clickUntil=0; _settingsCarousel.cancel();
     _timeScroll.cancel(); _personalScroll.cancel(); _editorScroll.cancel();
     _capturedTarget=watchcontrols::None; _namePressedKey = -1; _colorDrag = 0;
@@ -1166,6 +1171,7 @@ static void enterEditor(Editor editor, Screen parent = Screen::Settings) {
 }
 
 static void cancelEditor() {
+    if(_editor==Editor::Protocol) { enterEditor(Editor::Connection); return; }
     watchClock.cancelDraft();
     resetUiPointer();
     const bool powerEditor = _editor == Editor::Power;
@@ -1199,6 +1205,7 @@ static void returnHome() {
 }
 
 static void saveEditor(int cause = watchcontrols::None) {
+    if(_editor==Editor::Protocol) { enterEditor(Editor::Connection); return; }
     resetUiPointer();
     if (_editor == Editor::Name) {
         _nameEditor.press(ux::NameEditor::Done);
@@ -1293,7 +1300,11 @@ static void updateMotion(uint32_t now) {
 }
 
 static void changeEditorValue(int8_t delta) {
-    if (_editor == Editor::Time) {
+    if (_editor == Editor::Connection) {
+        if(_editField==0) {
+            if(companion.windowOpen()) companion.closeWindow(); else companion.openWindow();
+        } else if(_editField==3) enterEditor(Editor::Protocol);
+    } else if (_editor == Editor::Time) {
         if (_editField == 0) _editHour = (uint8_t)((_editHour + 24 + delta) % 24);
         else _editMinute = (uint8_t)((_editMinute + 60 + delta) % 60);
     } else if (_editor == Editor::Date) {
@@ -1402,6 +1413,7 @@ static void changeEditorValue(int8_t delta) {
         applySettings();
         _idleScreenPolicy.wakeForUser(millis());
     }
+    _uiDirty=true;
     clickSound();
 }
 
@@ -1412,6 +1424,7 @@ static void selectMenuItem() {
         case MenuItem::Display:     enterEditor(Editor::Display); break;
         case MenuItem::Sound:       enterEditor(Editor::Sound); break;
         case MenuItem::Power:       enterEditor(Editor::Power); break;
+        case MenuItem::Connection:  enterEditor(Editor::Connection); break;
         case MenuItem::Done:        leaveSettings(); break;
         default: break;
     }
@@ -1466,182 +1479,12 @@ static void handleFaceInput(Gesture gesture) {
     }
 }
 
-static void updateColorPicker(int16_t x, int16_t y) {
-    if (_colorDrag == 1) {
-        auto pad=watchcontrols::colorPadBounds();
-        int16_t right=pad.x+pad.w-1,bottom=pad.y+pad.h-1;
-        if(x<pad.x) x=pad.x; if(x>right) x=right;
-        if(y<pad.y) y=pad.y; if(y>bottom) y=bottom;
-        settings.data().colorSat=(uint8_t)((x-pad.x)*100/(pad.w-1));
-        settings.data().colorValue=(uint8_t)((bottom-y)*100/(pad.h-1));
-    } else if (_colorDrag == 2) {
-        auto hue=watchcontrols::hueBarBounds();
-        int16_t bottom=hue.y+hue.h-1;
-        if(y<hue.y) y=hue.y; if(y>bottom) y=bottom;
-        settings.data().colorHue=(uint16_t)((y-hue.y)*359/(hue.h-1));
-    } else return;
-    settings.data().customColor = true;
-    applySettings();
-}
-
-static void activateUiControl(int target) {
-    using namespace watchcontrols;
-    if(_screen==Screen::Settings || _screen==Screen::TimeSettings || _screen==Screen::Personalize) {
-        if(target==Done) {
-            if(_screen==Screen::Personalize) leavePersonalize(target);
-            else if(_screen==Screen::TimeSettings) leaveTimeSettings(target);
-            else leaveSettings(target);
-            return;
-        }
-    }
-    if (_screen == Screen::Settings && target >= MenuRow) {
-        _settingsCarousel.select((uint8_t)(target-MenuRow));
-        _menu=(MenuItem)_settingsCarousel.selected(); selectMenuItem(); return;
-    }
-    if(_screen==Screen::Settings
-        &&(target==CarouselPrevious||target==CarouselNext)) {
-        _buttonNavigation=true;
-        _settingsCarousel.moveSelection(target==CarouselPrevious?-1:1);
-        _menu=(MenuItem)_settingsCarousel.selected();
-        _uiDirty=true;
-        clickSound();
-        return;
-    }
-    if (_screen == Screen::TimeSettings && target >= TimeRow) {
-        _timeList.select(target-TimeRow); _timeItem=(TimeItem)_timeList.selected(); selectTimeItem(); return;
-    }
-    if (_screen == Screen::Personalize && target >= PersonalRow) {
-        _personalList.select(target-PersonalRow); _personal=(PersonalItem)_personalList.selected(); selectPersonalItem(); return;
-    }
-    if (_screen != Screen::Editor) return;
-    if (target == Done) { saveEditor(target); return; }
-    int field=target-First;
-    if (_editor == Editor::Name && target >= NameKey && target < NameKey+30) {
-        bool done=_nameEditor.press(target-NameKey); clickSound(); _uiDirty=true;
-        if(done) saveEditor(target);
-    } else if (_editor == Editor::Language) {
-        settings.data().language=field; applySettings(); clickSound();
-    } else if (_editor == Editor::Layout || _editor == Editor::Preview || _editor == Editor::Gaze
-            || _editor == Editor::Appearance || _editor == Editor::Motion || _editor == Editor::Display
-            || _editor == Editor::Sound || _editor == Editor::Power) {
-        _editField=field; changeEditorValue(_tapX<233?-1:1);
-    } else if (_editor == Editor::Color && target==First) {
-        settings.data().customColor=false; applySettings(); clickSound();
-    } else if (_editor == Editor::Time || _editor == Editor::Date) {
-        _editField=field/3;
-        if(field%3==2) { _uiDirty=true; clickSound(); }
-        else changeEditorValue(field%3==0?-1:1);
-    } else if (_editor == Editor::Format) {
-        if(field<2) settings.data().hour24=field==1;
-        else settings.data().showSeconds=!settings.data().showSeconds;
-        applySettings(); clickSound();
-    } else if (_editor == Editor::Expression) {
-        if(field<2) cycleExpression(field==0?-1:1);
-        else { previewBot.poke(); pokeSound(); }
-    }
-}
-
-static int exactPressedTarget() {
-    if(!_pointer.pressed()) return watchcontrols::None;
-    float offset=_screen==Screen::Settings?_settingsCarousel.offset():
-        _screen==Screen::TimeSettings?_timeScroll.offset():
-        _screen==Screen::Personalize?_personalScroll.offset():
-        _screen==Screen::Editor&&watchcontrols::editorUsesScrollList(_editor)?_editorScroll.offset():0;
-    auto target=watchcontrols::at(_screen,_editor,offset,_pointer.x(),_pointer.y());
-    return target.id==_capturedTarget?target.id:watchcontrols::None;
-}
-
-// Hardware and diagnostic input share this path; one session owns each gesture.
+// LVGL receives the same calibrated contact stream as the face. Its input
+// device owns click-vs-scroll arbitration throughout every settings screen.
 static void handleUiPointer(bool down, bool held, bool up, int x, int y, uint32_t now) {
-    if (_screen==Screen::Face) return;
-    ux::ScrollModel* scroll=_screen==Screen::TimeSettings?&_timeScroll:
-        _screen==Screen::Personalize?&_personalScroll:
-        _screen==Screen::Editor&&watchcontrols::editorUsesScrollList(_editor)?&_editorScroll:nullptr;
-    const auto scrollLayout=_screen==Screen::Editor?watchcontrols::editorList(_editor):watchcontrols::mainList();
-    int oldPressed=exactPressedTarget();
-    if(down) {
-        _buttonNavigation=false; _uiDirty=true; _listBandOnly=false;
-        if(scroll) scroll->cancel(); // Stop inertia before capturing the visible row.
-        float offset=_screen==Screen::Settings?_settingsCarousel.offset():scroll?scroll->offset():0;
-        auto target=watchcontrols::at(_screen,_editor,offset,x,y);
-        _capturedTarget=target.id;
-        const auto carousel=watchcontrols::settingsCarousel();
-        const bool inCarousel=_screen==Screen::Settings&&x>=carousel.x&&x<carousel.x+carousel.w
-            &&y>=carousel.y&&y<carousel.y+carousel.h;
-        _pointer.begin(target.id,target.bounds,x,y,now,
-                       inCarousel||(scroll&&y>=scrollLayout.y&&y<scrollLayout.y+scrollLayout.h));
-        if(inCarousel)
-            _settingsCarousel.begin(x,now);
-        pushTouchTrace(TouchTraceKind::Down, now, x, y, target.id);
-        _colorDrag=target.id==watchcontrols::ColorPad?1:target.id==watchcontrols::HueBar?2:0;
-    }
-    if(_screen==Screen::Settings&&_settingsCarousel.active()&&(held||up)) {
-        bool wasDragging=_settingsCarousel.dragging();
-        float before=_settingsCarousel.offset();
-        if(wasDragging||watchcontrols::carouselDragIntent(
-                x-_pointer.startX(),y-_pointer.startY()))
-            _settingsCarousel.move(x,now);
-        if(!wasDragging&&_settingsCarousel.dragging()) {
-            _pointer.cancel();
-            pushTouchTrace(TouchTraceKind::Scroll,now,x,y,_capturedTarget,
-                           watchcontrols::None,now-_pointer.startedAt());
-        }
-        if(before!=_settingsCarousel.offset()) markListMoved();
-        if(up) {
-            bool dragged=_settingsCarousel.end(now);
-            _menu=(MenuItem)_settingsCarousel.selected();
-            if(dragged) {
-                pushTouchTrace(TouchTraceKind::End,now,x,y,_capturedTarget,
-                               watchcontrols::None,now-_pointer.startedAt(),0,0,
-                               (uint8_t)TouchEndReason::Scrolled);
-                _capturedTarget=watchcontrols::None;
-                _tapX=x; _tapY=y;
-                _uiDirty=true; _listBandOnly=true;
-                return;
-            }
-        }
-    }
-    if(_pointer.active() && (held||up)) {
-        bool wasScrolling=_pointer.scrolling();
-        _pointer.move(x,y);
-        if(scroll && _pointer.scrolling()) {
-            if(!wasScrolling) {
-                scroll->begin(_pointer.startY(),_pointer.startedAt());
-                pushTouchTrace(TouchTraceKind::Scroll, now, x, y, _capturedTarget,
-                               watchcontrols::None, now-_pointer.startedAt());
-            }
-            float before=scroll->offset(); scroll->move(y,now);
-            if(before!=scroll->offset()) markListMoved();
-        }
-        if(_colorDrag) updateColorPicker(x,y);
-    }
-    if(up && _pointer.active()) {
-        bool dragged=_pointer.scrolling();
-        auto releasedBounds=_pointer.bounds();
-        float offset=_screen==Screen::Settings?_settingsCarousel.offset():scroll?scroll->offset():0;
-        auto releasedTarget=watchcontrols::at(_screen,_editor,offset,x,y);
-        uint32_t elapsed=now-_pointer.startedAt();
-        int captured=_capturedTarget;
-        TouchEndReason reason=TouchEndReason::Accepted;
-        if(captured==watchcontrols::None) reason=TouchEndReason::NoTarget;
-        else if(dragged) reason=TouchEndReason::Scrolled;
-        else if(releasedTarget.id!=captured) reason=TouchEndReason::TargetChanged;
-        else if(elapsed>1000) reason=TouchEndReason::Timeout;
-        if(!dragged&&releasedTarget.id!=_capturedTarget) _pointer.cancel();
-        int clicked=_pointer.end(x,y,now);
-        if(clicked<0&&reason==TouchEndReason::Accepted) reason=TouchEndReason::Outside;
-        pushTouchTrace(TouchTraceKind::End, now, x, y, captured, releasedTarget.id,
-                       elapsed, 0, 0, (uint8_t)reason);
-        if(clicked>=0) { _clickRect=releasedBounds; _clickUntil=now+90; }
-        if(scroll && dragged) scroll->end(now);
-        _colorDrag=0;
-        _capturedTarget=watchcontrols::None;
-        _tapX=x; _tapY=y;
-        if(clicked>=0 && clicked<watchcontrols::ColorPad) activateUiControl(clicked);
-    }
-    int pressed=exactPressedTarget();
-    _namePressedKey=pressed>=watchcontrols::NameKey&&pressed<watchcontrols::NameKey+30?pressed-watchcontrols::NameKey:-1;
-    if(pressed!=oldPressed) { _uiDirty=true; _listBandOnly=false; }
+    if(_screen==Screen::Face) return;
+    if(down) { _buttonNavigation=false; _uiDirty=true; }
+    settingsUi.pointer(!up&&(down||held),x,y);
 }
 
 static void handleInputs(uint32_t now) {
@@ -1876,497 +1719,135 @@ static void handleInputs(uint32_t now) {
 
 }
 
-static bool pointerFeedback(ux::Rect& r) {
-    if(exactPressedTarget()!=watchcontrols::None) { r=_pointer.bounds(); return true; }
-    if(_clickUntil && (int32_t)(millis()-_clickUntil)<0) { r=_clickRect; return true; }
-    return false;
-}
-static bool pressedOver(int x,int y,int w,int h) {
-    ux::Rect r; if(!pointerFeedback(r)) return false;
-    return hit(r.x+r.w/2,r.y+r.h/2,x,y,w,h);
-}
-static void drawPointerFeedback() {
-    // Each control paints feedback in its own exact hit geometry.
-}
-
-static void drawPill(int16_t x, int16_t y, int16_t w, int16_t h,
-                     const char* label, bool selected, bool accentFill = false) {
-    uint16_t fill = accentFill ? settings.style().accentColor : settings.panel();
-    if(pressedOver(x,y,w,h)) fill=ux::blend565(fill,settings.ink(),48);
-    int16_t radius = ((w < h) ? w : h) / 2;
-    ux::roundRect(canvas, x, y, w, h, radius, fill);
-    ux::strokeRoundRect(canvas, x, y, w, h, radius,
-                         selected ? settings.style().accentColor : settings.muted());
-    canvas.setTextDatum(middle_center);
-    canvas.setFont(&fonts::FreeSansBold9pt7b);
-    canvas.setTextSize(1.0f);
-    canvas.setTextColor(accentFill ? settings.style().bgColor : settings.ink());
-    watchText(canvas, label, x + w / 2, y + h / 2);
-}
-
-static void drawTitle(const char* title) {
-    canvas.setTextDatum(middle_center);
-    canvas.setFont(&fonts::FreeSansBold12pt7b);
-    canvas.setTextSize(1.0f);
-    canvas.setTextColor(settings.ink());
-    watchText(canvas, title, kW / 2, 48);
-}
-
-static void drawFooter();
-static void drawSettingsFooter();
-
-class SettingsCarouselView {
-public:
-    explicit SettingsCarouselView(M5Canvas& target):_target(target) {}
-    uint16_t background() const { return 0; }
-    uint16_t ink() const { return settings.ink(); }
-    uint16_t muted() const { return settings.muted(); }
-    bool pressed(ux::Rect bounds) const {
-        return pressedOver(bounds.x,bounds.y,bounds.w,bounds.h);
-    }
-    void large(const char* text,int16_t x,int16_t y,uint16_t color) {
-        _target.setTextDatum(middle_center);
-        _target.setFont(&fonts::FreeSansBold12pt7b);
-        _target.setTextSize(1.0f);
-        _target.setTextColor(color);
-        watchText(_target,text,x,y);
-    }
-private:
-    M5Canvas& _target;
-};
-
-static void drawSettingsList(bool chrome = true) {
-    if (chrome) drawTitle("SETTINGS");
-    const auto layout=watchcontrols::settingsCarousel();
-    const auto band=watchcontrols::settingsCarouselMotionBand();
-    const auto clip=chrome?ux::Rect{layout.x,layout.y,layout.w,layout.h}:band;
-    canvas.setClipRect(clip.x,clip.y,clip.w,clip.h);
-    SettingsCarouselView view(canvas);
-    watchsettingsdirect::CanvasWriter<M5Canvas> iconCanvas(canvas);
-    watchsettingscarousel::draw(canvas,iconCanvas,view,_settingsCarousel.offset(),
-        _settingsCarousel.selected(),kMenuLabels);
-    canvas.clearClipRect();
-    if (chrome) drawSettingsFooter();
-}
-
-static void drawTimeSettingsList(bool chrome=true) {
-    if(chrome) drawTitle("TIME SETTINGS");
-    const auto layout=watchcontrols::mainList();
-    canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    for(uint8_t i=0;i<kTimeCount;++i) {
-        auto row=watchcontrols::rowBounds(layout,i,_timeScroll.offset());
-        int16_t cy=row.y+row.h/2;
-        if(row.y+row.h<=layout.y||row.y>=layout.y+layout.h) continue;
-        bool selected=_buttonNavigation&&i==(uint8_t)_timeItem;
-        bool pressed=pressedOver(row.x,row.y,row.w,row.h);
-        ux::roundRect(canvas,row.x,row.y,row.w,row.h,layout.radius,
-            pressed?ux::blend565(settings.panel(),settings.style().accentColor,55)
-                   :selected?settings.panel():settings.style().bgColor);
-        if(selected) ux::strokeRoundRect(canvas,row.x,row.y,row.w,row.h,
-                                         layout.radius,settings.style().accentColor);
-        canvas.setTextDatum(middle_left);
-        canvas.setFont(&fonts::FreeSansBold9pt7b);
-        canvas.setTextColor(selected?settings.style().accentColor:settings.ink());
-        watchText(canvas,kTimeLabels[i],84,cy);
-        char value[32]={};
-        switch((TimeItem)i) {
-            case TimeItem::Time:
-                if(watchClock.hasTime()) snprintf(value,sizeof(value),"%02u:%02u",
-                    watchClock.value().time.hours,watchClock.value().time.minutes);
-                else snprintf(value,sizeof(value),"--:--");
-                break;
-            case TimeItem::Date:
-                if(watchClock.hasTime()) snprintf(value,sizeof(value),"%04d/%02u/%02u",
-                    watchClock.value().date.year,watchClock.value().date.month,
-                    watchClock.value().date.date);
-                else snprintf(value,sizeof(value),"----/--/--");
-                break;
-            case TimeItem::Format: snprintf(value,sizeof(value),settings.data().hour24?"24 H":"12 H"); break;
-            default: break;
-        }
-        if(value[0]) {
-            canvas.setTextDatum(middle_right);
-            canvas.setTextColor(settings.muted());
-            watchText(canvas,value,382,cy);
-        }
-    }
-    canvas.clearClipRect();
-    if(chrome) drawFooter();
-}
-
-static void drawPersonalizeList(bool chrome = true) {
-    if (chrome) drawTitle("BOT PERSONALITY");
-    const auto layout=watchcontrols::mainList();
-    canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    for (uint8_t i = 0; i < kPersonalCount; ++i) {
-        auto row=watchcontrols::rowBounds(layout,i,_personalScroll.offset());
-        int16_t cy=row.y+row.h/2;
-        if(row.y+row.h<=layout.y||row.y>=layout.y+layout.h) continue;
-        bool selected=_buttonNavigation&&i==(uint8_t)_personal;
-        bool pressed=pressedOver(row.x,row.y,row.w,row.h);
-        ux::roundRect(canvas,row.x,row.y,row.w,row.h,layout.radius,pressed?ux::blend565(settings.panel(),settings.style().accentColor,55):selected?settings.panel():settings.style().bgColor);
-        if(selected) ux::strokeRoundRect(canvas,row.x,row.y,row.w,row.h,layout.radius,settings.style().accentColor);
-        canvas.setFont(&fonts::FreeSansBold9pt7b);
-        canvas.setTextDatum(middle_left);
-        canvas.setTextColor(selected ? settings.style().accentColor : settings.ink());
-        watchText(canvas,kPersonalLabels[i],84,cy);
-        char value[40] = {};
-        switch ((PersonalItem)i) {
-            case PersonalItem::Expression: snprintf(value, sizeof(value), "%s", Settings::expressionName(settings.data().expression)); break;
-            case PersonalItem::Action: snprintf(value, sizeof(value), "%s", Settings::animationName(settings.data().animation)); break;
-            case PersonalItem::Appearance: snprintf(value, sizeof(value), "%s", Settings::appearanceName(settings.data().appearance)); break;
-            case PersonalItem::Color: snprintf(value, sizeof(value), settings.data().customColor ? "CUSTOM" : "THEME"); break;
-            case PersonalItem::Name: snprintf(value, sizeof(value), "%s", settings.data().botName); break;
-            case PersonalItem::Language: snprintf(value, sizeof(value), settings.data().language ? "中文" : "English"); break;
-            case PersonalItem::Preview: snprintf(value,sizeof(value),"%u",
-                (unsigned)botux::BotUx::moodCount()*botux::BotUx::expressionCount()*botux::BotUx::animationCount()); break;
-            case PersonalItem::Gaze: snprintf(value,sizeof(value),"%s",botux::BotUx::gazeDirectionName((botux::BotUx::GazeDirection)settings.data().gaze,settings.data().language?botux::BotUx::Language::Chinese:botux::BotUx::Language::English)); break;
-            case PersonalItem::Intensity: snprintf(value, sizeof(value), "%u / 5", settings.data().motionAmount); break;
-            case PersonalItem::Speed: snprintf(value, sizeof(value), "%u / 5", settings.data().animationSpeed); break;
-            default: break;
-        }
-        if (value[0]) {
-            canvas.setFont(&fonts::FreeSansBold9pt7b);
-            canvas.setTextDatum(middle_right);
-            canvas.setTextColor(settings.muted());
-            if(i==(uint8_t)PersonalItem::Name) watchEllipsizedText(canvas,value,382,cy,214);
-            else watchText(canvas,value,382,cy);
-        }
-    }
-    canvas.clearClipRect();
-    if (chrome) drawFooter();
-}
-
-static void drawFooter() {
-    auto bounds=watchcontrols::doneBounds();
-    uint16_t fill=settings.style().accentColor;
-    if(pressedOver(bounds.x,bounds.y,bounds.w,bounds.h))
-        fill=ux::blend565(fill,settings.ink(),48);
-    for(int16_t y=bounds.y;y<bounds.y+bounds.h;++y) {
-        auto span=watchcontrols::doneRowSpan(y);
-        if(span.w>0) canvas.drawFastHLine(span.x,span.y,span.w,fill);
-    }
-    canvas.setTextDatum(middle_center);
-    canvas.setFont(&fonts::FreeSansBold9pt7b);
-    canvas.setTextSize(1.0f);
-    canvas.setTextColor(settings.style().bgColor);
-    watchText(canvas,"DONE",watchcontrols::doneLabelX(),watchcontrols::doneLabelY());
-}
-
-static void drawSettingsFooter() {
-    const auto bounds=watchcontrols::doneBounds();
-    canvas.setTextDatum(middle_center);
-    canvas.setFont(&fonts::FreeSansBold9pt7b);
-    canvas.setTextSize(1.0f);
-    canvas.setTextColor(pressedOver(bounds.x,bounds.y,bounds.w,bounds.h)
-                        ?settings.ink():settings.muted());
-    watchText(canvas,"DONE",watchcontrols::doneLabelX(),watchcontrols::doneLabelY());
-}
-
-static void drawStepper(int16_t cx, const char* label, const char* value, bool selected, int16_t width) {
-    drawPill(cx - width / 2, 116, width, 52, "-", selected);
-    canvas.setTextDatum(middle_center);
-    canvas.setFont(&fonts::FreeSans9pt7b);
-    canvas.setTextSize(1.0f);
-    canvas.setTextColor(settings.muted());
-    watchText(canvas, label, cx, 190);
-    canvas.setFont(&fonts::FreeSansBold18pt7b);
-    canvas.setTextColor(selected ? settings.style().accentColor : settings.ink());
-    watchText(canvas, value, cx, 220);
-    drawPill(cx - width / 2, 256, width, 52, "+", selected);
-}
-
-static void drawRtcSaveError() {
-    if(!_rtcSaveFailed) return;
-    canvas.setTextDatum(middle_center);
-    canvas.setFont(&fonts::FreeSans9pt7b);
-    canvas.setTextSize(1.0f);
-    canvas.setTextColor(settings.warning());
-    watchText(canvas,"Error",233,334);
-}
-
-static void drawTimeEditor() {
-    drawTitle("SET TIME");
-    char hour[4], minute[4];
-    snprintf(hour, sizeof(hour), "%02u", (unsigned)_editHour);
-    snprintf(minute, sizeof(minute), "%02u", (unsigned)_editMinute);
-    drawStepper(157,"HOUR",hour,_buttonNavigation&&_editField==0,100);
-    drawStepper(309,"MINUTE",minute,_buttonNavigation&&_editField==1,100);
-    canvas.setTextDatum(middle_center);
-    canvas.setFont(&fonts::FreeSansBold18pt7b);
-    canvas.setTextColor(settings.muted());
-    watchText(canvas, ":", 233, 220);
-    drawRtcSaveError();
-    drawFooter();
-}
-
-static void drawDateEditor() {
-    drawTitle("SET DATE");
-    char day[4], year[6];
-    snprintf(day, sizeof(day), "%02u", (unsigned)_editDay);
-    snprintf(year, sizeof(year), "%d", (int)_editYear);
-    drawStepper(108,"MONTH",kMonths[_editMonth-1],_buttonNavigation&&_editField==0,86);
-    drawStepper(233,"DAY",day,_buttonNavigation&&_editField==1,86);
-    drawStepper(358,"YEAR",year,_buttonNavigation&&_editField==2,86);
-    drawRtcSaveError();
-    drawFooter();
-}
-
-static void drawFormatEditor() {
-    drawTitle("TIME FORMAT");
-    drawPill(78, 128, 146, 76, "12 HOUR", !settings.data().hour24, !settings.data().hour24);
-    drawPill(242, 128, 146, 76, "24 HOUR", settings.data().hour24, settings.data().hour24);
-    drawPill(100, 242, 266, 58, settings.data().showSeconds ? "SECONDS  ON" : "SECONDS  OFF",
-             _buttonNavigation&&_editField==1, settings.data().showSeconds);
-    canvas.setTextDatum(middle_center);
-    canvas.setFont(&fonts::FreeSans9pt7b);
-    canvas.setTextSize(1.0f);
-    canvas.setTextColor(settings.muted());
-    watchText(canvas, "Show seconds on the clock", 233, 322);
-    drawFooter();
-}
-
-class SettingsRowView {
-public:
-    explicit SettingsRowView(M5Canvas& target):_target(target) {}
-    uint16_t panel() const { return settings.panel(); }
-    uint16_t ink() const { return settings.ink(); }
-    uint16_t muted() const { return settings.muted(); }
-    uint16_t accent() const { return settings.style().accentColor; }
-    bool pressed(ux::Rect bounds) const {
-        return pressedOver(bounds.x,bounds.y,bounds.w,bounds.h);
-    }
-    void left(const char* text,int16_t x,int16_t y,uint16_t color) {
-        textAt(text,x,y,color,middle_left);
-    }
-    void right(const char* text,int16_t x,int16_t y,uint16_t color) {
-        textAt(text,x,y,color,middle_right);
-    }
-    void center(const char* text,int16_t x,int16_t y,uint16_t color) {
-        textAt(text,x,y,color,middle_center);
-    }
-private:
-    void textAt(const char* text,int16_t x,int16_t y,uint16_t color,uint8_t datum) {
-        _target.setTextDatum(datum);
-        _target.setFont(&fonts::FreeSans9pt7b);
-        _target.setTextSize(1.0f);
-        _target.setTextColor(color);
-        watchText(_target,text,x,y);
-    }
-    M5Canvas& _target;
-};
-
-static void drawArrowRow(ux::Rect row, const char* label, const char* value, bool selected) {
-    SettingsRowView view(canvas);
-    watchsettingsrows::drawArrowRow(canvas,view,row,label,value,selected);
-}
-
-static void drawPreviewArrowRow(uint8_t index,const char* label,const char* value) {
-    const auto layout=watchcontrols::previewList();
-    auto row=watchcontrols::rowBounds(layout,index,_editorScroll.offset());
-    if(row.y+row.h<=layout.y||row.y>=layout.y+layout.h) return;
-    drawArrowRow(row,label,value,_buttonNavigation&&_editField==index);
-}
-
-static void drawAppearanceEditor() {
-    drawTitle("APPEARANCE");
-    previewBot.draw();
-    previewSprite.pushSprite(&canvas, kPreviewX, kPreviewY);
-    auto layout=watchcontrols::previewList(); canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    drawPreviewArrowRow(0,"SHAPE",Settings::appearanceName(settings.data().appearance));
-    drawPreviewArrowRow(1,"EYES",Settings::eyeStyleName(settings.data().eyeStyle));
-    canvas.clearClipRect();
-    drawFooter();
-}
-
-static void drawExpressionEditor() {
-    drawTitle("EXPRESSION");
-    previewBot.draw();
-    previewSprite.pushSprite(&canvas, kPreviewX, kPreviewY);
-    drawPill(48, 126, 76, 96, "<", false);
-    drawPill(342, 126, 76, 96, ">", false);
-    canvas.setFont(&fonts::FreeSansBold12pt7b);
-    canvas.setTextDatum(middle_center);
-    canvas.setTextColor(settings.ink());
-    watchText(canvas, Settings::expressionName(settings.data().expression), 233, 274);
-    canvas.setFont(&fonts::FreeSans9pt7b);
-    canvas.setTextColor(settings.muted());
-    watchText(canvas, "Tap arrows; tap the bot to react", 233, 318);
-    drawFooter();
-}
-
-static void drawMotionEditor() {
-    drawTitle("MOTION");
-    previewBot.draw();
-    previewSprite.pushRotateZoomWithAA(&canvas,233,129,0,0.72f,0.72f);
-    char amount[8], speed[8];
-    snprintf(amount, sizeof(amount), "%u / 5", settings.data().motionAmount);
-    snprintf(speed, sizeof(speed), "%u / 5", settings.data().animationSpeed);
-    auto layout=watchcontrols::previewList(); canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    drawPreviewArrowRow(0,"ACTION",Settings::animationName(settings.data().animation));
-    drawPreviewArrowRow(1,"WRIST",settings.data().motion?"ON":"OFF");
-    drawPreviewArrowRow(2,"INTENSITY",amount);
-    drawPreviewArrowRow(3,"SPEED",speed);
-    canvas.clearClipRect();
-    drawFooter();
-}
-
-static void drawColorEditor() {
-    drawTitle("BOT COLOR");
-    previewBot.draw();
-    previewSprite.pushSprite(&canvas, kPreviewX, 55);
-    auto theme=watchcontrols::useThemeBounds();
-    auto pad=watchcontrols::colorPadBounds();
-    auto hue=watchcontrols::hueBarBounds();
-    drawPill(theme.x,theme.y,theme.w,theme.h,"USE THEME",!settings.data().customColor);
-    for(int16_t x=pad.x;x<pad.x+pad.w;x+=10) {
-        int16_t tileW=(x+10<pad.x+pad.w)?10:pad.x+pad.w-x;
-        int16_t sampleX=x+tileW==pad.x+pad.w?pad.x+pad.w-1:x;
-        uint8_t sat=(uint8_t)((sampleX-pad.x)*100/(pad.w-1));
-        for(int16_t y=pad.y;y<pad.y+pad.h;y+=6) {
-            int16_t tileH=(y+6<pad.y+pad.h)?6:pad.y+pad.h-y;
-            int16_t sampleY=y+tileH==pad.y+pad.h?pad.y+pad.h-1:y;
-            uint8_t value=(uint8_t)((pad.y+pad.h-1-sampleY)*100/(pad.h-1));
-            canvas.fillRect(x,y,tileW,tileH,
-                            Settings::hsv565(settings.data().colorHue,sat,value));
-        }
-    }
-    for(int16_t y=hue.y;y<hue.y+hue.h;++y)
-        canvas.drawFastHLine(hue.x,y,hue.w,
-            Settings::hsv565((uint16_t)((y-hue.y)*359/(hue.h-1)),100,100));
-    int16_t sx=pad.x+settings.data().colorSat*(pad.w-1)/100;
-    int16_t sy=pad.y+(100-settings.data().colorValue)*(pad.h-1)/100;
-    int16_t hy=hue.y+settings.data().colorHue*(hue.h-1)/359;
-    canvas.drawCircle(sx, sy, 8, settings.ink());
-    ux::strokeRoundRect(canvas,hue.x-4,hy-5,hue.w+8,10,4,settings.ink());
-    drawFooter();
-}
-
-static void drawDisplayEditor() {
-    drawTitle("DISPLAY");
-    char brightness[8];
-    snprintf(brightness, sizeof(brightness), "%u / 5", settings.data().brightness);
-    auto layout=watchcontrols::optionList();
-    float offset=_editorScroll.offset();
-    canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    drawArrowRow(watchcontrols::optionRowBounds(0,offset),"BRIGHTNESS",brightness,_buttonNavigation&&_editField==0);
-    drawArrowRow(watchcontrols::optionRowBounds(1,offset),"THEME",Settings::themeName(settings.data().theme),_buttonNavigation&&_editField==1);
-    drawArrowRow(watchcontrols::optionRowBounds(2,offset),"INDICATOR",settings.data().indicator?"ON":"OFF",_buttonNavigation&&_editField==2);
-    drawArrowRow(watchcontrols::optionRowBounds(3,offset),"BUTTON FX",settings.data().buttonFeedback?"ON":"OFF",_buttonNavigation&&_editField==3);
-    drawArrowRow(watchcontrols::optionRowBounds(4,offset),"BOT TEXT",settings.data().showDescription?"SHOW":"HIDE",_buttonNavigation&&_editField==4);
-    drawArrowRow(watchcontrols::optionRowBounds(5,offset),"TOP",settings.data().swapLayout?"TIME":"BOT TEXT",_buttonNavigation&&_editField==5);
-    canvas.clearClipRect();
-    drawFooter();
-}
-
-static void drawSoundEditor() {
-    drawTitle("SOUND");
-    auto layout=watchcontrols::optionList();
-    float offset=_editorScroll.offset();
-    canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    drawArrowRow(watchcontrols::optionRowBounds(0,offset),"SOUND",settings.data().sound?"ON":"OFF",_buttonNavigation&&_editField==0);
-    drawArrowRow(watchcontrols::optionRowBounds(1,offset),"STARTUP SOUND",settings.data().startupSound?"ON":"OFF",_buttonNavigation&&_editField==1);
-    drawArrowRow(watchcontrols::optionRowBounds(2,offset),"BUTTON SOUND",settings.data().buttonSound?"ON":"OFF",_buttonNavigation&&_editField==2);
-    drawArrowRow(watchcontrols::optionRowBounds(3,offset),"ALERT SOUND",settings.data().alertSound?"ON":"OFF",_buttonNavigation&&_editField==3);
-    canvas.clearClipRect();
-    drawFooter();
-}
-
-static void drawPowerEditor() {
-    drawTitle("POWER SAVING");
-    char dimLevel[8],from[8],until[8];
-    snprintf(dimLevel,sizeof(dimLevel),"%u / 5",settings.data().dimBrightness);
-    snprintf(from,sizeof(from),"%02u:00",settings.data().forcedSleepStartHour);
-    snprintf(until,sizeof(until),"%02u:00",settings.data().forcedSleepEndHour);
-    auto layout=watchcontrols::optionList();
-    float offset=_editorScroll.offset();
-    canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    drawArrowRow(watchcontrols::optionRowBounds(0,offset),"POWER SAVE",settings.data().powerSaveEnabled?"ON":"OFF",_buttonNavigation&&_editField==0);
-    drawArrowRow(watchcontrols::optionRowBounds(1,offset),"DIM LEVEL",dimLevel,_buttonNavigation&&_editField==1);
-    drawArrowRow(watchcontrols::optionRowBounds(2,offset),"DIM AFTER",watchpower::timeoutLabel(settings.data().dimTimeout),_buttonNavigation&&_editField==2);
-    drawArrowRow(watchcontrols::optionRowBounds(3,offset),"AUTO OFF",watchpower::timeoutLabel(settings.data().screenOffTimeout),_buttonNavigation&&_editField==3);
-    drawArrowRow(watchcontrols::optionRowBounds(4,offset),"WAKE",settings.data().wakeMode==Settings::WAKE_KEYS_ONLY?"KEYS ONLY":"TOUCH + KEYS",_buttonNavigation&&_editField==4);
-    drawArrowRow(watchcontrols::optionRowBounds(5,offset),"CHARGE AWAKE",settings.data().keepAwakeWhileCharging?"ON":"OFF",_buttonNavigation&&_editField==5);
-    drawArrowRow(watchcontrols::optionRowBounds(6,offset),"FORCED OFF",settings.data().forcedSleepEnabled?"ON":"OFF",_buttonNavigation&&_editField==6);
-    drawArrowRow(watchcontrols::optionRowBounds(7,offset),"FROM",from,_buttonNavigation&&_editField==7);
-    drawArrowRow(watchcontrols::optionRowBounds(8,offset),"UNTIL",until,_buttonNavigation&&_editField==8);
-    canvas.clearClipRect();
-    drawFooter();
-}
-
-static void drawNameEditor() {
-    drawTitle("BOT NAME");
-    canvas.setTextDatum(middle_center);
-    canvas.setFont(&fonts::FreeSansBold12pt7b);
-    canvas.setTextColor(settings.ink());
-    watchEllipsizedText(canvas,_nameEditor.text(),233,96,310);
-    static const ux::NameKeyboardLabels zhKeys={"删除","空格","Aa","确定"};
-    ux::drawNameKeyboard(canvas,_nameEditor,watchcontrols::nameKeyboardBounds(),
-                         settings.panel(), settings.ink(), watchKeyboardFont(settings.data().language),
-                         _namePressedKey,settings.data().language?&zhKeys:nullptr);
-    drawFooter();
-}
-
-static void drawLanguageEditor() {
-    drawTitle("LANGUAGE");
-    drawPill(72, 160, 152, 70, "English", settings.data().language == 0);
-    drawPill(242, 160, 152, 70, "中文", settings.data().language == 1);
-    drawFooter();
-}
-
-static void drawLayoutEditor() {
-    drawTitle("WATCH LAYOUT");
-    drawArrowRow({58,148,350,44},"BOT TEXT",settings.data().showDescription?"SHOW":"HIDE",_buttonNavigation&&_editField==0);
-    drawArrowRow({58,228,350,44},"TOP",settings.data().swapLayout?"TIME":"BOT TEXT",_buttonNavigation&&_editField==1);
-    drawFooter();
-}
-
-static void drawCombinationEditor() {
-    drawTitle("COMBINATIONS");
-    previewBot.draw();
-    previewSprite.pushSprite(&canvas, kPreviewX, 62);
-    auto layout=watchcontrols::previewList(); canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    drawPreviewArrowRow(0,"STATE",botux::BotUx::moodName((botux::BotUx::Mood)_previewMood));
-    drawPreviewArrowRow(1,"FACE",botux::BotUx::expressionName((botux::BotUx::Expression)_previewExpression));
-    drawPreviewArrowRow(2,"ACTION",botux::BotUx::animationName((botux::BotUx::Animation)_previewAnimation));
-    canvas.clearClipRect();
-    drawFooter();
-}
-
-static void drawGazeEditor() {
-    drawTitle("GAZE"); previewBot.draw();
-    previewSprite.pushSprite(&canvas,kPreviewX,62);
-    auto layout=watchcontrols::previewList(); canvas.setClipRect(layout.x,layout.y,layout.w,layout.h);
-    drawPreviewArrowRow(0,"DIRECTION",botux::BotUx::gazeDirectionName((botux::BotUx::GazeDirection)settings.data().gaze,settings.data().language?botux::BotUx::Language::Chinese:botux::BotUx::Language::English));
-    canvas.clearClipRect();
-    drawFooter();
-}
-
-static void drawEditor() {
-    switch (_editor) {
-        case Editor::Time:       drawTimeEditor(); break;
-        case Editor::Date:       drawDateEditor(); break;
-        case Editor::Format:     drawFormatEditor(); break;
-        case Editor::Expression: drawExpressionEditor(); break;
-        case Editor::Appearance: drawAppearanceEditor(); break;
-        case Editor::Motion:     drawMotionEditor(); break;
-        case Editor::Color:      drawColorEditor(); break;
-        case Editor::Display:    drawDisplayEditor(); break;
-        case Editor::Sound:      drawSoundEditor(); break;
-        case Editor::Power:      drawPowerEditor(); break;
-        case Editor::Name: drawNameEditor(); break;
-        case Editor::Preview: drawCombinationEditor(); break;
-        case Editor::Layout: drawLayoutEditor(); break;
-        case Editor::Language: drawLanguageEditor(); break;
-        case Editor::Gaze: drawGazeEditor(); break;
-        default: break;
-    }
-}
-
 static bool previewIsAnimated() {
     return _screen == Screen::Editor
         && (_editor == Editor::Gaze || _editor == Editor::Preview || _editor == Editor::Expression || _editor == Editor::Appearance
             || _editor == Editor::Motion || _editor == Editor::Color);
+}
+
+static WatchLvgl::Model lvglModel() {
+    WatchLvgl::Model model;
+    model.page=(uint16_t)_screen*64+(uint16_t)_editor*2+settings.data().language;
+    model.keyboardNavigation=_buttonNavigation;
+    model.selected=_screen==Screen::Settings?(uint8_t)_menu:
+        _screen==Screen::TimeSettings?(uint8_t)_timeItem:
+        _screen==Screen::Personalize?(uint8_t)_personal:_editField;
+    auto add=[&](const char* label,const char* value="") {
+        auto& row=model.rows[model.count++];
+        snprintf(row.label,sizeof(row.label),"%s",label);
+        snprintf(row.value,sizeof(row.value),"%s",value);
+    };
+    auto number=[&](const char* label,unsigned value) {
+        char text[20]; snprintf(text,sizeof(text),"%u",value); add(label,text);
+    };
+    auto toggle=[&](const char* label,bool value) {
+        add(label,value?"ON":"OFF");
+        model.rows[model.count-1].kind=WatchLvgl::RowKind::Toggle;
+        model.rows[model.count-1].checked=value;
+    };
+    if(_screen==Screen::Settings) {
+        model.title="SETTINGS";
+        for(uint8_t i=0;i<kMenuCount;++i) add(kMenuLabels[i]);
+    } else if(_screen==Screen::TimeSettings) {
+        model.title="TIME"; for(uint8_t i=0;i<kTimeCount;++i) add(kTimeLabels[i]);
+    } else if(_screen==Screen::Personalize) {
+        model.title="BOT"; for(uint8_t i=0;i<kPersonalCount;++i) add(kPersonalLabels[i]);
+    } else {
+        auto& d=settings.data(); model.editor=true; model.error=_rtcSaveFailed;
+        model.preview=previewIsAnimated();
+        switch(_editor) {
+            case Editor::Connection: {
+                model.title="CONNECTION"; model.immediate=true;
+                add("BLUETOOTH",companion.windowOpen()?"ON (5 MIN)":"OFF");
+                model.rows[0].kind=WatchLvgl::RowKind::Toggle; model.rows[0].checked=companion.windowOpen();
+                add("BLUETOOTH STATUS",companion.connected()?"CONNECTED":companion.windowOpen()?"WAITING":"OFF");
+                model.rows[1].kind=WatchLvgl::RowKind::Info;
+                char remaining[20]; snprintf(remaining,sizeof(remaining),"%lu s",(unsigned long)companion.remainingSeconds());
+                add("WINDOW",companion.windowOpen()?remaining:"--");
+                model.rows[2].kind=WatchLvgl::RowKind::Info; model.rows[2].literal=true;
+                add("PROTOCOL","v1"); model.rows[3].kind=WatchLvgl::RowKind::Link;
+                break;
+            }
+            case Editor::Protocol:
+                model.title="PROTOCOL"; model.immediate=true;
+                add("PROTOCOL","Corallium v1"); add("time.set","SUPPORTED");
+                add("battery","SUPPORTED"); add("ble","ENCRYPTED"); add("serial","JSONL");
+                for(uint8_t i=0;i<model.count;++i) model.rows[i].kind=WatchLvgl::RowKind::Info;
+                break;
+            case Editor::Time:
+                model.title="SET TIME"; number("HOUR",_editHour); number("MINUTE",_editMinute); break;
+            case Editor::Date:
+                model.title="SET DATE"; add("MONTH",kMonths[_editMonth-1]); number("DAY",_editDay); number("YEAR",_editYear); break;
+            case Editor::Format:
+                model.title="TIME FORMAT"; add("FORMAT",d.hour24?"24 HOUR":"12 HOUR"); toggle("SECONDS",d.showSeconds); break;
+            case Editor::Expression:
+                model.title="EXPRESSION"; add("EXPRESSION",Settings::expressionName(d.expression)); break;
+            case Editor::Appearance:
+                model.title="APPEARANCE"; add("SHAPE",Settings::appearanceName(d.appearance)); add("EYES",Settings::eyeStyleName(d.eyeStyle)); break;
+            case Editor::Motion:
+                model.title="MOTION"; add("ACTION",Settings::animationName(d.animation)); toggle("WRIST",d.motion);
+                number("INTENSITY",d.motionAmount); number("SPEED",d.animationSpeed); break;
+            case Editor::Color:
+                model.title="BOT COLOR"; model.color=true;
+                model.hue=d.colorHue; model.saturation=d.colorSat; model.brightness=d.colorValue; break;
+            case Editor::Display:
+                model.title="DISPLAY"; number("BRIGHTNESS",d.brightness); add("THEME",Settings::themeName(d.theme));
+                toggle("INDICATOR",d.indicator); toggle("BUTTON FX",d.buttonFeedback);
+                add("BOT TEXT",d.showDescription?"SHOW":"HIDE"); add("TOP",d.swapLayout?"TIME":"BOT TEXT"); break;
+            case Editor::Sound:
+                model.title="SOUND"; toggle("SOUND",d.sound); toggle("STARTUP SOUND",d.startupSound);
+                toggle("BUTTON SOUND",d.buttonSound); toggle("ALERT SOUND",d.alertSound); break;
+            case Editor::Power:
+                model.title="POWER SAVING"; toggle("POWER SAVE",d.powerSaveEnabled); number("DIM LEVEL",d.dimBrightness);
+                add("DIM AFTER",watchpower::timeoutLabel(d.dimTimeout)); add("AUTO OFF",watchpower::timeoutLabel(d.screenOffTimeout));
+                add("WAKE",d.wakeMode==Settings::WAKE_KEYS_ONLY?"KEYS ONLY":"TOUCH + KEYS");
+                toggle("CHARGE AWAKE",d.keepAwakeWhileCharging); toggle("FORCED OFF",d.forcedSleepEnabled);
+                number("FROM",d.forcedSleepStartHour); number("UNTIL",d.forcedSleepEndHour); break;
+            case Editor::Name:
+                model.title="BOT NAME"; model.name=true;
+                snprintf(model.botName,sizeof(model.botName),"%s",_nameEditor.text()); break;
+            case Editor::Language:
+                model.title="LANGUAGE"; add("LANGUAGE",d.language?"中文":"English"); break;
+            case Editor::Layout:
+                model.title="WATCH LAYOUT"; add("BOT TEXT",d.showDescription?"SHOW":"HIDE"); add("TOP",d.swapLayout?"TIME":"BOT TEXT"); break;
+            case Editor::Gaze:
+                model.title="GAZE"; add("DIRECTION",botux::BotUx::gazeDirectionName((botux::BotUx::GazeDirection)d.gaze,
+                    d.language?botux::BotUx::Language::Chinese:botux::BotUx::Language::English)); break;
+            case Editor::Preview:
+                model.title="COMBINATIONS"; add("STATE",botux::BotUx::moodName((botux::BotUx::Mood)_previewMood));
+                add("FACE",botux::BotUx::expressionName((botux::BotUx::Expression)_previewExpression));
+                add("ACTION",botux::BotUx::animationName((botux::BotUx::Animation)_previewAnimation)); break;
+            default: break;
+        }
+    }
+    return model;
+}
+
+static void lvglAction(WatchLvgl::Action action,uint8_t row,int value,const char* text) {
+    _idleScreenPolicy.wakeForUser(millis());
+    _buttonNavigation=false;
+    using Action=WatchLvgl::Action;
+    if(action==Action::Save) {
+        if(_screen==Screen::Settings) leaveSettings();
+        else if(_screen==Screen::TimeSettings) leaveTimeSettings();
+        else if(_screen==Screen::Personalize) leavePersonalize();
+        else saveEditor();
+    } else if(action==Action::Cancel) cancelEditor();
+    else if(action==Action::Open) {
+        if(_screen==Screen::Settings) { _menu=(MenuItem)row; selectMenuItem(); }
+        else if(_screen==Screen::TimeSettings) { _timeItem=(TimeItem)row; selectTimeItem(); }
+        else if(_screen==Screen::Personalize) { _personal=(PersonalItem)row; selectPersonalItem(); }
+    } else if(action==Action::Less||action==Action::More) {
+        _editField=row; changeEditorValue(action==Action::Less?-1:1);
+    } else if(action==Action::Name) _nameEditor.begin(text);
+    else if(action==Action::Color) {
+        auto& d=settings.data(); d.customColor=true;
+        if(row==0) d.colorHue=value;
+        else if(row==1) d.colorSat=value;
+        else d.colorValue=value;
+        applySettings();
+    } else if(action==Action::Theme) { settings.data().customColor=false; applySettings(); }
+    _uiDirty=true;
 }
 
 static void recordFrame(uint32_t now, uint32_t updateUs, uint32_t drawUs, uint32_t pushUs) {
@@ -2770,60 +2251,16 @@ static void render(uint32_t now) {
         return;
     }
 
-    if (!_uiDirty && !previewIsAnimated() && !_buttonFeedbackDirty) return;
-    bool baseWasPushed = _uiDirty || previewIsAnimated();
-    bool bandOnly = _listBandOnly && (_screen == Screen::Settings
-        || _screen == Screen::TimeSettings || _screen == Screen::Personalize);
-    const auto mainLayout=watchcontrols::mainList();
-    const auto carouselBand=watchcontrols::settingsCarouselMotionBand();
-    watchbuttons::Bounds listArea=_screen==Screen::Settings
-        ?watchbuttons::Bounds{(int16_t)carouselBand.x,(int16_t)carouselBand.y,
-                             (int16_t)carouselBand.w,(int16_t)carouselBand.h}
-        :watchbuttons::Bounds{0,mainLayout.y,kW,mainLayout.h};
-    if (baseWasPushed) {
-        const uint16_t background=_screen==Screen::Settings?0:settings.style().bgColor;
-        if(bandOnly) canvas.fillRect(listArea.x,listArea.y,listArea.w,listArea.h,background);
-        else canvas.fillSprite(background);
-        if (_screen == Screen::Settings) {
-            drawSettingsList(!bandOnly);
-        } else if (_screen == Screen::TimeSettings) {
-            drawTimeSettingsList(!bandOnly);
-        } else if (_screen == Screen::Personalize) {
-            drawPersonalizeList(!bandOnly);
-        } else {
-            drawEditor();
-        }
-        drawPointerFeedback();
+    if(previewIsAnimated()) {
+        previewBot.draw();
+        settingsUi.preview(previewSprite);
     }
-    uint32_t t2 = micros();
-    uint8_t held = visibleButtonMask();
-    bool compositeBase = baseWasPushed
-        && (held || _buttonFeedbackDrawnMask || _buttonFeedbackDirty);
-    if (baseWasPushed) {
-        if (compositeBase) {
-            watchbuttons::Bounds area = bandOnly
-                ? listArea
-                : watchbuttons::Bounds{0, 0, kW, kH};
-            uint32_t started = micros();
-            _buttonFeedbackPixels = pushCanvasRegionWithButtonFeedback(canvas, area, held);
-            _buttonFeedbackRenderUs = micros() - started;
-            if (_buttonFeedbackRenderUs > _buttonFeedbackRenderMaxUs)
-                _buttonFeedbackRenderMaxUs = _buttonFeedbackRenderUs;
-            if (!bandOnly) {
-                _buttonFeedbackDrawnMask = held;
-                _buttonFeedbackDirty = false;
-            }
-        } else if(bandOnly) M5.Display.pushImage(listArea.x,listArea.y,listArea.w,listArea.h,
-            (uint16_t*)canvas.getBuffer()+kW*listArea.y+listArea.x);
-        else canvas.pushSprite(0, 0);
-    }
-    if (!baseWasPushed || bandOnly)
-        renderButtonFeedbackFromCanvas(canvas, false);
-    M5.Display.waitDisplay();
-    uint32_t t3 = micros();
-    _uiDirty = false;
-    _listBandOnly = false;
-    recordFrame(now, t1 - t0, t2 - t1, t3 - t2);
+    settingsUi.update(now,true);
+    _listBandOnly=false;
+    _buttonFeedbackDirty=false;
+    uint32_t t2=micros();
+    recordFrame(now,t1-t0,t2-t1,0);
+
 }
 
 static void emitFrameCapture() {
@@ -2840,15 +2277,13 @@ static void emitFrameCapture() {
                   settings.style().accentColor, settings.panel(), settings.warning(),
                   statusPanelProgress(millis()));
     } else {
-        canvas.fillSprite(_screen==Screen::Settings?0:settings.style().bgColor);
-        if (_screen == Screen::Settings) drawSettingsList(true);
-        else if (_screen == Screen::TimeSettings) drawTimeSettingsList(true);
-        else if (_screen == Screen::Personalize) drawPersonalizeList(true);
-        else drawEditor();
-        drawPointerFeedback();
+        settingsUi.show(lvglModel());
+        settingsUi.update(millis(),true);
+        lv_obj_invalidate(lv_scr_act());
+        lv_refr_now(nullptr);
     }
     canvas.clearClipRect();
-    if(!_touchCalibration) compositeButtonFeedbackIntoCanvas(canvas);
+    if(!_touchCalibration&&_screen==Screen::Face) compositeButtonFeedbackIntoCanvas(canvas);
 
     const uint8_t* pixels = (const uint8_t*)canvas.getBuffer();
     size_t bytes = canvas.bufferLength();
@@ -2949,12 +2384,13 @@ static void selectDiagnosticPage(uint8_t page) {
 
 static uint32_t _diagnosticSeq=0;
 static void printUiState() {
+    Serial.printf("STACK loop_min_free_bytes=%u\n",(unsigned)uxTaskGetStackHighWaterMark(nullptr));
     auto& ioe1=M5.getIOExpander(0);
     bool audioPower=false,audioPa=false;
     bool audioIoValid=ioe1.getInputLevel(kAudioPowerIo,&audioPower)
         &&ioe1.getInputLevel(kAudioAmplifierIo,&audioPa);
     Serial.printf("UI seq=%lu screen=%u editor=%u pressed=%d scrolling=%u offset=%.1f sound=%u startup_sound=%u button_sound=%u alert_sound=%u audio_desired=%u audio_bound=%u audio_state=%u audio_ready=%u audio_suspended=%u audio_failed=%u audio_io_valid=%u audio_power=%u audio_pa=%u language=%u gaze=%u indicator=%u button_fx=%u status=%u charging=%u manual=%u mood=%u effective=%u expression=%u effective_expr=%u animation=%u keys_held=%u pwr_valid=%u pwr_held=%u keys_diag=%u keys_px=%lu keys_us=%lu keys_max_us=%lu power_save=%u dim_level=%u dim_timeout=%u off_timeout=%u wake_mode=%u charge_awake=%u force_sleep=%u force_start=%u force_end=%u screen_power=%u\n",
-        (unsigned long)_diagnosticSeq,(unsigned)_screen,(unsigned)_editor,exactPressedTarget(),_pointer.scrolling(),
+        (unsigned long)_diagnosticSeq,(unsigned)_screen,(unsigned)_editor,watchcontrols::None,_pointer.scrolling(),
         _screen==Screen::Settings?_settingsCarousel.offset():_screen==Screen::TimeSettings?_timeScroll.offset():_screen==Screen::Personalize?_personalScroll.offset():_screen==Screen::Editor?_editorScroll.offset():0,settings.data().sound,settings.data().startupSound,settings.data().buttonSound,settings.data().alertSound,soundDesired(),_soundBound,(unsigned)_soundOutput.powerState(),_soundOutput.ready(),_soundOutput.suspended(),_soundOutput.failed(),audioIoValid,audioPower,audioPa,settings.data().language,settings.data().gaze,settings.data().indicator,settings.data().buttonFeedback,_statusPanelUntilMs!=0,_charging,
         _manualPreset,(unsigned)face.bot().mood(),(unsigned)face.bot().effectiveMood(),(unsigned)face.bot().expression(),(unsigned)face.bot().effectiveExpression(),(unsigned)face.bot().animation(),
         (unsigned)_buttonFeedback.held(),_powerButtonValid,_powerButtonPressed,_diagnosticButtons,
@@ -2972,6 +2408,7 @@ static void handleSerialCommands() {
     static char line[48]; static uint8_t length=0;
     while(Serial.available()) {
         char c=(char)Serial.read();
+        if(companion.serialByte(c)) continue;
         if(c!='\n' && c!='\r') { if(length+1<sizeof(line)) line[length++]=c; continue; }
         if(!length) continue;
         line[length]=0; length=0;
@@ -3016,6 +2453,8 @@ static void handleSerialCommands() {
         else if(!strcmp(line,"trace clear")) { bool enabled=_touchTraceEnabled; setTouchTraceEnabled(enabled); Serial.println("TRACE cleared"); Serial.flush(); }
         else if(!strcmp(line,"trace dump")) dumpTouchTrace();
         else if(!strncmp(line,"locale ",7)) { settings.data().language=atoi(line+7)==1; applySettings(); printUiState(); }
+        else if(!strcmp(line,"ble on")) { companion.openWindow(); enterEditor(Editor::Connection); printUiState(); }
+        else if(!strcmp(line,"ble off")) { companion.closeWindow(); _uiDirty=true; printUiState(); }
         else if(!strcmp(line,"home")) { returnHome(); printUiState(); }
         else if(!strcmp(line,"rtc")) {
             bool ok=watchClock.refresh(); auto dt=watchClock.value();
@@ -3083,6 +2522,7 @@ void setup() {
     _sounds.setEnabled(initialSound);
     _soundBound=_soundOutput.begin(M5.Speaker,_sounds,6,initialSound);
     power.begin();
+    companion.begin(power);
     playSound(ux::sound::Cue::Wake, SoundChannel::Startup);
     watchClock.refresh();
     Serial.printf("RTC boot state=%u valid=%u hold=%u\n",
@@ -3124,6 +2564,9 @@ void setup() {
     if (!_renderReady) { Serial.println("HUD allocation failed"); return; }
     previewBot.begin(&previewSprite);
     applySettings();
+    if(!settingsUi.begin(canvas,lvglAction)) {
+        _renderReady=false; Serial.println("LVGL allocation failed"); return;
+    }
     uint32_t now=millis();
     refreshPower(now);
     _idleScreenPolicy.begin(now);
@@ -3132,7 +2575,7 @@ void setup() {
     _personalList.configure(kPersonalCount, kVisibleRows);
     _ambientCycle.begin(millis());
     showStatusPanel(millis(), 1800);
-    Serial.printf("bot-ux-watch ready; IMU=%d keys_mask_ms=%lu keys_mask_bytes=%lu. Commands: e/a/m/p/s, c capture, v0..v25 diagnostic pages, td/tm/tu x y, ui, keys 0..7/off, battery 0..100/off, trace on/off/clear/dump, cal start/repeat/direction/on/off/dump/profile/save/reset, sound N\n",
+    Serial.printf("bot-ux-watch ready; IMU=%d keys_mask_ms=%lu keys_mask_bytes=%lu. Commands: e/a/m/p/s, c capture, v0..v25 diagnostic pages, contact 1|0 x y / physical, ui, ble on/off, keys 0..7/off, battery 0..100/off, trace on/off/clear/dump, cal start/repeat/direction/on/off/dump/profile/save/reset, sound N\n",
                   M5.Imu.isEnabled(), (unsigned long)buttonMaskMs,
                   (unsigned long)kButtonMasksTotal);
 }
@@ -3148,8 +2591,15 @@ void loop() {
     if(_clickUntil && (int32_t)(now-_clickUntil)>=0) { _clickUntil=0; _uiDirty=true; _listBandOnly=false; }
     handleInputs(now);
     if(_contactReplyPending) { _contactReplyPending=false; printUiState(); }
+    companion.setClockEditing(_screen==Screen::Editor&&(_editor==Editor::Time||_editor==Editor::Date));
     handleSerialCommands();
+    companion.update(now);
+    static uint32_t connectionUiMs=0;
+    if(_editor==Editor::Connection&&now-connectionUiMs>=1000) {
+        connectionUiMs=now; _uiDirty=true;
+    }
     if(_screenPowerState==watchpower::ScreenState::Off) {
+        settingsUi.update(now,false);
         if(!watchpower::audioSafeForLightSleep(_screenPowerState,
                                                _soundOutput.suspended())) {
             delay(8);
@@ -3160,7 +2610,7 @@ void loop() {
             const bool savingBypassed=_externalPower
                 &&config.keepAwakeWhileExternalPower&&!forced;
             if(watchpower::offWaitMode(_screenPowerState,
-                    settings.data().wakeMode==Settings::WAKE_KEYS_ONLY,
+                    settings.data().wakeMode==Settings::WAKE_KEYS_ONLY&&!companion.active(),
                     savingBypassed,_gestureActive)
                   ==watchpower::OffWaitMode::ButtonLightSleep) {
                 if(power.lightSleepForButtonPoll()) {
@@ -3206,6 +2656,11 @@ void loop() {
     if (_screen == Screen::Personalize && _personalScroll.update(scrollDt)) markListMoved();
     if (_screen == Screen::Editor && watchcontrols::editorUsesScrollList(_editor)
         && _editorScroll.update(scrollDt)) markListMoved();
+
+    if(_screen!=Screen::Face && !_touchCalibration) {
+        if(_uiDirty) { settingsUi.show(lvglModel()); _uiDirty=false; }
+        settingsUi.update(now,true);
+    } else settingsUi.update(now,false);
 
     if (_screen != Screen::Face && !_uiDirty && !previewIsAnimated()
         && !_buttonFeedbackDirty) {
