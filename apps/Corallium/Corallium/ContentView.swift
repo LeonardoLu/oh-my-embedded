@@ -87,6 +87,9 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showWiFi) { WiFiSheet(store: store) }
+        .onChange(of: store.capabilities) { _, capabilities in
+            if !capabilities.contains("wifi.set") { showWiFi = false; confirmForget = false }
+        }
         .confirmationDialog("移除设备保存的 Wi-Fi 配置？", isPresented: $confirmForget, titleVisibility: .visible) {
             Button("移除 Wi-Fi 配置", role: .destructive) { store.forgetWiFi() }
             Button("取消", role: .cancel) {}
@@ -117,7 +120,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("让设备，彼此靠近。")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
-                Text("连接你的随身时钟与桌面终端。同步时间、配置网络，让状态一目了然。")
+                Text("连接你的随身时钟与桌面终端。同步时间、查看状态，并为支持网络的设备配置 Wi-Fi。")
                     .font(.body).foregroundStyle(.secondary)
             }.padding(.top, 8)
             ViewThatFits(in: .horizontal) {
@@ -127,7 +130,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Label("从一次近距离连接开始", systemImage: "antenna.radiowaves.left.and.right")
                     .font(.title3.weight(.semibold))
-                Text("在设备设置中开启 Corallium 蓝牙连接，保持设备靠近 Mac 或 iPhone，再扫描附近设备。")
+                Text("在设备的连接设置中开启蓝牙，保持设备靠近 Mac 或 iPhone，再扫描附近设备。")
                     .foregroundStyle(.secondary)
                 HStack(spacing: 12) {
                     Button { store.scan() } label: { Label("扫描附近设备", systemImage: "magnifyingglass") }
@@ -179,7 +182,7 @@ struct ContentView: View {
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 270), alignment: .top)], spacing: 18) {
                 timeCard
-                wifiCard
+                if store.capabilities.contains("wifi.set") { wifiCard }
                 if store.capabilities.contains("battery") { batteryCard }
                 infoCard(kind)
             }
@@ -213,7 +216,6 @@ struct ContentView: View {
                     Button("移除", role: .destructive) { confirmForget = true }.disabled(!store.ready)
                 }
             }
-            if !store.capabilities.contains("wifi.set") { Text("此固件未开放网络设置。").font(.caption).foregroundStyle(.secondary) }
         }
     }
 
@@ -329,7 +331,7 @@ private struct WiFiSheet: View {
                         store.configureWiFi(ssid: ssid, password: openNetwork ? "" : password)
                         password = ""
                         dismiss()
-                    }.disabled(!valid || !store.ready)
+                    }.disabled(!valid || !store.ready || !store.capabilities.contains("wifi.set"))
                 }
             }
         }

@@ -24,11 +24,15 @@ bash apps/Corallium/tools/build.sh simulator
 iPhone 安装需在 Xcode 中使用用户的有效开发签名与真机目标。项目使用
 `NSBluetoothAlwaysUsageDescription`，macOS 开启 Bluetooth entitlement。
 首次扫描时系统请求蓝牙权限；若拒绝，App 显示系统设置中的恢复路径。
+本地 ad-hoc 构建在源码变化后代码签名哈希会改变，macOS 可能重新请求蓝牙授权；
+需在系统弹窗中允许当前构建，再进行真实扫描。
 
 设备端打开蓝牙连接窗口，在 Corallium 点击“扫描附近设备”，再点击实际发现的设备。
 App 只扫描指定 service UUID，握手后以 `capabilities` 决定可用操作；官方原厂或旧版
-固件不因型号相同自动兼容。Wi-Fi 仅支持 2.4 GHz 开放/个人密码网络，开放网络必须显式
-打开“无密码”开关；macOS/iOS 不需要读取本机 Wi-Fi 密码。
+固件不因型号相同自动兼容。当前 StopWatch 仅开放时间同步和电池状态，没有 Wi-Fi
+入口。ESP-Mosaico 保留普通 2.4 GHz Wi-Fi 配置：通过 BLE 发送开放/个人密码网络
+凭据，不使用 Wi-Fi Aware；开放网络必须显式打开“无密码”开关。macOS/iOS
+不需要读取本机 Wi-Fi 密码。
 
 ## 自动验证与演示
 
@@ -43,8 +47,9 @@ open -n tmp/corallium-build/Build/Products/Debug/Corallium.app --args --demo
 迟到与重复响应关联、每日日志轮转及凭据排除。
 测试脚本还编译相同源文件的宿主检查器，消费根协议示例；这样无需给沙盒 App
 开放仓库读取权限。未沙盒化的检查器也接受 `--fixtures protocols/corallium-v1/examples`。
-`--integration-test` 在运行中的 mac App 内完成显式模拟连接、时间同步、Wi-Fi
-配置与异步状态、移除网络、切换型号及断开；结束后退出。演示不实例化蓝牙 Central，
+`--integration-test` 在运行中的 mac App 内完成 StopWatch 时间同步及不支持 Wi-Fi
+的能力检查，再切换 Mosaico 验证 Wi-Fi 配置与异步状态、移除网络及断开；结束后退出。
+演示不实例化蓝牙 Central，
 不会操作真实设备。模拟的 IP 使用文档地址 `192.0.2.10`。
 
 构建/自动测试通过只证明客户端实现与模拟路径，不等同 BLE 配对、设备 RTC、

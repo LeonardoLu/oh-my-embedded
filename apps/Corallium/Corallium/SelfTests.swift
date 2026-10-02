@@ -10,6 +10,13 @@ enum CoralliumSelfTests {
         do { try block() } catch { return }
         throw Failure(description: "Expected rejection: \(label)")
     }
+    private static func eventually(_ label: String, _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try check(condition(), label)
+    }
 
     static func run() throws {
         let envelope = WireEnvelope(id: "17", op: "test.echo", payload: ["name": .string("珊瑚 / 时钟")], ok: true)
@@ -41,6 +48,17 @@ enum CoralliumSelfTests {
         try rejects("outbound size limit") { _ = try CoralliumProtocol.encode(WireEnvelope(id: "1", op: "wifi.set", payload: ["ssid": .string(String(repeating: "a", count: 2048))])) }
         _ = try CoralliumProtocol.decode(Data("{\"v\":1,\"op\":\"future.event\",\"payload\":{}}".utf8))
         _ = try CoralliumProtocol.decode(Data("{\"v\":1,\"id\":\"1\",\"op\":\"time.set\",\"ok\":false,\"error\":{\"code\":\"unsupported\",\"message\":\"not supported\"}}".utf8))
+        let retainedRTC = WireEnvelope(id: "rtc", op: "time.set", payload: [
+            "unix_ms": .number(1_800_000_000_000), "utc_offset_min": .number(480),
+            "valid": .bool(true), "source": .string("rtc"), "quality": .string("estimated")
+        ], ok: true)
+        let retainedTime = try CoralliumProtocol.decode(CoralliumProtocol.encode(retainedRTC).dropLast())
+        try check(retainedTime.payload?["valid"]?.bool == true && retainedTime.payload?["quality"]?.string == "estimated", "retained RTC accepts estimated drift quality")
+        var coldCheckpoint = retainedRTC
+        coldCheckpoint.payload?["source"] = .string("checkpoint")
+        try rejects("cold checkpoint cannot claim continuous time") {
+            _ = try CoralliumProtocol.decode(CoralliumProtocol.encode(coldCheckpoint).dropLast())
+        }
         try CoralliumProtocol.validateWiFi(ssid: "家里的网络", password: "12345678")
         try CoralliumProtocol.validateWiFi(ssid: "open", password: "")
         try rejects("multibyte SSID limit") { try CoralliumProtocol.validateWiFi(ssid: String(repeating: "界", count: 11), password: "12345678") }
@@ -86,8 +104,10 @@ enum CoralliumSelfTests {
                 }
             }
             _ = try CoralliumProtocol.decode(Data(contentsOf: fixtures.appendingPathComponent("unknown-status.json")))
+            let stopwatch = try CoralliumProtocol.decode(Data(contentsOf: fixtures.appendingPathComponent("stopwatch-info.json")))
+            try check(Set(stopwatch.payload?["capabilities"]?.strings ?? []) == ["time.set", "battery"], "shared StopWatch fixture has no Wi-Fi capability")
             try check(inboundCount == 7, "shared protocol session fixtures")
-            print("Validated shared protocol fixtures: 7 session responses/events + unknown status.")
+            print("Validated shared protocol fixtures: 7 session responses/events + unknown status + StopWatch info.")
         }
 
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("corallium-tests-\(UUID().uuidString)")
@@ -115,21 +135,22 @@ enum CoralliumSelfTests {
     static func runDemo(_ store: DeviceStore) async throws {
         store.startDemo(.stopwatch)
         try check(store.demo && store.ready, "explicit demo starts ready")
+        try check(store.capabilities == ["time.set", "battery"], "StopWatch exposes no Wi-Fi capabilities")
         store.syncTime()
         try check(store.pendingOperation == "time.set", "time request starts")
         store.refresh()
         try check(store.pendingOperation == "time.set", "single request in flight")
-        try await Task.sleep(for: .milliseconds(600))
-        try check(store.time["source"].string == "app" && store.ready, "time response applied")
+        try await eventually("time response applied") { store.time["source"].string == "app" && store.ready }
         store.configureWiFi(ssid: "Corallium Test", password: "sensitive-test-password")
-        try await Task.sleep(for: .seconds(2))
-        try check(store.wifi["state"].string == "connected", "async Wi-Fi status applied")
-        try check(store.wifi["ssid"].string == "Corallium Test", "SSID status propagated")
-        store.forgetWiFi()
-        try await Task.sleep(for: .seconds(1))
-        try check(store.wifi["state"].string == "disconnected", "forget refreshes status")
+        try check(store.pendingOperation == nil && store.wifi["state"].string == "disconnected", "StopWatch rejects unsupported Wi-Fi without sending")
         store.startDemo(.mosaico)
         try check(store.time["quality"].string == "estimated", "checkpoint displayed as estimated")
+        try check(store.capabilities.contains("wifi.set") && store.capabilities.contains("wifi.forget"), "Mosaico exposes ordinary Wi-Fi")
+        store.configureWiFi(ssid: "Corallium Test", password: "sensitive-test-password")
+        try await eventually("async Wi-Fi status applied") { store.wifi["state"].string == "connected" && store.ready }
+        try check(store.wifi["ssid"].string == "Corallium Test", "SSID status propagated")
+        store.forgetWiFi()
+        try await eventually("forget refreshes status") { store.wifi["state"].string == "disconnected" && store.ready }
         store.disconnect()
         try check(!store.connected && store.status.isEmpty && !store.demo, "disconnect clears session")
         store.log.record("self_test.integration", metadata: ["result": "passed", "mode": "demo"])

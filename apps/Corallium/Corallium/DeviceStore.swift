@@ -212,7 +212,14 @@ final class DeviceStore: NSObject, ObservableObject {
     private func consume(_ data: Data) {
         for result in framer.consume(data) {
             do { handle(try CoralliumProtocol.decode(result.get())) }
-            catch { fail(error.localizedDescription, code: "invalid_frame", disconnect: true); break }
+            catch {
+#if DEBUG
+                let reason = (error as? ProtocolFailure)?.diagnosticCode ?? "frame.decode_failed"
+                log.record("protocol.rejected", level: "error", metadata: ["code": reason, "bytes": String((try? result.get().count) ?? 0)])
+#endif
+                fail(error.localizedDescription, code: "invalid_frame", disconnect: true)
+                break
+            }
         }
     }
 
@@ -291,9 +298,10 @@ final class DeviceStore: NSObject, ObservableObject {
         connected = true
         error = nil
         notice = nil
+        let demoCapabilities = kind == .stopwatch ? ["time.set", "battery"] : ["time.set", "wifi.set", "wifi.forget", "battery", "power", "runtime"]
         deviceInfo = ["device_id": .string("demo-\(kind.rawValue)"), "model": .string(kind.rawValue),
                       "name": .string(kind.name), "firmware": .string("demo / protocol v1"),
-                      "capabilities": .array(["time.set", "wifi.set", "wifi.forget", "battery"].map(JSONValue.string)),
+                      "capabilities": .array(demoCapabilities.map(JSONValue.string)),
                       "channels": .array([.string("ble")])]
         status = ["time": .object(["unix_ms": .number(floor(Date().timeIntervalSince1970 * 1000)),
                                    "utc_offset_min": .number(Double(TimeZone.current.secondsFromGMT() / 60)),

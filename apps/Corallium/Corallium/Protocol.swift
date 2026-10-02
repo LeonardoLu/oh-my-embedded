@@ -54,10 +54,21 @@ struct WireError: Codable { let code: String; let message: String }
 
 enum ProtocolFailure: LocalizedError {
     case oversized, malformed, unsupportedVersion, invalidWiFi, invalidTime
+    case invalidField(String)
+    var diagnosticCode: String {
+        switch self {
+        case .oversized: "frame.too_large"
+        case .malformed: "frame.invalid_json"
+        case .unsupportedVersion: "envelope.unsupported_version"
+        case .invalidWiFi: "request.wifi_bounds"
+        case .invalidTime: "request.time_bounds"
+        case .invalidField(let field): "field.\(field)"
+        }
+    }
     var errorDescription: String? {
         switch self {
         case .oversized: "消息超过 2048 字节，请检查设备固件。"
-        case .malformed: "设备发送了无效的协议消息。"
+        case .malformed, .invalidField: "设备发送了无效的协议消息。"
         case .unsupportedVersion: "设备协议版本不兼容。"
         case .invalidWiFi: "SSID 需为 1–32 UTF-8 字节；密码为空或 8–63 UTF-8 字节。"
         case .invalidTime: "设备时间需在 2020–2099 年内，时区偏移需在 −12:00 至 +14:00。"
@@ -82,8 +93,21 @@ enum CoralliumProtocol {
 
     static func decode(_ data: Data) throws -> WireEnvelope {
         guard data.count <= maximumFrameSize else { throw ProtocolFailure.oversized }
-        guard let message = try? JSONDecoder().decode(WireEnvelope.self, from: data),
-              (1...64).contains(message.op.count) else { throw ProtocolFailure.malformed }
+        let message: WireEnvelope
+        do { message = try JSONDecoder().decode(WireEnvelope.self, from: data) }
+        catch let error as DecodingError {
+            let path: [CodingKey]
+            switch error {
+            case .keyNotFound(let key, let context): path = context.codingPath + [key]
+            case .typeMismatch(_, let context), .valueNotFound(_, let context), .dataCorrupted(let context): path = context.codingPath
+            @unknown default: path = []
+            }
+            // Only schema-owned field names may reach diagnostics; never arbitrary device keys or values.
+            let names: Set<String> = ["v", "id", "op", "ok", "payload", "error", "code", "message", "time", "unix_ms", "utc_offset_min", "valid", "source", "quality", "wifi", "state", "ssid", "ip", "rssi", "battery", "percent", "charging", "millivolts", "power_mw", "runtime_min", "uptime_ms", "device_id", "model", "name", "firmware", "capabilities", "channels"]
+            if path.isEmpty { throw ProtocolFailure.malformed }
+            throw ProtocolFailure.invalidField(path.map { names.contains($0.stringValue) ? $0.stringValue : "value" }.joined(separator: "."))
+        } catch { throw ProtocolFailure.malformed }
+        guard (1...64).contains(message.op.count) else { throw ProtocolFailure.invalidField("op") }
         guard message.v == 1 else { throw ProtocolFailure.unsupportedVersion }
         // Inbound packets are responses or status events, never requests.
         if let id = message.id {
@@ -91,14 +115,14 @@ enum CoralliumProtocol {
                   id.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || [45, 46, 95].contains($0) }),
                   message.ok != nil,
                   message.ok == true ? (message.payload != nil && message.error == nil) : (message.error != nil && message.payload == nil) else {
-                throw ProtocolFailure.malformed
+                throw ProtocolFailure.invalidField("response.envelope")
             }
         } else if message.payload == nil || message.ok != nil || message.error != nil {
-            throw ProtocolFailure.malformed
+            throw ProtocolFailure.invalidField("event.envelope")
         }
         if let failure = message.error {
             guard ["invalid_request", "unsupported", "busy", "internal", "not_authorized"].contains(failure.code),
-                  !failure.message.isEmpty else { throw ProtocolFailure.malformed }
+                  !failure.message.isEmpty else { throw ProtocolFailure.invalidField("error") }
         }
         try validatePayload(message)
         return message
@@ -162,13 +186,21 @@ extension CoralliumProtocol {
             guard let value = value.number else { return false }
             return value.isFinite && value.rounded(.towardZero) == value && range.contains(value)
         }
-        func time(_ value: JSONValue) -> Bool {
-            guard let fields = value.object, fields["unix_ms"] != nil,
-                  integer(value["unix_ms"], in: 1_577_836_800_000...4_102_444_799_999, nullable: true),
-                  integer(value["utc_offset_min"], in: -720...840), value["valid"].bool != nil,
-                  ["rtc", "network", "app", "unset", "checkpoint"].contains(value["source"].string ?? ""),
-                  ["synchronized", "estimated", "unset"].contains(value["quality"].string ?? "") else { return false }
-            return value["valid"].bool != true || (value["unix_ms"] != .null && value["quality"].string == "synchronized" && ["rtc", "network", "app"].contains(value["source"].string ?? ""))
+        func require(_ valid: Bool, _ field: String) throws {
+            guard valid else { throw ProtocolFailure.invalidField(field) }
+        }
+        func time(_ value: JSONValue) throws {
+            try require(value.object != nil, "time")
+            try require(value.object?["unix_ms"] != nil && integer(value["unix_ms"], in: 1_577_836_800_000...4_102_444_799_999, nullable: true), "time.unix_ms")
+            try require(integer(value["utc_offset_min"], in: -720...840), "time.utc_offset_min")
+            try require(value["valid"].bool != nil, "time.valid")
+            try require(["rtc", "network", "app", "unset", "checkpoint"].contains(value["source"].string ?? ""), "time.source")
+            try require(["synchronized", "estimated", "unset"].contains(value["quality"].string ?? ""), "time.quality")
+            if value["valid"].bool == true {
+                try require(value["unix_ms"] != .null, "time.valid_without_time")
+                try require(["synchronized", "estimated"].contains(value["quality"].string ?? ""), "time.valid_quality")
+                try require(["rtc", "network", "app"].contains(value["source"].string ?? ""), "time.valid_source")
+            }
         }
         func stringOrNull(_ value: JSONValue) -> Bool { value == .null || value.string != nil }
         func nonnegativeOrNull(_ value: JSONValue) -> Bool { value == .null || value.number.map { $0.isFinite && $0 >= 0 } == true }
@@ -176,28 +208,33 @@ extension CoralliumProtocol {
             guard case .array(let items) = value else { return false }
             return items.allSatisfy { $0.string != nil } && Set(items.compactMap(\.string)).count == items.count
         }
-        let valid: Bool
         switch message.op {
         case "device.info":
-            valid = ["device_id", "model", "name", "firmware"].allSatisfy { object[$0].string?.isEmpty == false }
-                && (object["device_id"].string?.count ?? 0) <= 128
-                && arrayOfUniqueStrings(object["capabilities"]) && arrayOfUniqueStrings(object["channels"])
-        case "time.set": valid = time(object)
-        case "wifi.set": valid = object["state"].string == "connecting"
-        case "wifi.forget": valid = object["state"].string == "disconnected"
+            for key in ["device_id", "model", "name", "firmware"] {
+                try require(object[key].string?.isEmpty == false, "info." + key)
+            }
+            try require((object["device_id"].string?.count ?? 0) <= 128, "info.device_id")
+            try require(arrayOfUniqueStrings(object["capabilities"]), "info.capabilities")
+            try require(arrayOfUniqueStrings(object["channels"]), "info.channels")
+        case "time.set": try time(object)
+        case "wifi.set": try require(object["state"].string == "connecting", "wifi.set.state")
+        case "wifi.forget": try require(object["state"].string == "disconnected", "wifi.forget.state")
         case "device.status":
+            try time(object["time"])
+            try require(integer(object["uptime_ms"], in: 0...9_007_199_254_740_991), "uptime_ms")
             let wifi = object["wifi"], battery = object["battery"]
-            valid = time(object["time"]) && integer(object["uptime_ms"], in: 0...9_007_199_254_740_991)
-                && ["state", "ssid", "ip", "rssi"].allSatisfy { wifi.object?[$0] != nil }
-                && ["disconnected", "connecting", "connected", "failed"].contains(wifi["state"].string ?? "")
-                && stringOrNull(wifi["ssid"]) && stringOrNull(wifi["ip"]) && integer(wifi["rssi"], nullable: true)
-                && ["percent", "charging", "millivolts", "power_mw", "runtime_min"].allSatisfy { battery.object?[$0] != nil }
-                && integer(battery["percent"], in: 0...100, nullable: true)
-                && (battery["charging"] == .null || battery["charging"].bool != nil)
-                && integer(battery["millivolts"], in: 0...9_007_199_254_740_991, nullable: true)
-                && nonnegativeOrNull(battery["power_mw"]) && nonnegativeOrNull(battery["runtime_min"])
-        default: valid = true // Forward-compatible, unknown events are ignored by the store.
+            for key in ["state", "ssid", "ip", "rssi"] { try require(wifi.object?[key] != nil, "wifi." + key) }
+            try require(["disconnected", "connecting", "connected", "failed"].contains(wifi["state"].string ?? ""), "wifi.state")
+            try require(stringOrNull(wifi["ssid"]), "wifi.ssid")
+            try require(stringOrNull(wifi["ip"]), "wifi.ip")
+            try require(integer(wifi["rssi"], nullable: true), "wifi.rssi")
+            for key in ["percent", "charging", "millivolts", "power_mw", "runtime_min"] { try require(battery.object?[key] != nil, "battery." + key) }
+            try require(integer(battery["percent"], in: 0...100, nullable: true), "battery.percent")
+            try require(battery["charging"] == .null || battery["charging"].bool != nil, "battery.charging")
+            try require(integer(battery["millivolts"], in: 0...9_007_199_254_740_991, nullable: true), "battery.millivolts")
+            try require(nonnegativeOrNull(battery["power_mw"]), "battery.power_mw")
+            try require(nonnegativeOrNull(battery["runtime_min"]), "battery.runtime_min")
+        default: break // Forward-compatible, unknown events are ignored by the store.
         }
-        guard valid else { throw ProtocolFailure.malformed }
     }
 }
