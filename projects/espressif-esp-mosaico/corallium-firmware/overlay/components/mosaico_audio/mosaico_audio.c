@@ -2,7 +2,9 @@
 #include "mosaico_audio.h"
 #include <math.h>
 #include <stdint.h>
+#include <string.h>
 #include "dev_audio_codec.h"
+#include "driver/i2s_common.h"
 #include "esp_board_manager.h"
 #include "esp_codec_dev.h"
 #include "esp_log.h"
@@ -12,6 +14,7 @@
 
 static const char *TAG = "mosaico_audio";
 static esp_codec_dev_handle_t s_codec;
+static i2s_chan_handle_t s_output;
 static SemaphoreHandle_t s_lock;
 static TaskHandle_t s_task;
 static bool s_open;
@@ -43,6 +46,11 @@ static void feedback_task(void *context)
         esp_codec_dev_sample_info_t format = {.sample_rate = 16000, .channel = 1, .bits_per_sample = 16};
         int result = esp_codec_dev_open(s_codec, &format);
         s_open = result == ESP_CODEC_DEV_OK;
+        i2s_chan_info_t output = {0};
+        if (s_open && (i2s_channel_get_info(s_output, &output) != ESP_OK ||
+                       !output.is_enabled || output.total_dma_buf_size == 0)) {
+            result = ESP_CODEC_DEV_DRV_ERR;
+        }
         if (s_open && apply_volume_locked(s_volume) != ESP_OK) result = ESP_CODEC_DEV_DRV_ERR;
         xSemaphoreGive(s_lock);
         for (int frame = 0; frame < 10 && result == ESP_CODEC_DEV_OK; ++frame) {
@@ -58,6 +66,21 @@ static void feedback_task(void *context)
             }
             result = esp_codec_dev_write(s_codec, samples, sizeof(samples));
             xSemaphoreGive(s_lock);
+        }
+        /* codec write only copies into I2S DMA. Advancing one complete ring
+         * with silence lets the last tone sample leave DMA before mute/close
+         * turns off the PA. Read capacity after open reconfigures mono PCM. */
+        memset(samples, 0, sizeof(samples));
+        for (size_t remaining = output.total_dma_buf_size;
+             remaining > 0 && result == ESP_CODEC_DEV_OK;) {
+            xSemaphoreTake(s_lock, portMAX_DELAY);
+            if (s_volume == 0) {
+                xSemaphoreGive(s_lock);
+                break;
+            }
+            result = esp_codec_dev_write(s_codec, samples, sizeof(samples));
+            xSemaphoreGive(s_lock);
+            remaining -= remaining < sizeof(samples) ? remaining : sizeof(samples);
         }
         xSemaphoreTake(s_lock, portMAX_DELAY);
         if (s_open) {
@@ -82,6 +105,10 @@ esp_err_t mosaico_audio_init(void)
     if (err != ESP_OK || handle == NULL) return err == ESP_OK ? ESP_ERR_INVALID_STATE : err;
     s_codec = ((dev_audio_codec_handles_t *)handle)->codec_dev;
     if (!s_codec) return ESP_ERR_INVALID_STATE;
+    handle = NULL;
+    err = esp_board_manager_get_periph_handle("i2s_audio_out", &handle);
+    if (err != ESP_OK || handle == NULL) return err == ESP_OK ? ESP_ERR_INVALID_STATE : err;
+    s_output = (i2s_chan_handle_t)handle;
     /* The official ES8311 close path disables I2S/DAC and its PA GPIO. */
     if (esp_codec_set_disable_when_closed(s_codec, true) != ESP_CODEC_DEV_OK) return ESP_FAIL;
     s_lock = xSemaphoreCreateMutex();
