@@ -82,8 +82,9 @@ wrong font ordinals, missing catalog members and stale staged resources.
 
 For BLE, toggle the Bluetooth tile or hold the top key for 500 ms. The device
 advertises as ESP-Mosaico until switched off; its switch survives restart and
-defaults off after factory reset. Connect while adjacent to the device; the GATT link
-uses encrypted Just Works. [Validation scope](specs/validation.md) records actual
+defaults off after factory reset. The GATT link uses no pairing or encryption;
+JSONL, including Wi-Fi credentials, is transmitted in plaintext. Passwords remain
+excluded from responses and logs. [Validation scope](specs/validation.md) records actual
 evidence and remaining hardware checks.
 
 The pull-down has two columns of centered Wi-Fi/Bluetooth and mute/vibration icons,

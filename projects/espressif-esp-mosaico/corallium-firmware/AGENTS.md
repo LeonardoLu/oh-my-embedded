@@ -3,8 +3,10 @@
 - Edit overlay files or the reviewed patch; never commit generated upstream
   checkouts, managed_components, SDKs, binaries or logs. Keep scratch under tmp/.
 - Preserve upstream notices; UPSTREAM_LICENSE is the factory Apache-2.0 license.
-- Keep the versioned root protocols/corallium-v1 contract authoritative. RX and
-  CCCD permissions require encryption. BLE defaults off; a physical action changes
+- Keep the versioned root protocols/corallium-v1 contract authoritative. This
+  device uses ordinary unpaired GATT: RX/CCCD do not require encryption, including
+  Wi-Fi credential transport. Do not initiate or accept pairing, add payload
+  encryption or wait for an authentication callback. BLE defaults off; a physical action changes
   its persistent switch, and startup restores it without a timeout. Never log
   credential payloads.
 - Changes to the patch must pass git apply --check against upstream.lock.json.

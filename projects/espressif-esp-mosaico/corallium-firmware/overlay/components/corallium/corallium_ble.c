@@ -43,10 +43,10 @@ typedef struct { uint32_t generation; char line[LINE_LIMIT + 1]; } request_t;
 static const esp_gatts_attr_db_t database[ATTR_COUNT] = {
     [SERVICE] = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&primary_uuid, ESP_GATT_PERM_READ, 16, 16, (uint8_t *)service_uuid}},
     [RX_DECL] = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&characteristic_uuid, ESP_GATT_PERM_READ, 1, 1, (uint8_t *)&rx_property}},
-    [RX] = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_128, (uint8_t *)rx_uuid, ESP_GATT_PERM_WRITE_ENCRYPTED, 512, 0, initial_value}},
+    [RX] = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_128, (uint8_t *)rx_uuid, ESP_GATT_PERM_WRITE, 512, 0, initial_value}},
     [TX_DECL] = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&characteristic_uuid, ESP_GATT_PERM_READ, 1, 1, (uint8_t *)&tx_property}},
-    [TX] = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_128, (uint8_t *)tx_uuid, ESP_GATT_PERM_READ_ENCRYPTED, 512, 0, initial_value}},
-    [CCCD] = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&cccd_uuid, ESP_GATT_PERM_READ_ENCRYPTED | ESP_GATT_PERM_WRITE_ENCRYPTED, 2, 2, cccd_value}},
+    [TX] = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_128, (uint8_t *)tx_uuid, ESP_GATT_PERM_READ, 512, 0, initial_value}},
+    [CCCD] = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&cccd_uuid, ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE, 2, 2, cccd_value}},
 };
 static esp_ble_adv_params_t advertising = {
     .adv_int_min = 0x320, .adv_int_max = 0x640,
@@ -83,7 +83,7 @@ static void advertise(void) {
     }
 }
 bool corallium_pairing_active(void) { return session.enabled; }
-bool corallium_connected(void) { return session.enabled && session.connected && session.encrypted; }
+bool corallium_connected(void) { return session.enabled && session.connected; }
 esp_err_t corallium_close_pairing(void) {
     esp_err_t err = corallium_ble_set_enabled(&session, false, save_enabled);
     if (err != ESP_OK) return err;
@@ -118,12 +118,9 @@ static void gap_event(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *para
         advertising_pending = false;
         advertise();
     } else if (event == ESP_GAP_BLE_SEC_REQ_EVT) {
-        (void)esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, session.enabled && session.connected && !memcmp(peer, param->ble_security.ble_req.bd_addr, sizeof(peer)));
-    } else if (event == ESP_GAP_BLE_AUTH_CMPL_EVT) {
-        if (!session.connected || memcmp(peer, param->ble_security.auth_cmpl.bd_addr, sizeof(peer))) return;
-        corallium_ble_authenticated(&session, param->ble_security.auth_cmpl.success);
-        ESP_LOGI(TAG, "Authentication complete: success=%d reason=%u", session.encrypted, param->ble_security.auth_cmpl.fail_reason);
-        if (!session.encrypted) (void)esp_ble_gap_disconnect(param->ble_security.auth_cmpl.bd_addr);
+        /* This device profile uses ordinary, unpaired GATT. Do not accept
+         * an unsolicited pairing flow from a central. */
+        (void)esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, false);
     }
 }
 static bool queue_line(const char *line, size_t length, void *context) {
@@ -174,11 +171,6 @@ static void gatt_event(esp_gatts_cb_event_t event, esp_gatt_if_t iface, esp_ble_
         advertising_pending = false;
         corallium_stream_reset(&incoming);
         xQueueReset(requests);
-        esp_err_t err = esp_ble_set_encryption(peer, ESP_BLE_SEC_ENCRYPT);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Encryption start failed: %s", esp_err_to_name(err));
-            (void)esp_ble_gap_disconnect(peer);
-        }
         break;
     }
     case ESP_GATTS_DISCONNECT_EVT:
@@ -194,11 +186,8 @@ static void gatt_event(esp_gatts_cb_event_t event, esp_gatt_if_t iface, esp_ble_
         if (!session.connected || param->write.conn_id != connection_id || !session.enabled) break;
         if (param->write.is_prep) { (void)esp_ble_gap_disconnect(peer); break; }
         if (param->write.handle == handles[CCCD] && param->write.len == 2 && param->write.offset == 0) {
-            // GATT enforces encryption before this callback. Preserve the CCCD
-            // intent even when AUTH_CMPL dispatch is still pending; TX still
-            // requires both this flag and authenticated encryption.
             session.notify_requested = param->write.value[0] == 1 && param->write.value[1] == 0;
-            ESP_LOGI(TAG, "Notification subscription: enabled=%d authenticated=%d", session.notify_requested, session.encrypted);
+            ESP_LOGI(TAG, "Notification subscription: enabled=%d", session.notify_requested);
         } else if (param->write.handle == handles[RX]) receive(param->write.value, param->write.len);
         break;
     default: break;
@@ -270,10 +259,6 @@ esp_err_t corallium_start(void) {
     if ((err = esp_bluedroid_enable()) != ESP_OK) return err;
     if ((err = esp_ble_gap_register_callback(gap_event)) != ESP_OK) return err;
     if ((err = esp_ble_gatts_register_callback(gatt_event)) != ESP_OK) return err;
-    uint8_t auth = ESP_LE_AUTH_REQ_SC_ONLY, io = ESP_IO_CAP_NONE, key_size = 16;
-    (void)esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth, sizeof(auth));
-    (void)esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &io, sizeof(io));
-    (void)esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(key_size));
     if (xTaskCreate(worker, "mosaico_ble", 6144, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     return esp_ble_gatts_app_register(0xC0);
 }

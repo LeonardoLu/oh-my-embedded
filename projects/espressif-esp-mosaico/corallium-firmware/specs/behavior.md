@@ -62,9 +62,14 @@ Startup restores the saved switch, factory reset clears it, and there is no
 connection deadline. Disconnection resumes advertising while enabled. The pull-down Bluetooth icon uses grey for off, orange for enabled and green
 for connected, without a text label. The broadcast name
 is ESP-Mosaico. Corallium branding belongs to the independent protocol settings
-entry/detail, not routine controls. RX and notification subscription require
-encrypted GATT; secure-connections Just Works has no MITM identity guarantee.
-No persistent bond is required. UUIDs exactly match the root contract.
+entry/detail, not routine controls. RX and notification subscription use ordinary
+GATT Write/Read permissions without pairing or encryption. Firmware does not
+initiate pairing and explicitly rejects security requests; no authentication
+completion callback gates the connection. JSONL, including Wi-Fi credentials,
+travels in plaintext with no application-layer encryption. No persistent bond is
+created or required. Local BLE on/off and factory-reset switch handling do not
+manage Bluetooth keys. UUIDs exactly match the root contract; StopWatch retains
+its separate encrypted profile.
 
 Firmware limits JSONL frames to 2048 bytes, accepts fragmented UTF-8, discards
 oversized/NUL/expired partial lines through the next delimiter, serializes output
@@ -75,7 +80,7 @@ ASCII ID, required types, duplicate top-level/payload keys, empty read/forget
 payloads, integer timestamp/offset and Wi-Fi byte lengths before mutation. Passwords
 are never returned or printed. One request may be in flight; queue overrun closes
 the connection rather than losing a mutation response. Status notifications every
-five seconds require an enabled, encrypted, subscribed connection and begin only
+five seconds require an enabled, connected, subscribed session and begin only
 after the session's device.info response has completed.
 
 The Wi-Fi manager is STA-only; BLE replaces automatic soft-AP fallback.

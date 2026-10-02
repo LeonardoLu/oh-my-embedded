@@ -24,12 +24,14 @@ static void test_ble_lifecycle(void) {
     assert(saved_enabled && corallium_ble_accept_connection(&ble));
     assert(!corallium_ble_accept_connection(&ble)); // One active peer only.
     uint32_t first = ble.generation;
-    ble.notify_requested = true; // Encrypted GATT callback before AUTH_CMPL dispatch.
     assert(!corallium_ble_can_exchange(&ble));
-    corallium_ble_authenticated(&ble, true);
+    ble.notify_requested = true; // Plain CCCD write; no authentication event exists.
     assert(corallium_ble_can_exchange(&ble) && !corallium_ble_can_publish(&ble));
     ble.application_generation = first;
     assert(corallium_ble_can_publish(&ble));
+    ble.notify_requested = false;
+    assert(!corallium_ble_can_exchange(&ble) && !corallium_ble_can_publish(&ble));
+    ble.notify_requested = true;
     save_error = 8;
     assert(corallium_ble_set_enabled(&ble, false, save_ble) == 8);
     assert(saved_enabled && ble.enabled && corallium_ble_can_exchange(&ble));
@@ -37,7 +39,7 @@ static void test_ble_lifecycle(void) {
     corallium_ble_reset_connection(&ble);
     assert(ble.enabled && !corallium_ble_can_exchange(&ble));
     assert(corallium_ble_accept_connection(&ble)); // No deadline or physical re-enable.
-    corallium_ble_authenticated(&ble, true); // Reverse callback order also works.
+    assert(!corallium_ble_can_exchange(&ble)); // A prior subscription is not restored.
     ble.notify_requested = true;
     ble.application_generation = first; // Late completion from old connection.
     assert(corallium_ble_can_exchange(&ble) && !corallium_ble_can_publish(&ble));
@@ -49,8 +51,8 @@ static void test_ble_lifecycle(void) {
     assert(!corallium_ble_can_publish(&rebooted)); // Saved on does not restore a session.
     assert(corallium_ble_set_enabled(&ble, false, save_ble) == 0);
     assert(!ble.enabled && !saved_enabled && !corallium_ble_can_exchange(&ble));
-    corallium_ble_authenticated(&ble, true); // Late auth cannot reopen a disabled switch.
-    assert(!ble.encrypted);
+    ble.notify_requested = true; // A late subscription cannot reopen a disabled switch.
+    assert(!corallium_ble_can_exchange(&ble) && !corallium_ble_can_publish(&ble));
     corallium_ble_reset_connection(&ble);
     assert(!corallium_ble_accept_connection(&ble));
     corallium_ble_session_t before_stack_init = {0};

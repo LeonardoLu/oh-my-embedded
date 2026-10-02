@@ -9,7 +9,7 @@
 
 BLE Service 为 `7D2A0001-7E6D-4C55-A8D2-6B6D5E8F9010`。
 RX 为 `7D2A0002-7E6D-4C55-A8D2-6B6D5E8F9010`，支持 Write with response，
-要求链路加密；TX 为 `7D2A0003-7E6D-4C55-A8D2-6B6D5E8F9010`，支持 Notify。
+安全要求按下述设备配置区分；TX 为 `7D2A0003-7E6D-4C55-A8D2-6B6D5E8F9010`，支持 Notify。
 UUID 声明见 [channels.json](channels.json)。先订阅 TX，再发送 `device.info`。
 
 每条消息是一行 UTF-8 JSON 对象，以 LF (`0x0a`) 结束，不含 BOM。长度上限为
@@ -36,9 +36,13 @@ BLE TX 上不得混入普通日志。
 开关保存失败不得显示已成功切换。两者均在本会话成功回复 `device.info` 后才开始
 异步状态推送，已有绑定或恢复 CCCD 不代表新会话的 App 已准备收齐完整帧。
 
-加密要求由 GATT 权限执行，不能依赖 App 的本地标记。当前允许系统的 Just Works
-配对；这提供链路加密，但不提供抗主动中间人身份验证。支持长期绑定的固件仍须遵守
-自身连接开关。Wi-Fi 密码不出现在响应、
+StopWatch 继续要求链路加密，使用系统 Just Works 配对；RX 权限及通知发送条件由
+固件执行，不能依赖 App 的本地标记。Just Works 不提供抗主动中间人身份验证。
+ESP-Mosaico 使用无需配对的普通 GATT，RX 为普通 Write，CCCD 为普通 Read/Write；
+固件不发起配对，也拒绝主动配对请求。其 JSONL（包括 wifi.set 密码）明文传输，
+不启用链路或应用层加密，不提供对端身份认证。Mosaico 的交换条件为本机开关开启、
+当前连接和 TX 订阅，状态推送仍须完成本次 device.info 握手。
+两种设备均须遵守自身连接开关。Wi-Fi 密码不出现在响应、
 状态、日志或提交的测试向量中；空密码表示开放网络。App 不持久保存密码。
 
 ## 消息

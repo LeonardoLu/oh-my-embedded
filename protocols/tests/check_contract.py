@@ -41,10 +41,15 @@ class ContractTests(unittest.TestCase):
         self.assertFalse(watch["initial_enabled"])
         self.assertFalse(watch["persist_enabled"])
         self.assertEqual(watch["window_seconds"], 300)
+        self.assertTrue(watch["pairing_required"])
+        self.assertTrue(watch["encryption_required"])
         self.assertEqual(mosaico["admission"], "local_switch")
         self.assertFalse(mosaico["initial_enabled"])
         self.assertTrue(mosaico["persist_enabled"])
         self.assertIsNone(mosaico["window_seconds"])
+        self.assertFalse(mosaico["pairing_required"])
+        self.assertFalse(mosaico["encryption_required"])
+        self.assertNotIn("encryption_required", CHANNELS["ble"]["rx"])
 
     def test_complete_session(self):
         pending = {}

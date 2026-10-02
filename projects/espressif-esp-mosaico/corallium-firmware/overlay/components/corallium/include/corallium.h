@@ -6,7 +6,8 @@
 #include "cJSON.h"
 
 esp_err_t corallium_start(void);
-/* Persistent manual BLE switch; default off. Saved on state resumes on boot.
+/* Persistent manual BLE switch; default off. Legacy pairing function names
+ * now control ordinary unpaired GATT. Saved on state resumes on boot.
  * Both operations save first and leave the running switch unchanged on error.
  * close is also safe before BLE initialization (factory-reset path). */
 esp_err_t corallium_open_pairing(void);
