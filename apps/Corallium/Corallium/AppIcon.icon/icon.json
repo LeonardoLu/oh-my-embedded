@@ -1,0 +1,29 @@
+{
+  "fill": {
+    "solid": "srgb:0.15686,0.40392,0.41961,1.00000"
+  },
+  "groups": [
+    {
+      "name": "Coral Sprite",
+      "layers": [
+        {
+          "name": "Coral Sprite A1",
+          "image-name": "CoralSprite.png",
+          "glass": false
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
