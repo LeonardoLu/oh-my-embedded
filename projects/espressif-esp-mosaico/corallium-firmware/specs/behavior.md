@@ -106,9 +106,12 @@ RTC-derived time reports `source=rtc`, `quality=estimated`; app/NTP sync reports
 The output-only speaker service uses the official ES8311 board DAC/PA path.
 Only a local volume release or unmute requests a 100 ms confirmation; startup
 and background activity are silent. Codec volume and mute apply to actual PCM
-output. The DAC, I2S output and PA close after feedback, and no audio capture or
-continuous mixer task starts. Volume zero persists mute; the previous nonzero
-volume is stored separately for unmute across restart. Save errors are surfaced
+output. After the tone, a finite silent tail advances the actual I2S DMA ring
+capacity so queued samples play before muting; failed writes/open or local mute
+close output without retrying indefinitely. The DAC, I2S output and PA close
+after feedback. No audio capture or continuous mixer task starts. Volume zero
+persists mute; the previous nonzero volume is stored separately for unmute across
+restart. Save errors are surfaced
 and the UI refreshes the actual state. Camera/Claw/ASR/external-module background
 work is absent. GPIO60 stays on because its rail is shared with the display.
 Wi-Fi modem sleep is used after association. DFS permits 80–320 MHz so render work
