@@ -12,8 +12,18 @@ factory Bluetooth audio profiles. The fuel gauge is BQ27220 at I2C 0x55. Officia
 specification lists a 3.7 V / 65 mAh cell, which does not establish this user's
 cell condition, capacity calibration, battery life or possession of accessories.
 
+The connected unit identifies as ESP32-S31 revision 0.0, MAC
+`1c:29:04:d0:90:36`, with 16 MiB SPI NOR flash. Its USER_DATA eFuse board version
+is `0x0102`; the factory BSP independently logs `v1.2 (variant=v1.2)` and selects
+the corresponding pin mapping. The physical silkscreen has not been inspected.
+ROM download enumerates as USB `303a:0020` with the MAC as its serial number;
+the factory TinyUSB application console uses `303a:1001` and serial `123456`.
+That application descriptor is not a unique device identity. A full SPI NOR
+backup was captured before replacement; raw backup and diagnostics are private,
+ignored files under `tmp/mosaico/device-validation/`.
+
 The factory-derived board configuration is retained. V1.0 and V1.2 pin mappings
-must not be interchanged without confirming the physical board revision. GPIO45
+must follow the factory's checked revision selection. GPIO45
 controls the speaker amplifier, GPIO57 requests complete shutdown, and GPIO60
 shares display power and external rails. Cutting GPIO60 to save accessory power
 would also affect the display.

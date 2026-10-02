@@ -9,7 +9,7 @@
 | --- | --- | --- | --- |
 | M5Stack | StopWatch | 已有实机记录；ESP32-S3R8，16 MB Flash / 8 MB PSRAM，466×466 圆形 AMOLED，触摸、A/B 按钮、RTC | [设备](projects/m5stack-stopwatch/README.md) · [陪伴时钟](projects/m5stack-stopwatch/bot-ux-watch/README.md) |
 | M5Stack | Core2 | 已有两个工程及不同装配记录；Codex 原始配置写为 v1.3，PPS 实测为 AXP192 / 16 MB Flash；是否同一台、实际版本和数量待补充 | [设备](projects/m5stack-core2/README.md) · [硬件记录](projects/m5stack-core2/specs/hardware.md) |
-| Espressif（乐鑫） | ESP-Mosaico | 已建官方固件衍生工程；持有版本、模块、配置和实机验收待确认 | [设备](projects/espressif-esp-mosaico/README.md) · [官方硬件资料](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp-mosaico/index.html) |
+| Espressif（乐鑫） | ESP-Mosaico | 已识别实机 ESP32-S31 rev 0.0 / 16 MiB Flash，eFuse 与官方 BSP 报告板版本 1.2；丝印、模块和配件待确认，功能验证范围见工程文档 | [设备](projects/espressif-esp-mosaico/README.md) · [官方硬件资料](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp-mosaico/index.html) |
 | Metalio | ink-4（按本次提供名称） | 本次提到，工程待建；完整型号、硬件参数和持有配置待补充 | 后续目录可用 `projects/metalio-ink-4/`，建项前确认型号 |
 
 ## 配件与装配
