@@ -317,7 +317,7 @@ private struct WiFiSheet: View {
                     if !openNetwork { SecureField("Wi-Fi 密码", text: $password) }
                 }
                 Section {
-                    Text("配置通过设备的加密蓝牙通道发送。密码仅用于本次发送，不写入 Corallium 日志或偏好设置。")
+                    Text("配置通过当前蓝牙连接发送。密码仅用于本次发送，不写入 Corallium 日志或偏好设置。")
                         .font(.caption).foregroundStyle(.secondary)
                     if store.demo { Text("演示模式：不会配置真实网络。").foregroundStyle(.orange) }
                 }

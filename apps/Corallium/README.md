@@ -46,8 +46,8 @@ StopWatch 使用本机开启的限时连接窗口；Mosaico 使用手动开关�
 App 只扫描指定 service UUID，握手后以 `capabilities` 决定可用操作；官方原厂或旧版
 固件不因型号相同自动兼容。当前 StopWatch 仅开放时间同步和电池状态，没有 Wi-Fi
 入口。ESP-Mosaico 保留普通 2.4 GHz Wi-Fi 配置：通过 BLE 发送开放/个人密码网络
-凭据，不使用 Wi-Fi Aware；开放网络必须显式打开“无密码”开关。macOS/iOS
-不需要读取本机 Wi-Fi 密码。
+凭据，使用无需配对的普通 GATT 明文传输，不使用 Wi-Fi Aware；开放网络必须显式
+打开“无密码”开关。macOS/iOS 不需要读取本机 Wi-Fi 密码。
 
 ## 自动验证与演示
 

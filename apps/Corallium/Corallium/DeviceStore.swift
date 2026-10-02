@@ -440,7 +440,7 @@ extension DeviceStore: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         guard self.peripheral === peripheral, characteristic.uuid == rx?.uuid else { return }
         if error != nil {
-            fail("写入失败。请确认系统蓝牙配对已完成，然后重新连接。", code: "write_failed", disconnect: true)
+            fail("写入失败，请重新连接设备后重试。", code: "write_failed", disconnect: true)
         } else if !writeChunks.isEmpty, let rx {
             peripheral.writeValue(writeChunks.removeFirst(), for: rx, type: .withResponse)
         }
