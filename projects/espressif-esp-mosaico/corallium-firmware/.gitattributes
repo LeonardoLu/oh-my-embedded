@@ -1,0 +1,2 @@
+# Unified diff context encodes an empty source line as a single space.
+patches/*.patch -whitespace

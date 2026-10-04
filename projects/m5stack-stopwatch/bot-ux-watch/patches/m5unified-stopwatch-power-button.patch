@@ -1,0 +1,45 @@
+diff --git a/src/utility/power/M5PM1_Class.cpp b/src/utility/power/M5PM1_Class.cpp
+index 76dc211..5578c8f 100644
+--- a/src/utility/power/M5PM1_Class.cpp
++++ b/src/utility/power/M5PM1_Class.cpp
+@@ -38,6 +38,7 @@ namespace m5
+   static constexpr const uint8_t M5PM1_REG_IRQ_MASK1   = 0x43;
+   static constexpr const uint8_t M5PM1_REG_IRQ_MASK2   = 0x44;
+   static constexpr const uint8_t M5PM1_REG_IRQ_MASK3   = 0x45;
++  static constexpr const uint8_t M5PM1_REG_BTN_STATUS  = 0x48;
+ 
+   static constexpr const uint8_t M5PM1_PWR_CFG_CHG_EN   = 1 << 0;
+   static constexpr const uint8_t M5PM1_PWR_CFG_DCDC_EN  = 1 << 1;
+@@ -296,6 +297,15 @@ namespace m5
+     return false;
+   }
+ 
++  bool M5PM1_Class::getButtonPressed(bool* pressed)
++  {
++    if (!_init || pressed == nullptr) return false;
++    std::uint8_t status = 0;
++    if (!readRegister(M5PM1_REG_BTN_STATUS, &status, 1)) return false;
++    *pressed = (status & 0x01) != 0;
++    return true;
++  }
++
+   uint8_t M5PM1_Class::getPekPress(void)
+   {
+     if (!_init) return 0;
+diff --git a/src/utility/power/M5PM1_Class.hpp b/src/utility/power/M5PM1_Class.hpp
+index 88138e4..9ddb1ee 100644
+--- a/src/utility/power/M5PM1_Class.hpp
++++ b/src/utility/power/M5PM1_Class.hpp
+@@ -176,6 +176,12 @@ namespace m5
+     /// set PM1 button IRQ mask register. bit=1 disables interrupt.
+     bool setButtonIRQMaskBits(std::uint8_t mask);
+ 
++    /// Read the PM1 power button's current physical state.
++    /// This is independent of getPekPress(), which consumes click IRQ flags.
++    /// @param pressed output parameter; true while the button is held.
++    /// @return false for an invalid argument, before initialization, or on I2C failure.
++    bool getButtonPressed(bool* pressed);
++
+     /// set battery charge enable.
+     /// @param enable true=enable / false=disable
+     bool setBatteryCharge(bool enable);

@@ -1,0 +1,38 @@
+# ---- Temporary / working files ----
+tmp/
+*.tmp
+*.log
+
+# ---- PlatformIO build artifacts ----
+.pio/
+.pioenvs/
+.piolibdeps/
+build/
+
+# ---- PlatformIO / Arduino IDE ----
+.vscode/
+.idea/
+*.code-workspace
+
+# ---- Python / tooling ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---- OS noise ----
+.DS_Store
+Thumbs.db
+
+# ---- Compiled / dependency caches ----
+*.elf
+*.bin
+*.map
+*.o
+*.a
+sdkconfig.old
+
+# ---- Xcode per-user state ----
+xcuserdata/
+*.xcuserstate
+DerivedData/

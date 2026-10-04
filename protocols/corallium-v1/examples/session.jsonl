@@ -1,0 +1,13 @@
+{"v":1,"id":"1","op":"device.info","payload":{}}
+{"v":1,"id":"1","op":"device.info","payload":{"device_id":"fixture-mosaico-001","model":"espressif-esp-mosaico","name":"Demo Mosaico","firmware":"1.0.0","capabilities":["time.set","wifi.set","wifi.forget","battery"],"channels":["ble"]},"ok":true}
+{"v":1,"id":"2","op":"device.status","payload":{}}
+{"v":1,"id":"2","op":"device.status","payload":{"time":{"unix_ms":1790946000000,"utc_offset_min":480,"valid":true,"source":"rtc","quality":"synchronized"},"wifi":{"state":"disconnected","ssid":null,"ip":null,"rssi":null},"battery":{"percent":73,"charging":false,"millivolts":3980,"power_mw":null,"runtime_min":null},"uptime_ms":12000},"ok":true}
+{"v":1,"id":"3","op":"time.set","payload":{"unix_ms":1790946000000,"utc_offset_min":480}}
+{"v":1,"id":"3","op":"time.set","payload":{"unix_ms":1790946000000,"utc_offset_min":480,"valid":true,"source":"rtc","quality":"synchronized"},"ok":true}
+{"v":1,"id":"4","op":"wifi.set","payload":{"ssid":"Corallium-Test","password":"fixture-only"}}
+{"v":1,"id":"4","op":"wifi.set","payload":{"state":"connecting"},"ok":true}
+{"v":1,"op":"device.status","payload":{"time":{"unix_ms":1790946000000,"utc_offset_min":480,"valid":true,"source":"rtc","quality":"synchronized"},"wifi":{"state":"connected","ssid":"Corallium-Test","ip":"192.0.2.10","rssi":-52},"battery":{"percent":73,"charging":false,"millivolts":3980,"power_mw":null,"runtime_min":null},"uptime_ms":12000}}
+{"v":1,"id":"5","op":"wifi.forget","payload":{}}
+{"v":1,"id":"5","op":"wifi.forget","payload":{"state":"disconnected"},"ok":true}
+{"v":1,"id":"6","op":"unknown","payload":{}}
+{"v":1,"id":"6","op":"unknown","ok":false,"error":{"code":"unsupported","message":"Operation not supported"}}

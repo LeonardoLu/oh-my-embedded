@@ -1,0 +1,660 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:corallium:protocol:v1:message",
+  "title": "Corallium v1 message",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/success"
+    },
+    {
+      "$ref": "#/$defs/error"
+    },
+    {
+      "$ref": "#/$defs/event"
+    }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,64}$"
+        },
+        "op": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "v",
+        "id",
+        "op",
+        "payload"
+      ],
+      "not": {
+        "required": [
+          "ok"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "time.set"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "unix_ms": {
+                    "type": "integer",
+                    "minimum": 1577836800000,
+                    "maximum": 4102444799999
+                  },
+                  "utc_offset_min": {
+                    "type": "integer",
+                    "minimum": -720,
+                    "maximum": 840
+                  }
+                },
+                "required": [
+                  "unix_ms",
+                  "utc_offset_min"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "wifi.set"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "ssid": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 63
+                  }
+                },
+                "required": [
+                  "ssid",
+                  "password"
+                ],
+                "description": "UTF-8 byte limits are additionally enforced by peers: SSID 1..32, password 0 or 8..63."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "wifi.forget"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "device.info"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "device.status"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "success": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,64}$"
+        },
+        "op": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "payload": {
+          "type": "object"
+        },
+        "ok": {
+          "const": true
+        }
+      },
+      "required": [
+        "v",
+        "id",
+        "op",
+        "payload",
+        "ok"
+      ],
+      "not": {
+        "required": [
+          "error"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "device.info"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/info"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "device.status"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/status"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "time.set"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/time"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "wifi.set"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "connecting"
+                  }
+                },
+                "required": [
+                  "state"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "wifi.forget"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "disconnected"
+                  }
+                },
+                "required": [
+                  "state"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,64}$"
+        },
+        "op": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ok": {
+          "const": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "enum": [
+                "invalid_request",
+                "unsupported",
+                "busy",
+                "internal",
+                "not_authorized"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "v",
+        "id",
+        "op",
+        "ok",
+        "error"
+      ],
+      "not": {
+        "required": [
+          "payload"
+        ]
+      }
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "op": {
+          "const": "device.status"
+        },
+        "payload": {
+          "$ref": "#/$defs/status"
+        }
+      },
+      "required": [
+        "v",
+        "op",
+        "payload"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "ok"
+            ]
+          }
+        ]
+      }
+    },
+    "time": {
+      "type": "object",
+      "properties": {
+        "unix_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1577836800000,
+              "maximum": 4102444799999
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "utc_offset_min": {
+          "type": "integer",
+          "minimum": -720,
+          "maximum": 840
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "rtc",
+            "network",
+            "app",
+            "unset",
+            "checkpoint"
+          ]
+        },
+        "quality": {
+          "enum": [
+            "synchronized",
+            "estimated",
+            "unset"
+          ]
+        }
+      },
+      "required": [
+        "unix_ms",
+        "utc_offset_min",
+        "valid",
+        "source",
+        "quality"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "valid": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "unix_ms": {
+                "type": "integer",
+                "minimum": 1577836800000,
+                "maximum": 4102444799999
+              },
+              "quality": {
+                "enum": [
+                  "synchronized",
+                  "estimated"
+                ]
+              },
+              "source": {
+                "enum": [
+                  "rtc",
+                  "network",
+                  "app"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "wifi": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "disconnected",
+            "connecting",
+            "connected",
+            "failed"
+          ]
+        },
+        "ssid": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rssi": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "ssid",
+        "ip",
+        "rssi"
+      ]
+    },
+    "battery": {
+      "type": "object",
+      "properties": {
+        "percent": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charging": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "millivolts": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "power_mw": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime_min": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "percent",
+        "charging",
+        "millivolts",
+        "power_mw",
+        "runtime_min"
+      ]
+    },
+    "info": {
+      "type": "object",
+      "properties": {
+        "device_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "firmware": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "device_id",
+        "model",
+        "name",
+        "firmware",
+        "capabilities",
+        "channels"
+      ]
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "$ref": "#/$defs/time"
+        },
+        "wifi": {
+          "$ref": "#/$defs/wifi"
+        },
+        "battery": {
+          "$ref": "#/$defs/battery"
+        },
+        "uptime_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "time",
+        "wifi",
+        "battery",
+        "uptime_ms"
+      ]
+    }
+  }
+}

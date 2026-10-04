@@ -1,0 +1,28 @@
+{
+  "name": "ux-components",
+  "version": "0.1.0",
+  "description": "Selective native UI coverage, input, motion and buffered sound products for M5Stack",
+  "license": "MIT AND OFL-1.1",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "headers": [
+    "UxRender.h",
+    "UxText.h",
+    "UxInput.h",
+    "UxPointer.h",
+    "UxKeyboard.h",
+    "UxTokens.h",
+    "UxSound.h",
+    "UxSoundM5.h",
+    "UxSoundPcm.h"
+  ],
+  "export": {
+    "include": [
+      "src",
+      "fonts",
+      "README.md",
+      "LICENSE",
+      "SOUND.md"
+    ]
+  }
+}

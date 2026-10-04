@@ -1,0 +1,109 @@
+diff --git a/src/M5GFX.cpp b/src/M5GFX.cpp
+index a64627e..5c08040 100644
+--- a/src/M5GFX.cpp
++++ b/src/M5GFX.cpp
+@@ -1998 +1998 @@ namespace m5gfx
+-                auto t = new lgfx::Touch_CST816S();
++                auto t = new lgfx::Touch_CST820();
+@@ -2006 +2006 @@ namespace m5gfx
+-                cfg.freq = 400000;
++                cfg.freq = 100000;
+@@ -2008 +2008 @@ namespace m5gfx
+-                cfg.x_max = 233;
++                cfg.x_max = 467;
+@@ -2010 +2010 @@ namespace m5gfx
+-                cfg.y_max = 233;
++                cfg.y_max = 467;
+diff --git a/src/lgfx/v1/panel/Panel_AMOLED.cpp b/src/lgfx/v1/panel/Panel_AMOLED.cpp
+index 195327c..c7e9fde 100644
+--- a/src/lgfx/v1/panel/Panel_AMOLED.cpp
++++ b/src/lgfx/v1/panel/Panel_AMOLED.cpp
+@@ -632 +631,0 @@ namespace lgfx
+-            setTouch(_panel->getTouch());
+diff --git a/src/lgfx/v1/panel/Panel_AMOLED.hpp b/src/lgfx/v1/panel/Panel_AMOLED.hpp
+index 807fe08..aa54bde 100644
+--- a/src/lgfx/v1/panel/Panel_AMOLED.hpp
++++ b/src/lgfx/v1/panel/Panel_AMOLED.hpp
+@@ -92,0 +93 @@ namespace lgfx
++              _panel_fb->setTouch(getTouch());
+diff --git a/src/lgfx/v1/touch/Touch_CSTxxx.cpp b/src/lgfx/v1/touch/Touch_CSTxxx.cpp
+index e1e0a4c..e3a192b 100644
+--- a/src/lgfx/v1/touch/Touch_CSTxxx.cpp
++++ b/src/lgfx/v1/touch/Touch_CSTxxx.cpp
+@@ -271,0 +272,47 @@ namespace lgfx
++//----------------------------------------------------------------------------
++
++  bool Touch_CST820::_read_reg(uint8_t reg, uint8_t* data, size_t length)
++  {
++    return i2c::transactionWriteRead(_cfg.i2c_port, _cfg.i2c_addr,
++                                     &reg, 1, data, length, _cfg.freq).has_value();
++  }
++
++  bool Touch_CST820::_check_init(void)
++  {
++    if (_inited) return true;
++    uint8_t chip_id = 0;
++    uint8_t software_version = 0;
++    _inited = _read_reg(0xA7, &chip_id, 1)
++           && _read_reg(0xA9, &software_version, 1)
++           && chip_id != 0 && software_version != 0;
++    return _inited;
++  }
++
++  bool Touch_CST820::init(void)
++  {
++    _inited = false;
++    if (_cfg.pin_int >= 0)
++    {
++      pinMode(_cfg.pin_int, pin_mode_t::input_pullup);
++    }
++    i2c::init(_cfg.i2c_port, _cfg.pin_sda, _cfg.pin_scl).has_value();
++    return true;
++  }
++
++  uint_fast8_t Touch_CST820::getTouchRaw(touch_point_t* tp, uint_fast8_t count)
++  {
++    if (!count || (!_inited && !_check_init())) return 0;
++
++    uint8_t data[7];
++    if (!_read_reg(0x00, data, sizeof(data))) return 0;
++
++    uint_fast8_t points = data[2] & 0x0F;
++    if (!points) return 0;
++
++    tp[0].id = 0;
++    tp[0].size = 1;
++    tp[0].x = ((data[3] & 0x0F) << 8) | data[4];
++    tp[0].y = ((data[5] & 0x0F) << 8) | data[6];
++    return 1;
++  }
++
+diff --git a/src/lgfx/v1/touch/Touch_CSTxxx.hpp b/src/lgfx/v1/touch/Touch_CSTxxx.hpp
+index 9390c2d..03db36b 100644
+--- a/src/lgfx/v1/touch/Touch_CSTxxx.hpp
++++ b/src/lgfx/v1/touch/Touch_CSTxxx.hpp
+@@ -107,0 +108,24 @@ namespace lgfx
++//----------------------------------------------------------------------------
++
++  struct Touch_CST820 : public ITouch
++  {
++    Touch_CST820(void)
++    {
++      _cfg.i2c_addr = 0x15;
++      _cfg.x_min    = 0;
++      _cfg.x_max    = 467;
++      _cfg.y_min    = 0;
++      _cfg.y_max    = 467;
++    }
++
++    bool init(void) override;
++    void wakeup(void) override {};
++    void sleep(void) override {};
++    uint_fast8_t getTouchRaw(touch_point_t* tp, uint_fast8_t count) override;
++
++  private:
++    bool _check_init(void);
++    bool _read_reg(uint8_t reg, uint8_t* data, size_t length);
++  };
++
++

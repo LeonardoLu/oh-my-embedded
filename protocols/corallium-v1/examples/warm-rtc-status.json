@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "1",
+  "op": "device.status",
+  "payload": {
+    "time": {
+      "unix_ms": 1790946000000,
+      "utc_offset_min": 480,
+      "valid": true,
+      "source": "rtc",
+      "quality": "estimated"
+    },
+    "wifi": {
+      "state": "disconnected",
+      "ssid": null,
+      "ip": null,
+      "rssi": null
+    },
+    "battery": {
+      "percent": 76,
+      "charging": false,
+      "millivolts": 3870,
+      "power_mw": 193.5,
+      "runtime_min": 42
+    },
+    "uptime_ms": 12000
+  },
+  "ok": true
+}
