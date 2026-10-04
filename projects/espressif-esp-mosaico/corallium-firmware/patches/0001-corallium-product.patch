@@ -649,7 +649,7 @@ index d37a9b9..1287ac4 100644
  esp_err_t app_system_config_save(const app_system_config_t *config);
  esp_err_t app_system_config_reset(void);
 diff --git a/components/mosaic_ui/CMakeLists.txt b/components/mosaic_ui/CMakeLists.txt
-index 764f30d..ce47e33 100644
+index 764f30d..798d9dd 100644
 --- a/components/mosaic_ui/CMakeLists.txt
 +++ b/components/mosaic_ui/CMakeLists.txt
 @@ -46,6 +46,7 @@ idf_component_register(
@@ -660,7 +660,7 @@ index 764f30d..ce47e33 100644
          esp_timer
          freertos
          pthread
-@@ -54,6 +55,17 @@ idf_component_register(
+@@ -54,6 +55,18 @@ idf_component_register(
          nvs_flash
          esp_driver_jpeg
          esp_driver_ppa
@@ -668,6 +668,7 @@ index 764f30d..ce47e33 100644
 +        app_registry
 +        cap_lua
 +        claw_cap
++        claw_hw_registry
 +        lua_module_button
 +        lua_module_delay
 +        lua_module_display
@@ -4341,14 +4342,15 @@ index 5967bf4..44a3185 100644
      case MOSAIC_SYSTEM_BOOT_HOME:
          *ret_app_name = "mosaic-hub";
 diff --git a/components/mosaic_ui/common/works_runtime.c b/components/mosaic_ui/common/works_runtime.c
-index fe1069a..34202dc 100644
+index fe1069a..37ad63e 100644
 --- a/components/mosaic_ui/common/works_runtime.c
 +++ b/components/mosaic_ui/common/works_runtime.c
-@@ -14,15 +14,27 @@
+@@ -14,15 +14,28 @@
  #include "cJSON.h"
  #include "cap_lua.h"
  #include "app_registry.h"
 +#include "claw_cap.h"
++#include "claw_hw_registry.h"
  #include "claw_paths.h"
  #include "claw_utils_file.h"
  #include "esp_attr.h"
@@ -4372,7 +4374,7 @@ index fe1069a..34202dc 100644
  
  #define WORKS_CATALOG_LIMIT       64U
  #define WORKS_PATH_MAX            128U
-@@ -80,6 +92,101 @@ typedef struct {
+@@ -80,6 +93,103 @@ typedef struct {
  
  static const char *TAG = "works_runtime";
  static EXT_RAM_BSS_ATTR works_runtime_t s_runtime;
@@ -4430,6 +4432,8 @@ index fe1069a..34202dc 100644
 +    /* The Corallium boot deliberately omits app_claw_start(). Its local Works
 +     * still need the Lua worker, modules and App registry, without any agent,
 +     * LLM, router, HTTP server or network dependency. */
++    /* Lua job cleanup releases tagged leases even when the registry is empty. */
++    ESP_RETURN_ON_ERROR(claw_hw_registry_init(), TAG, "initialize local job leases");
 +    ESP_RETURN_ON_ERROR(claw_cap_init(), TAG, "initialize local capabilities");
 +    ESP_RETURN_ON_ERROR(lua_module_delay_register(), TAG, "register delay");
 +    ESP_RETURN_ON_ERROR(lua_module_system_register(), TAG, "register system");
@@ -4474,7 +4478,7 @@ index fe1069a..34202dc 100644
  
  static bool state_is_active(works_runtime_state_t state)
  {
-@@ -696,6 +803,7 @@ esp_err_t works_runtime_init(const works_runtime_config_t *config)
+@@ -696,6 +806,7 @@ esp_err_t works_runtime_init(const works_runtime_config_t *config)
      if (!config || !config->on_changed) {
          return ESP_ERR_INVALID_ARG;
      }

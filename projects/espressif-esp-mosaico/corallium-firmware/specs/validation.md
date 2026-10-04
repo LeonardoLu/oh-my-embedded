@@ -108,10 +108,21 @@ enumeration and DTR/RTS reset behavior are separate physical-device checks.
 ## Current physical evidence
 
 The identified ESP32-S31 board reports CoreBoard version 1.2 through eFuse.
-Installation and physical acceptance of the current integrated firmware are
-pending. Host checks, screenshots and compilation do not establish cold-start
-control state, live weather animation, fluid interaction, panel wake, charging
-policy, whole-device shutdown or achieved frame rate on this device.
+The UI/Works firmware was installed through the identified ROM loader without
+creating a firmware backup. All six images were hash-verified; NVS was outside
+the erase/write ranges. Application USB CDC enumerated, startup reached Ready,
+stored Wi-Fi reconnected and weather refreshed without a startup abort or
+missing-font error in the captured interval.
+
+Device logs record Weather and Works opening, the local Lua runtime registering
+eight modules and finding five apps, and both fluid entries acquiring RAW.
+Dot Fluid's exit returned the presenter and closed its display session. These
+logs establish execution and handoff, not the appearance, smoothness or touch
+response of the simulations. The local tagged-lease registry initialization
+correction is build/resource-checked; its device cleanup check remains pending.
+Cold-start control appearance, live weather animation, panel wake, charging
+policy, whole-device shutdown and achieved frame rate remain unaccepted on
+hardware.
 
 ## Earlier-firmware hardware observations
 

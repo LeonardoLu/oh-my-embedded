@@ -78,6 +78,8 @@ Dino and Flappy Bird games plus Fluid and Dot Fluid. Installed enumerates the
 local app catalog; Recent records launched apps in local storage. The runtime
 and required Lua capabilities initialize lazily on first opening Works, without
 starting Claw/AI, cloud authentication or an HTTP configuration portal.
+The local bootstrap also initializes the empty tagged-lease registry used by
+Lua job cleanup; it does not start a hardware bridge or acquire device leases.
 
 Fluid simulates a continuous liquid field; Dot Fluid displays interacting
 particles as dots. Both use the factory RAW display presenter, support touch
