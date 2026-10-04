@@ -649,10 +649,18 @@ index d37a9b9..1287ac4 100644
  esp_err_t app_system_config_save(const app_system_config_t *config);
  esp_err_t app_system_config_reset(void);
 diff --git a/components/mosaic_ui/CMakeLists.txt b/components/mosaic_ui/CMakeLists.txt
-index 764f30d..c271ca5 100644
+index 764f30d..c1f0edb 100644
 --- a/components/mosaic_ui/CMakeLists.txt
 +++ b/components/mosaic_ui/CMakeLists.txt
-@@ -26,6 +26,7 @@ idf_component_register(
+@@ -15,6 +15,7 @@ idf_component_register(
+          "core/mosaic_demo.c"
+          "core/mosaic_camera.c"
+          "core/mosaic_loader.c"
++         "core/mosaic_frame_capture.c"
+          "core/mosaic_esp_platform.c"
+          "logic/mosaic_logic.c"
+          "logic/mosaic_native_logic.c"
+@@ -26,6 +27,7 @@ idf_component_register(
           "common/mosaic_app_shell_titles.c"
           "common/mosaic_settings_model.c"
           "common/works_runtime.c"
@@ -660,7 +668,7 @@ index 764f30d..c271ca5 100644
           "common/mosaic_top_notice.c"
           "common/wechat_binding_flow.c"
           "common/ai_create_controller.c"
-@@ -46,6 +47,7 @@ idf_component_register(
+@@ -46,6 +48,7 @@ idf_component_register(
                   ${MOSAIC_APP_INCLUDE_DIRS}
                   "${CMAKE_CURRENT_BINARY_DIR}/generated"
      REQUIRES
@@ -668,7 +676,7 @@ index 764f30d..c271ca5 100644
          esp_timer
          freertos
          pthread
-@@ -54,6 +56,20 @@ idf_component_register(
+@@ -54,8 +57,29 @@ idf_component_register(
          nvs_flash
          esp_driver_jpeg
          esp_driver_ppa
@@ -688,7 +696,16 @@ index 764f30d..c271ca5 100644
 +        lua_module_system
  )
  
++# Observe real PARTITION submissions for explicit device-frame diagnostics.
++# The capture object is also referenced by mosaic_ui; wrappers need no weak
++# vendor hooks or changes to the precompiled GSP runtime.
++idf_build_set_property(LINK_OPTIONS
++    "-Wl,--wrap=esp_display_presenter_begin_next_frame;-Wl,--wrap=esp_display_presenter_submit_buffer;-Wl,--wrap=esp_display_presenter_commit_frame;-Wl,--wrap=esp_display_presenter_cancel_frame;-Wl,--wrap=esp_display_presenter_quiesce"
++    APPEND)
++
  if(CONFIG_MOSAIC_UI_BLUETOOTH_AUDIO)
+     idf_build_set_property(LINK_OPTIONS
+         "-Wl,--wrap=esp_a2d_sink_init;-Wl,--wrap=esp_a2d_register_callback;-Wl,--wrap=esp_a2d_sink_deinit;-Wl,-u,__wrap_esp_a2d_sink_init"
 diff --git a/components/mosaic_ui/apps/ai_create/scene/regenerate.sh b/components/mosaic_ui/apps/ai_create/scene/regenerate.sh
 index fa2e30a..b627ef9 100755
 --- a/components/mosaic_ui/apps/ai_create/scene/regenerate.sh
@@ -1498,7 +1515,7 @@ index 1ada0c3..722ba99 100755
  cp "$OUT/${STEM}_binds.h" "$GENERATED_DIR/${STEM}_binds.h"
  cp "$OUT/${STEM}_actions.h" "$GENERATED_DIR/${STEM}_actions.h"
 diff --git a/components/mosaic_ui/apps/settings/settings_app.c b/components/mosaic_ui/apps/settings/settings_app.c
-index d3b4859..9d8ae3e 100644
+index d3b4859..0ad71e6 100644
 --- a/components/mosaic_ui/apps/settings/settings_app.c
 +++ b/components/mosaic_ui/apps/settings/settings_app.c
 @@ -5,6 +5,9 @@
@@ -2801,7 +2818,23 @@ index d3b4859..9d8ae3e 100644
      const int32_t level = settings_level_from_x(event->data.pointer.x);
      if (s_state.brightness_drag_active) {
          if (level == s_state.brightness) {
-@@ -3480,10 +3214,6 @@ static void settings_event(
+@@ -3441,6 +3175,7 @@ static void settings_event(
+     }
+     switch (event->type) {
+     case MOSAIC_EVENT_START:
++        ESP_LOGI(TAG, "startup begin");
+         s_state.ui = ui;
+         atomic_store_explicit(
+             &s_state.display_render_pending, false, memory_order_release);
+@@ -3450,6 +3185,7 @@ static void settings_event(
+         if (s_state.display_render_timer == NULL) {
+             ESP_LOGE(TAG, "create Display render timer failed");
+         }
++        ESP_LOGI(TAG, "startup display timer ready");
+         /* App state is static, while every open owns a new GSP handle and
+          * List pool. Never carry navigation/list lifecycle across a forced
+          * home-swipe close and subsequent reopen. */
+@@ -3480,10 +3216,6 @@ static void settings_event(
          s_root_list = ESP_GSP_LIST_NONE;
          s_wlan_list = ESP_GSP_LIST_NONE;
          s_detail_list = ESP_GSP_LIST_NONE;
@@ -2812,7 +2845,7 @@ index d3b4859..9d8ae3e 100644
          s_state.wlan_scan_compact_valid = false;
          s_wlan_network_count = 0;
          s_state.display_page_active = false;
-@@ -3494,17 +3224,17 @@ static void settings_event(
+@@ -3494,20 +3226,23 @@ static void settings_event(
          s_state.brightness_drag_active = false;
          s_state.brightness_dirty = false;
          s_state.brightness_hw_available = true;
@@ -2828,13 +2861,27 @@ index d3b4859..9d8ae3e 100644
          s_state.rendered_phone_qr[0] = '\0';
 -        s_state.update_page_active = false;
 -        s_state.update_leave_pending = false;
++        ESP_LOGI(TAG, "startup first snapshot begin");
          settings_refresh_snapshot(ui);
 -        s_state.update_notice_sequence =
 -            s_state.snapshot.update.sequence;
++        ESP_LOGI(TAG, "startup first snapshot ready");
          s_state.wlan_scan_revision =
              s_state.snapshot.network.scan_revision;
          settings_root_list_attach(ui);
-@@ -3524,13 +3254,10 @@ static void settings_event(
++        ESP_LOGI(TAG, "startup root list ready");
+         if (s_state.snapshot.network.ssid[0] != '\0') {
+             s_state.wlan.connected = s_state.snapshot.network.connected;
+             strlcpy(s_state.wlan.current_ssid,
+@@ -3515,6 +3250,7 @@ static void settings_event(
+                     sizeof(s_state.wlan.current_ssid));
+         }
+         (void)settings_wlan_render(ui);
++        ESP_LOGI(TAG, "startup done");
+         break;
+     case MOSAIC_EVENT_UI_CALL:
+         settings_dispatch_call(ui, event);
+@@ -3524,13 +3260,10 @@ static void settings_event(
          break;
      case MOSAIC_EVENT_MODEL_CHANGED:
          settings_refresh_snapshot(ui);
@@ -2849,7 +2896,7 @@ index d3b4859..9d8ae3e 100644
          uint16_t model_top = 0U;
          if (s_detail_kind == SETTINGS_DETAIL_BATTERY &&
                  esp_gsp_stack_view_get_top(
-@@ -3592,15 +3319,6 @@ static void settings_event(
+@@ -3592,15 +3325,6 @@ static void settings_event(
                  }
              }
          }
@@ -2865,7 +2912,7 @@ index d3b4859..9d8ae3e 100644
          if (settings_wlan_reconcile_navigation(ui)) {
              break;
          }
-@@ -3678,11 +3396,9 @@ static void settings_event(
+@@ -3678,11 +3402,9 @@ static void settings_event(
          (void)settings_wlan_set_loading(ui, false);
          settings_wlan_password_detach(ui);
          settings_wlan_list_park(ui);
@@ -2877,7 +2924,7 @@ index d3b4859..9d8ae3e 100644
          s_state.wlan_scan_compact_valid = false;
          s_state.wlan_notice_pending = false;
          s_state.wlan_notice_title = NULL;
-@@ -3719,11 +3435,8 @@ static void settings_event(
+@@ -3719,11 +3441,8 @@ static void settings_event(
  
  static bool settings_back(esp_gsp_handle_t ui, int64_t timestamp_us)
  {
@@ -2890,7 +2937,7 @@ index d3b4859..9d8ae3e 100644
      s_state.integration_page = 0;
      /* Return false so the loader performs the normal Settings StackView pop. */
      return false;
-@@ -3742,14 +3455,13 @@ const mosaic_app_descriptor_t mosaic_settings_app = {
+@@ -3742,14 +3461,13 @@ const mosaic_app_descriptor_t mosaic_settings_app = {
      .root_stack_key = GSP_OBJ_KEY_SETTINGS_STACK,
      .disable_swipe = true,
      .root_header_in_stack = false,
@@ -5039,10 +5086,18 @@ index 310f645..adf9f3c 100644
  esp_err_t works_runtime_refresh(void);
  esp_err_t works_runtime_flush(void);
 diff --git a/components/mosaic_ui/core/mosaic_esp_platform.c b/components/mosaic_ui/core/mosaic_esp_platform.c
-index 79d0bd7..11e0d30 100644
+index 79d0bd7..7dcc259 100644
 --- a/components/mosaic_ui/core/mosaic_esp_platform.c
 +++ b/components/mosaic_ui/core/mosaic_esp_platform.c
-@@ -229,41 +229,35 @@ static esp_gsp_config_t app_config_for(
+@@ -14,6 +14,7 @@
+ #include "claw_paths.h"
+ #include "esp_check.h"
+ #include "esp_heap_caps.h"
++#include "esp_log.h"
+ #include "esp_mmap_assets.h"
+ #include "esp_timer.h"
+ #include "gsp/gsp_font_catalog.h"
+@@ -229,41 +230,35 @@ static esp_gsp_config_t app_config_for(
          ? descriptor->image_cache_bytes : MOSAIC_DEFAULT_IMAGE_CACHE_BYTES;
      config.disable_bundle_crc = CONFIG_MOSAIC_UI_DISABLE_BUNDLE_CRC;
  
@@ -5109,11 +5164,123 @@ index 79d0bd7..11e0d30 100644
      }
      return config;
  }
+@@ -343,7 +338,11 @@ static void prepare_app_ui(esp_gsp_handle_t ui, void* user_ctx)
+         return;
+     }
+     app->ui = ui;
++    ESP_LOGI("mosaic_platform", "app %s prepare begin",
++        app->package->descriptor->name);
+     if (app->package->descriptor->custom_shell) {
++        ESP_LOGI("mosaic_platform", "app %s prepare done (custom shell)",
++            app->package->descriptor->name);
+         return;
+     }
+     mosaic_app_shell_set_exit_handler(request_hub, app);
+@@ -351,6 +350,8 @@ static void prepare_app_ui(esp_gsp_handle_t ui, void* user_ctx)
+         app->package->descriptor->title,
+         !app->package->descriptor->root_header_in_stack);
+     app->shell_attached = true;
++    ESP_LOGI("mosaic_platform", "app %s prepare done (shared shell)",
++        app->package->descriptor->name);
+ }
+ 
+ static esp_err_t start_ui(mosaic_esp_platform_handle_t platform,
+@@ -390,9 +391,12 @@ static esp_err_t start_ui(mosaic_esp_platform_handle_t platform,
+     ESP_RETURN_ON_ERROR(
+         esp_gsp_esp_lcd_suspend(platform->hub_ui, &platform->hub_session),
+         "mosaic_platform", "suspend hub");
++    ESP_LOGI("mosaic_platform", "app %s GSP startup begin", descriptor->name);
+     esp_err_t err = esp_gsp_esp_lcd_start_on_session_prepared(
+         platform->hub_session, &app_config, prepare_app_ui, app,
+         &platform->app_ui);
++    ESP_LOGI("mosaic_platform", "app %s GSP startup returned 0x%x",
++        descriptor->name, (unsigned)err);
+     if (err != ESP_OK) {
+         platform->hub_session = NULL;
+         app->ui = NULL;
+@@ -460,6 +464,7 @@ static esp_err_t platform_open_app(void* ctx,
+         app->generation = ++platform->next_generation;
+     }
+     int64_t start_us = esp_timer_get_time();
++    ESP_LOGI("mosaic_platform", "app %s bundle bound", descriptor->name);
+     esp_err_t err = start_ui(platform, app, bundle, bundle_size);
+     if (err != ESP_OK) {
+         free(app);
+@@ -469,6 +474,8 @@ static esp_err_t platform_open_app(void* ctx,
+     if (err != ESP_OK) {
+         goto fail;
+     }
++    ESP_LOGI("mosaic_platform", "app %s event registration ready",
++        descriptor->name);
+     const void* program = NULL;
+     size_t program_size = 0;
+     if (package->logic_entry != NULL) {
+@@ -489,6 +496,7 @@ static esp_err_t platform_open_app(void* ctx,
+     if (err != ESP_OK) {
+         goto fail;
+     }
++    ESP_LOGI("mosaic_platform", "app %s logic ready", descriptor->name);
+     err = esp_gsp_set_pointer_observer(
+         app->ui, on_gsp_pointer, app);
+     if (err != ESP_OK) {
+@@ -828,6 +836,19 @@ esp_gsp_handle_t mosaic_esp_platform_ui(mosaic_esp_platform_handle_t platform)
+         : NULL;
+ }
+ 
++esp_gsp_handle_t mosaic_esp_platform_retained_ui(
++    mosaic_esp_platform_handle_t platform)
++{
++    return platform != NULL && platform->active != NULL &&
++            !platform->active->stopping ? platform->active->ui : NULL;
++}
++
++uint32_t mosaic_esp_platform_generation(mosaic_esp_platform_handle_t platform)
++{
++    return platform != NULL && platform->active != NULL &&
++            !platform->active->stopping ? platform->active->generation : 0U;
++}
++
+ esp_err_t mosaic_esp_platform_quiesce(
+     mosaic_esp_platform_handle_t platform, uint32_t timeout_ms)
+ {
+diff --git a/components/mosaic_ui/core/mosaic_esp_platform.h b/components/mosaic_ui/core/mosaic_esp_platform.h
+index 0bbc195..3dc5ac6 100644
+--- a/components/mosaic_ui/core/mosaic_esp_platform.h
++++ b/components/mosaic_ui/core/mosaic_esp_platform.h
+@@ -44,6 +44,11 @@ bool mosaic_esp_platform_deliver_pointer(
+     uint32_t generation, int32_t x, int32_t y, bool pressed);
+ 
+ esp_gsp_handle_t mosaic_esp_platform_ui(mosaic_esp_platform_handle_t platform);
++/** Diagnostics only; caller holds the loader mutex, including while paused. */
++esp_gsp_handle_t mosaic_esp_platform_retained_ui(
++    mosaic_esp_platform_handle_t platform);
++/** Identity of the active instance, including while its renderer is paused. */
++uint32_t mosaic_esp_platform_generation(mosaic_esp_platform_handle_t platform);
+ esp_err_t mosaic_esp_platform_quiesce(
+     mosaic_esp_platform_handle_t platform, uint32_t timeout_ms);
+ esp_err_t mosaic_esp_platform_activate(mosaic_esp_platform_handle_t platform,
 diff --git a/components/mosaic_ui/core/mosaic_loader.c b/components/mosaic_ui/core/mosaic_loader.c
-index 5636bb0..fbcaf3c 100644
+index 5636bb0..bdb4e84 100644
 --- a/components/mosaic_ui/core/mosaic_loader.c
 +++ b/components/mosaic_ui/core/mosaic_loader.c
-@@ -19,6 +19,7 @@
+@@ -7,18 +7,24 @@
+ #include "mosaic_loader.h"
+ 
+ #include <stdio.h>
++#include <stdatomic.h>
++#include <string.h>
+ 
+ #include "esp_gsp_debug.h"
++#include "esp_display_present.h"
++#include "esp_log.h"
+ #include "esp_timer.h"
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/queue.h"
+ #include "freertos/semphr.h"
+ #include "freertos/task.h"
+ #include "mosaic_esp_platform.h"
++#include "mosaic_frame_capture.h"
+ #include "mosaic_hub_app.h"
  #include "mosaic_hub_objects.h"
  #include "mosaic_runtime.h"
  #include "mosaic_ui.h"
@@ -5121,15 +5288,200 @@ index 5636bb0..fbcaf3c 100644
  
  #define MOSAIC_LOADER_QUEUE_DEPTH 32U
  #define MOSAIC_LOADER_STEP_MS 16U
-@@ -76,6 +77,7 @@ static void* s_deferred_user_ctx;
- static bool s_runtime_started;
+@@ -33,6 +39,7 @@ typedef enum {
+     MOSAIC_LOADER_COMMAND_INVALIDATE_APP,
+     MOSAIC_LOADER_COMMAND_BACK,
+     MOSAIC_LOADER_COMMAND_SIMULATE_TAP,
++    MOSAIC_LOADER_COMMAND_SIMULATE_DRAG,
+     MOSAIC_LOADER_COMMAND_SYSTEM_NOTICE,
+ } mosaic_loader_command_type_t;
+ 
+@@ -58,6 +65,10 @@ typedef struct {
+             int16_t x;
+             int16_t y;
+         } tap;
++        struct {
++            int16_t x0, y0, x1, y1;
++            uint32_t duration_ms;
++        } drag;
+         struct {
+             mosaic_system_notice_t notice;
+             uint32_t duration_ms;
+@@ -73,21 +84,102 @@ static SemaphoreHandle_t s_runtime_lock;
+ static TaskHandle_t s_loader_task;
+ static mosaic_loader_deferred_cb_t s_deferred_callback;
+ static void* s_deferred_user_ctx;
+-static bool s_runtime_started;
++static atomic_bool s_runtime_started;
  static bool s_hub_foreground;
  static bool s_quiesced;
-+static bool s_screen_paused;
++static atomic_bool s_screen_paused;
++static bool s_pointer_pressed;
  static uint16_t s_hub_scene;
- 
+-
++static uint32_t s_runtime_errors;
++static esp_err_t s_last_runtime_error;
++static esp_err_t s_last_input_error;
++static atomic_bool s_input_pending;
++static atomic_bool s_capture_in_progress;
++static atomic_bool s_capture_interrupted;
++static struct {
++    bool active;
++    bool final_sample;
++    uint32_t generation;
++    int16_t x0, y0, x1, y1, x, y;
++    uint32_t duration_ms;
++    int64_t start_us, next_sample_us;
++} s_gesture;
++
++/* Called with the runtime mutex; no mutex is held between input samples. */
  static esp_gsp_err_t inject_simulated_touch(int16_t x, int16_t y, bool pressed)
-@@ -268,10 +270,20 @@ static void process_deferred(void)
+ {
+-    xSemaphoreTake(s_runtime_lock, portMAX_DELAY);
+-    esp_gsp_handle_t ui = !s_quiesced
++    esp_gsp_handle_t ui = !s_quiesced && !s_screen_paused
+         ? mosaic_esp_platform_ui(s_platform) : NULL;
+-    const esp_gsp_err_t err = ui != NULL
++    return ui != NULL
+         ? esp_gsp_inject_touch(ui, x, y, pressed)
+         : ESP_ERR_INVALID_STATE;
+-    xSemaphoreGive(s_runtime_lock);
+-    return err;
++}
++
++static void finish_simulated_input(esp_err_t error, bool release)
++{
++    if (release && s_gesture.active && s_gesture.generation ==
++            mosaic_esp_platform_generation(s_platform)) {
++        const esp_gsp_err_t err = inject_simulated_touch(
++            s_gesture.x, s_gesture.y, false);
++        if (error == ESP_OK) error = (esp_err_t)err;
++    }
++    s_gesture.active = false;
++    s_last_input_error = error;
++    atomic_store(&s_input_pending, false);
++}
++
++static void start_simulated_input(int16_t x0, int16_t y0,
++    int16_t x1, int16_t y1, uint32_t duration_ms)
++{
++    s_gesture.generation = mosaic_esp_platform_generation(s_platform);
++    const esp_gsp_err_t err = inject_simulated_touch(x0, y0, true);
++    if (err != ESP_GSP_OK) {
++        finish_simulated_input((esp_err_t)err, false);
++        return;
++    }
++    s_gesture.active = true;
++    s_gesture.final_sample = duration_ms == 0U;
++    s_gesture.x0 = s_gesture.x = x0;
++    s_gesture.y0 = s_gesture.y = y0;
++    s_gesture.x1 = x1;
++    s_gesture.y1 = y1;
++    s_gesture.duration_ms = duration_ms;
++    s_gesture.start_us = esp_timer_get_time();
++    s_gesture.next_sample_us = s_gesture.start_us +
++        MOSAIC_SIMULATED_TOUCH_SAMPLE_MS * 1000LL;
++}
++
++static void advance_simulated_input(int64_t now_us)
++{
++    if (!s_gesture.active) return;
++    if (s_quiesced || s_screen_paused || s_gesture.generation !=
++            mosaic_esp_platform_generation(s_platform)) {
++        finish_simulated_input(ESP_ERR_INVALID_STATE, false);
++        return;
++    }
++    if (now_us < s_gesture.next_sample_us) return;
++    if (s_gesture.final_sample) {
++        finish_simulated_input(ESP_OK, true);
++        return;
++    }
++    uint32_t elapsed_ms = (uint32_t)((now_us - s_gesture.start_us) / 1000);
++    if (elapsed_ms >= s_gesture.duration_ms) {
++        elapsed_ms = s_gesture.duration_ms;
++        s_gesture.final_sample = true;
++    }
++    s_gesture.x = (int16_t)(s_gesture.x0 +
++        (int64_t)(s_gesture.x1 - s_gesture.x0) * elapsed_ms /
++        s_gesture.duration_ms);
++    s_gesture.y = (int16_t)(s_gesture.y0 +
++        (int64_t)(s_gesture.y1 - s_gesture.y0) * elapsed_ms /
++        s_gesture.duration_ms);
++    const esp_gsp_err_t err = inject_simulated_touch(
++        s_gesture.x, s_gesture.y, true);
++    if (err != ESP_GSP_OK) {
++        finish_simulated_input((esp_err_t)err, true);
++        return;
++    }
++    s_gesture.next_sample_us = now_us + MOSAIC_SIMULATED_TOUCH_SAMPLE_MS * 1000LL;
+ }
+ 
+ static bool post_ui_event(
+@@ -111,6 +203,9 @@ static bool post_pointer(void* user_ctx, uint32_t generation, int32_t x,
+     int32_t y, bool pressed)
+ {
+     (void)user_ctx;
++    if (pressed && atomic_load(&s_capture_in_progress)) {
++        atomic_store(&s_capture_interrupted, true);
++    }
+     if (s_command_queue == NULL) {
+         return false;
+     }
+@@ -163,13 +258,16 @@ static void process_command(const mosaic_loader_command_t* command)
+         if (mosaic_ui_absorb_wake_pointer(command->data.pointer.pressed)) {
+             return;
+         }
+-        (void)mosaic_esp_platform_deliver_pointer(s_platform, s_runtime,
++        if (mosaic_esp_platform_deliver_pointer(s_platform, s_runtime,
+             command->data.pointer.generation, command->data.pointer.x,
+-            command->data.pointer.y, command->data.pointer.pressed);
++            command->data.pointer.y, command->data.pointer.pressed)) {
++            s_pointer_pressed = command->data.pointer.pressed;
++        }
+         return;
+     }
+     if (command->type == MOSAIC_LOADER_COMMAND_REQUEST_APP
+         && command->data.app != NULL) {
++        if (s_gesture.active) finish_simulated_input(ESP_ERR_INVALID_STATE, true);
+         esp_err_t err
+             = mosaic_runtime_request_app(s_runtime, command->data.app->name);
+         if (err != ESP_OK) {
+@@ -185,6 +283,7 @@ static void process_command(const mosaic_loader_command_t* command)
+         return;
+     }
+     if (command->type == MOSAIC_LOADER_COMMAND_BACK) {
++        if (s_gesture.active) finish_simulated_input(ESP_ERR_INVALID_STATE, true);
+         const mosaic_app_descriptor_t* active =
+             mosaic_runtime_active_app(s_runtime);
+         esp_gsp_handle_t ui = mosaic_esp_platform_ui(s_platform);
+@@ -228,18 +327,14 @@ static void process_command(const mosaic_loader_command_t* command)
+         }
+     }
+     if (command->type == MOSAIC_LOADER_COMMAND_SIMULATE_TAP) {
+-        esp_gsp_err_t err = inject_simulated_touch(
+-            command->data.tap.x, command->data.tap.y, true);
+-        if (err == ESP_GSP_OK) {
+-            vTaskDelay(pdMS_TO_TICKS(MOSAIC_SIMULATED_TOUCH_SAMPLE_MS));
+-            err = inject_simulated_touch(
+-                command->data.tap.x, command->data.tap.y, false);
+-        }
+-        if (err != ESP_GSP_OK) {
+-            printf("mosaic_loader: simulated tap failed at (%d,%d): %s\n",
+-                command->data.tap.x, command->data.tap.y,
+-                esp_err_to_name((esp_err_t)err));
+-        }
++        start_simulated_input(command->data.tap.x, command->data.tap.y,
++            command->data.tap.x, command->data.tap.y, 0U);
++        return;
++    }
++    if (command->type == MOSAIC_LOADER_COMMAND_SIMULATE_DRAG) {
++        start_simulated_input(command->data.drag.x0, command->data.drag.y0,
++            command->data.drag.x1, command->data.drag.y1,
++            command->data.drag.duration_ms);
+         return;
+     }
+     if (command->type == MOSAIC_LOADER_COMMAND_SYSTEM_NOTICE) {
+@@ -268,35 +363,86 @@ static void process_deferred(void)
  static void loader_task(void* arg)
  {
      (void)arg;
@@ -5142,16 +5494,24 @@ index 5636bb0..fbcaf3c 100644
 +#endif
      for (;;) {
          mosaic_loader_command_t command;
-+        const uint32_t wait_ms = corallium_dispatch_interval_ms(
-+            s_hub_foreground, s_quiesced, esp_timer_get_time() - last_activity_us);
-         const BaseType_t received = xQueueReceive(
+-        const BaseType_t received = xQueueReceive(
 -            s_command_queue, &command, pdMS_TO_TICKS(MOSAIC_LOADER_STEP_MS));
+-        /* Never hold the runtime mutex between simulated touch samples. */
+-        if (received == pdTRUE &&
+-                command.type == MOSAIC_LOADER_COMMAND_SIMULATE_TAP) {
+-            process_command(&command);
+-            continue;
++        uint32_t wait_ms = corallium_dispatch_interval_ms(
++            s_hub_foreground, s_quiesced, esp_timer_get_time() - last_activity_us);
++        if (atomic_load(&s_input_pending) && wait_ms > MOSAIC_LOADER_STEP_MS) {
++            wait_ms = MOSAIC_LOADER_STEP_MS;
+         }
++        const BaseType_t received = xQueueReceive(
 +            s_command_queue, &command, pdMS_TO_TICKS(wait_ms));
 +        if (received == pdTRUE) last_activity_us = esp_timer_get_time();
-         /* Never hold the runtime mutex between simulated touch samples. */
-         if (received == pdTRUE &&
-                 command.type == MOSAIC_LOADER_COMMAND_SIMULATE_TAP) {
-@@ -284,7 +296,26 @@ static void loader_task(void* arg)
+         xSemaphoreTake(s_runtime_lock, portMAX_DELAY);
+         if (s_quiesced) {
+             if (received == pdTRUE) {
                  (void)xQueueSendToFront(s_command_queue, &command, 0);
              }
              xSemaphoreGive(s_runtime_lock);
@@ -5179,10 +5539,24 @@ index 5636bb0..fbcaf3c 100644
              continue;
          }
          if (received == pdTRUE) {
-@@ -297,6 +328,22 @@ static void loader_task(void* arg)
+             process_command(&command);
+         }
++        advance_simulated_input(esp_timer_get_time());
+         if (s_runtime_started) {
+             esp_err_t err
+                 = mosaic_runtime_step(s_runtime, esp_timer_get_time());
+             if (err != ESP_OK) {
++                ++s_runtime_errors;
++                s_last_runtime_error = err;
                  printf("mosaic_loader: runtime step failed: %s\n",
                      esp_err_to_name(err));
              }
++            /* An App tick may replace its own UI. Never inject into a recycled
++             * handle from the previous generation on the following sample. */
++            if (s_gesture.active && s_gesture.generation !=
++                    mosaic_esp_platform_generation(s_platform)) {
++                finish_simulated_input(ESP_ERR_INVALID_STATE, false);
++            }
 +#if CONFIG_CORALLIUM_PERF_LOG
 +            const int64_t now_us = esp_timer_get_time();
 +            esp_gsp_handle_t ui = mosaic_esp_platform_ui(s_platform);
@@ -5202,7 +5576,269 @@ index 5636bb0..fbcaf3c 100644
              const bool hub_foreground =
                  mosaic_runtime_active_app(s_runtime) == mosaic_app_root();
              if (hub_foreground != s_hub_foreground) {
-@@ -552,12 +599,14 @@ esp_err_t mosaic_loader_activate(
+@@ -406,6 +552,9 @@ esp_err_t mosaic_loader_request(const mosaic_app_descriptor_t* app)
+     if (s_command_queue == NULL || app == NULL) {
+         return app == NULL ? ESP_ERR_INVALID_ARG : ESP_ERR_INVALID_STATE;
+     }
++    if (atomic_load(&s_capture_in_progress)) {
++        atomic_store(&s_capture_interrupted, true);
++    }
+     const mosaic_loader_command_t command = {
+         .type = MOSAIC_LOADER_COMMAND_REQUEST_APP,
+         .data.app = app,
+@@ -422,6 +571,9 @@ esp_err_t mosaic_loader_request_back(void)
+     if (s_command_queue == NULL) {
+         return ESP_ERR_INVALID_STATE;
+     }
++    if (atomic_load(&s_capture_in_progress)) {
++        atomic_store(&s_capture_interrupted, true);
++    }
+     const mosaic_loader_command_t command = {
+         .type = MOSAIC_LOADER_COMMAND_BACK,
+     };
+@@ -431,7 +583,10 @@ esp_err_t mosaic_loader_request_back(void)
+ 
+ esp_err_t mosaic_loader_simulate_tap(int16_t x, int16_t y)
+ {
+-    if (s_command_queue == NULL) {
++    if (x < 0 || x >= 480 || y < 0 || y >= 480) {
++        return ESP_ERR_INVALID_ARG;
++    }
++    if (s_command_queue == NULL || !atomic_load(&s_runtime_started)) {
+         return ESP_ERR_INVALID_STATE;
+     }
+     const mosaic_loader_command_t command = {
+@@ -441,8 +596,45 @@ esp_err_t mosaic_loader_simulate_tap(int16_t x, int16_t y)
+             .y = y,
+         },
+     };
+-    return xQueueSend(s_command_queue, &command, 0) == pdTRUE
+-        ? ESP_OK : ESP_ERR_TIMEOUT;
++    bool pending = false;
++    if (atomic_load(&s_capture_in_progress) || !atomic_compare_exchange_strong(
++            &s_input_pending, &pending, true)) return ESP_ERR_INVALID_STATE;
++    if (atomic_load(&s_capture_in_progress)) {
++        atomic_store(&s_input_pending, false);
++        return ESP_ERR_INVALID_STATE;
++    }
++    if (xQueueSend(s_command_queue, &command, 0) != pdTRUE) {
++        atomic_store(&s_input_pending, false);
++        return ESP_ERR_TIMEOUT;
++    }
++    return ESP_OK;
++}
++
++esp_err_t mosaic_loader_simulate_drag(int16_t x0, int16_t y0,
++    int16_t x1, int16_t y1, uint32_t duration_ms)
++{
++    if (x0 < 0 || x0 >= 480 || y0 < 0 || y0 >= 480 ||
++            x1 < 0 || x1 >= 480 || y1 < 0 || y1 >= 480 ||
++            duration_ms < 32U || duration_ms > 2000U) return ESP_ERR_INVALID_ARG;
++    if (s_command_queue == NULL || !atomic_load(&s_runtime_started)) {
++        return ESP_ERR_INVALID_STATE;
++    }
++    const mosaic_loader_command_t command = {
++        .type = MOSAIC_LOADER_COMMAND_SIMULATE_DRAG,
++        .data.drag = {x0, y0, x1, y1, duration_ms},
++    };
++    bool pending = false;
++    if (atomic_load(&s_capture_in_progress) || !atomic_compare_exchange_strong(
++            &s_input_pending, &pending, true)) return ESP_ERR_INVALID_STATE;
++    if (atomic_load(&s_capture_in_progress)) {
++        atomic_store(&s_input_pending, false);
++        return ESP_ERR_INVALID_STATE;
++    }
++    if (xQueueSend(s_command_queue, &command, 0) != pdTRUE) {
++        atomic_store(&s_input_pending, false);
++        return ESP_ERR_TIMEOUT;
++    }
++    return ESP_OK;
+ }
+ 
+ esp_err_t mosaic_loader_invalidate_app(uint16_t app_id, uint32_t revision)
+@@ -500,6 +692,173 @@ bool mosaic_loader_poll(void)
+         && uxQueueMessagesWaiting(s_command_queue) != 0;
+ }
+ 
++esp_err_t mosaic_loader_get_diagnostics(
++    mosaic_ui_diagnostics_t *out, uint32_t timeout_ms)
++{
++    if (out == NULL) return ESP_ERR_INVALID_ARG;
++    if (s_runtime_lock == NULL) return ESP_ERR_INVALID_STATE;
++    if (xSemaphoreGetMutexHolder(s_runtime_lock) == xTaskGetCurrentTaskHandle()) {
++        return ESP_ERR_INVALID_STATE;
++    }
++    if (xSemaphoreTake(s_runtime_lock, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
++        return ESP_ERR_TIMEOUT;
++    }
++    const mosaic_app_descriptor_t *app = s_runtime_started
++        ? mosaic_runtime_active_app(s_runtime) : NULL;
++    if (app != NULL) {
++        out->app_id = app->id;
++        (void)snprintf(out->app_name, sizeof(out->app_name), "%s", app->name);
++    }
++    out->runtime_started = s_runtime_started;
++    out->quiesced = s_quiesced;
++    out->screen_paused = s_screen_paused;
++    out->gesture_active = atomic_load(&s_input_pending);
++    out->queue_depth = (uint16_t)uxQueueMessagesWaiting(s_command_queue);
++    out->runtime_errors = s_runtime_errors;
++    out->last_runtime_error = s_last_runtime_error;
++    out->last_input_error = s_last_input_error;
++    esp_gsp_handle_t ui = mosaic_esp_platform_retained_ui(s_platform);
++    if (ui != NULL) {
++        gsp_err_t last_error = GSP_OK;
++        esp_gsp_render_stats(ui, &out->render_frames, &out->render_busy_us);
++        esp_gsp_render_error_stats(ui, &out->render_errors, &last_error);
++        out->last_render_error = (int32_t)last_error;
++        if (app == mosaic_app_root()) {
++            (void)esp_gsp_drawer_is_open(
++                ui, GSP_OBJ_KEY_QUICK_DRAWER, &out->drawer_open);
++        }
++    }
++    if (!s_quiesced) {
++        esp_display_presenter_caps_t caps;
++        out->capture_supported = esp_display_presenter_get_caps(
++            s_config.presenter, &caps) == ESP_OK &&
++            caps.contract == ESP_DISPLAY_PRESENT_CONTRACT_PARTITION &&
++            caps.pixel_format == ESP_DISPLAY_PRESENT_PIXEL_FORMAT_RGB565 &&
++            caps.width <= 480 && caps.height <= 480;
++    }
++    xSemaphoreGive(s_runtime_lock);
++    return ESP_OK;
++}
++
++static uint32_t capture_remaining_ms(int64_t deadline_us)
++{
++    const int64_t remaining = deadline_us - esp_timer_get_time();
++    return remaining > 0 ? (uint32_t)((remaining + 999) / 1000) : 0U;
++}
++
++esp_err_t mosaic_loader_capture_begin(
++    mosaic_ui_frame_handle_t *out_frame, uint32_t timeout_ms)
++{
++    if (out_frame == NULL || timeout_ms == 0U) return ESP_ERR_INVALID_ARG;
++    *out_frame = NULL;
++    if (s_runtime_lock == NULL ||
++            xSemaphoreGetMutexHolder(s_runtime_lock) == xTaskGetCurrentTaskHandle()) {
++        return ESP_ERR_INVALID_STATE;
++    }
++    const int64_t deadline_us = esp_timer_get_time() + timeout_ms * 1000LL;
++    if (xSemaphoreTake(s_runtime_lock, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
++        return ESP_ERR_TIMEOUT;
++    }
++    esp_err_t error = ESP_OK;
++    mosaic_ui_frame_handle_t frame = NULL;
++    bool pause_attempted = false;
++    bool present_fenced = false;
++    bool pause_probe_active = false;
++    mosaic_frame_capture_pause_progress_t pause_progress = {0};
++    uint32_t pause_ms = 0U;
++    const char *stage = "state";
++    atomic_store(&s_capture_interrupted, false);
++    atomic_store(&s_capture_in_progress, true);
++    if (!s_runtime_started || s_quiesced || s_screen_paused ||
++            s_pointer_pressed || atomic_load(&s_input_pending) || mosaic_loader_poll()) {
++        error = ESP_ERR_INVALID_STATE;
++        goto done;
++    }
++    esp_display_presenter_caps_t caps;
++    stage = "caps";
++    error = esp_display_presenter_get_caps(s_config.presenter, &caps);
++    if (error != ESP_OK) goto done;
++    stage = "allocate";
++    error = mosaic_frame_capture_create(&caps, &frame);
++    if (error != ESP_OK) goto done;
++    mosaic_frame_capture_pause_probe_begin(s_config.presenter);
++    pause_probe_active = true;
++    uint32_t remaining_ms = capture_remaining_ms(deadline_us);
++    pause_attempted = remaining_ms != 0U;
++    stage = "pause_before";
++    int64_t pause_start_us = esp_timer_get_time();
++    error = remaining_ms != 0U ? mosaic_esp_platform_pause_screen(
++        s_platform, remaining_ms) : ESP_ERR_TIMEOUT;
++    pause_ms = (uint32_t)((esp_timer_get_time() - pause_start_us) / 1000);
++    if (error != ESP_OK) goto done;
++    stage = "arm";
++    error = mosaic_frame_capture_arm(frame, s_config.presenter);
++    if (error != ESP_OK) goto done;
++    /* The documented resume path forces a full raster without changing the
++     * scene, panel power, dim state or user inactivity timestamp. */
++    stage = "resume_frame";
++    error = mosaic_esp_platform_resume_screen(s_platform);
++    if (error != ESP_OK) goto done;
++    remaining_ms = capture_remaining_ms(deadline_us);
++    esp_gsp_handle_t ui = mosaic_esp_platform_ui(s_platform);
++    stage = "flush";
++    error = remaining_ms != 0U && ui != NULL
++        ? (esp_err_t)esp_gsp_flush(ui, remaining_ms) : ESP_ERR_TIMEOUT;
++    if (error != ESP_OK) goto done;
++    remaining_ms = capture_remaining_ms(deadline_us);
++    stage = "pause_after";
++    pause_start_us = esp_timer_get_time();
++    error = remaining_ms != 0U ? mosaic_esp_platform_pause_screen(
++        s_platform, remaining_ms) : ESP_ERR_TIMEOUT;
++    pause_ms = (uint32_t)((esp_timer_get_time() - pause_start_us) / 1000);
++    if (error != ESP_OK) goto done;
++    present_fenced = true;
++    mosaic_frame_capture_detach(frame);
++    stage = "complete";
++    error = mosaic_frame_capture_complete(frame, present_fenced);
++    if (error == ESP_OK && atomic_load(&s_capture_interrupted)) {
++        stage = "interrupted";
++        error = ESP_ERR_INVALID_STATE;
++    }
++
++done:
++    /* Detach also drains an in-flight short copy when a flush/pause timed out.
++     * It never waits for USB or an asynchronous presenter transfer. */
++    mosaic_frame_capture_detach(frame);
++    /* Public pause normally rolls back on failure; also recover a retained
++     * token after any failed attempt rather than depending on ESP_OK alone. */
++    if (pause_attempted) {
++        const esp_err_t resume_error = mosaic_esp_platform_resume_screen(s_platform);
++        if (resume_error != ESP_OK) {
++            s_screen_paused = true;
++            stage = "resume_restore";
++            error = resume_error;
++        }
++    }
++    if (pause_probe_active) {
++        mosaic_frame_capture_pause_probe_end(&pause_progress);
++    }
++    if (error == ESP_OK) {
++        *out_frame = frame;
++    } else {
++        mosaic_frame_capture_progress_t progress;
++        mosaic_frame_capture_progress(frame, &progress);
++        ESP_LOGW("mosaic_capture", "failed stage=%s error=0x%x seen=%u full=%u"
++            " tiles=%lu coverage=%lu commit=%u pause_ms=%lu"
++            " quiesce_calls=%lu quiesce_error=0x%x quiesce_ms=%lu",
++            stage, (unsigned)error,
++            (unsigned)progress.seen, (unsigned)progress.full,
++            (unsigned long)progress.tiles, (unsigned long)progress.covered_pixels,
++            (unsigned)progress.committed, (unsigned long)pause_ms,
++            (unsigned long)pause_progress.calls, (unsigned)pause_progress.error,
++            (unsigned long)pause_progress.elapsed_ms);
++        mosaic_frame_capture_delete(frame);
++    }
++    atomic_store(&s_capture_in_progress, false);
++    xSemaphoreGive(s_runtime_lock);
++    return error;
++}
++
+ const mosaic_app_descriptor_t* mosaic_loader_app(void)
+ {
+     return s_runtime != NULL ? mosaic_runtime_active_app(s_runtime)
+@@ -529,6 +888,7 @@ esp_err_t mosaic_loader_quiesce(uint32_t timeout_ms)
+         return ESP_ERR_TIMEOUT;
+     }
+     int64_t start_us = esp_timer_get_time();
++    if (s_gesture.active) finish_simulated_input(ESP_ERR_INVALID_STATE, true);
+     esp_err_t err = mosaic_esp_platform_quiesce(s_platform, timeout_ms);
+     if (err == ESP_OK) {
+         s_quiesced = true;
+@@ -552,12 +912,14 @@ esp_err_t mosaic_loader_activate(
      if (err == ESP_OK) {
          s_config.producer_generation = producer_generation;
          s_quiesced = false;
@@ -5218,7 +5854,7 @@ index 5636bb0..fbcaf3c 100644
  {
      if (timeout_ms == 0 || s_runtime_lock == NULL || !s_runtime_started) {
          return ESP_ERR_INVALID_STATE;
-@@ -566,10 +615,17 @@ esp_err_t mosaic_loader_lock_and_pause_hub(uint32_t timeout_ms)
+@@ -566,10 +928,18 @@ esp_err_t mosaic_loader_lock_and_pause_hub(uint32_t timeout_ms)
          return ESP_ERR_TIMEOUT;
      }
  
@@ -5232,13 +5868,14 @@ index 5636bb0..fbcaf3c 100644
 +    }
      if (err == ESP_OK) {
 -        mosaic_hub_lock_screen();
++        if (s_gesture.active) finish_simulated_input(ESP_ERR_INVALID_STATE, true);
 +        if (hub) {
 +            mosaic_hub_lock_screen();
 +        }
          /* The panel retains its last GRAM contents while it is off. Fence the
           * asynchronous Lock Screen setters so Display On cannot expose the
           * previous Hub/Home frame. */
-@@ -578,12 +634,25 @@ esp_err_t mosaic_loader_lock_and_pause_hub(uint32_t timeout_ms)
+@@ -578,19 +948,39 @@ esp_err_t mosaic_loader_lock_and_pause_hub(uint32_t timeout_ms)
          err = flush_err == ESP_GSP_OK ? ESP_OK : (esp_err_t)flush_err;
          if (err == ESP_OK) {
              err = mosaic_esp_platform_pause_screen(s_platform, timeout_ms);
@@ -5264,10 +5901,16 @@ index 5636bb0..fbcaf3c 100644
  esp_err_t mosaic_loader_resume_screen(void)
  {
      if (s_runtime_lock == NULL) {
-@@ -591,6 +660,9 @@ esp_err_t mosaic_loader_resume_screen(void)
+         return ESP_ERR_INVALID_STATE;
      }
-     xSemaphoreTake(s_runtime_lock, portMAX_DELAY);
-     esp_err_t err = mosaic_esp_platform_resume_screen(s_platform);
+-    xSemaphoreTake(s_runtime_lock, portMAX_DELAY);
+-    esp_err_t err = mosaic_esp_platform_resume_screen(s_platform);
++    if (!atomic_load(&s_screen_paused)) return ESP_OK;
++    if (xSemaphoreTake(s_runtime_lock, pdMS_TO_TICKS(1500)) != pdTRUE) {
++        return ESP_ERR_TIMEOUT;
++    }
++    esp_err_t err = !s_quiesced ? mosaic_esp_platform_resume_screen(s_platform)
++                              : ESP_ERR_INVALID_STATE;
 +    if (err == ESP_OK) {
 +        s_screen_paused = false;
 +    }
@@ -5275,10 +5918,27 @@ index 5636bb0..fbcaf3c 100644
      return err;
  }
 diff --git a/components/mosaic_ui/core/mosaic_loader.h b/components/mosaic_ui/core/mosaic_loader.h
-index f57dbeb..8607780 100644
+index f57dbeb..6df8277 100644
 --- a/components/mosaic_ui/core/mosaic_loader.h
 +++ b/components/mosaic_ui/core/mosaic_loader.h
-@@ -46,5 +46,7 @@ esp_err_t mosaic_loader_activate(
+@@ -31,6 +31,16 @@ esp_err_t mosaic_loader_request(const mosaic_app_descriptor_t* app);
+ esp_err_t mosaic_loader_request_back(void);
+ /** Queue one simulated tap through the active GSP input pipeline. */
+ esp_err_t mosaic_loader_simulate_tap(int16_t x, int16_t y);
++esp_err_t mosaic_loader_simulate_drag(int16_t x0, int16_t y0,
++    int16_t x1, int16_t y1, uint32_t duration_ms);
++struct mosaic_ui_diagnostics;
++struct mosaic_ui_frame;
++/** Copy numeric/catalog fields while protecting the active GSP lifetime. */
++esp_err_t mosaic_loader_get_diagnostics(
++    struct mosaic_ui_diagnostics *out, uint32_t timeout_ms);
++/** Caller serializes screen policy/handoff; return an immutable frame copy. */
++esp_err_t mosaic_loader_capture_begin(
++    struct mosaic_ui_frame **out_frame, uint32_t timeout_ms);
+ esp_err_t mosaic_loader_invalidate_app(uint16_t app_id, uint32_t revision);
+ /** Thread-safe request for a transient notice above the active App. */
+ esp_err_t mosaic_loader_show_system_notice(
+@@ -46,5 +56,7 @@ esp_err_t mosaic_loader_activate(
      struct esp_display_presenter* presenter, uint32_t producer_generation);
  /** Render and flush Hub Lock Screen, then pause that exact frame. */
  esp_err_t mosaic_loader_lock_and_pause_hub(uint32_t timeout_ms);
@@ -6030,7 +6690,7 @@ index 385a211..9d49284 100644
  
  /** Read the shared Settings model used by Settings and setup flows. */
 diff --git a/components/mosaic_ui/include/mosaic_ui.h b/components/mosaic_ui/include/mosaic_ui.h
-index 2d5b399..c4338ed 100644
+index 2d5b399..930b3f2 100644
 --- a/components/mosaic_ui/include/mosaic_ui.h
 +++ b/components/mosaic_ui/include/mosaic_ui.h
 @@ -14,6 +14,7 @@
@@ -6041,18 +6701,91 @@ index 2d5b399..c4338ed 100644
  
  #ifdef __cplusplus
  extern "C" {
-@@ -21,6 +22,8 @@ extern "C" {
+@@ -21,6 +22,55 @@ extern "C" {
  
  typedef esp_err_t (*mosaic_ui_haptic_cb_t)(void *user_ctx,
                                             uint32_t duration_ms);
 +typedef esp_err_t (*mosaic_ui_idle_dim_cb_t)(void *user_ctx, bool dimmed);
 +typedef esp_err_t (*mosaic_ui_poweroff_cb_t)(void *user_ctx);
++
++typedef enum {
++    MOSAIC_UI_DISPLAY_OWNER_NONE = 0,
++    MOSAIC_UI_DISPLAY_OWNER_GSP,
++    /** An exclusive producer owns the display; its private session is opaque. */
++    MOSAIC_UI_DISPLAY_OWNER_EXCLUSIVE,
++} mosaic_ui_display_owner_t;
++
++/** Numeric renderer state and catalog identity only; never scene text. */
++typedef struct mosaic_ui_diagnostics {
++    char app_name[32];
++    uint16_t app_id;
++    uint16_t width;
++    uint16_t height;
++    uint16_t rotation;
++    uint8_t brightness_percent;
++    mosaic_ui_display_owner_t display_owner;
++    bool started;
++    bool asleep;
++    bool dimmed;
++    bool panel_enabled;
++    bool hub_presenter_active;
++    bool runtime_started;
++    bool quiesced;
++    bool screen_paused;
++    bool drawer_open;
++    bool gesture_active;
++    bool capture_supported;
++    uint16_t queue_depth;
++    uint32_t render_frames;
++    uint64_t render_busy_us;
++    uint32_t render_errors;
++    int32_t last_render_error;
++    uint32_t runtime_errors;
++    esp_err_t last_runtime_error;
++    esp_err_t last_input_error;
++} mosaic_ui_diagnostics_t;
++
++typedef struct mosaic_ui_frame *mosaic_ui_frame_handle_t;
++/** Immutable logical RGB565LE device render frame submitted to the panel. */
++typedef struct {
++    uint16_t width;
++    uint16_t height;
++    uint16_t rotation;
++    uint16_t stride_bytes;
++    uint32_t size_bytes;
++} mosaic_ui_frame_info_t;
  /**
   * Start the ported esp-gsp mosaic example UI.
   *
-@@ -35,11 +38,19 @@ esp_err_t mosaic_ui_open_ai_create(void);
+@@ -32,14 +82,45 @@ esp_err_t mosaic_ui_start(void);
+ esp_err_t mosaic_ui_back(void);
+ /** Queue AI Create as the active App; safe to call from a board-button callback. */
+ esp_err_t mosaic_ui_open_ai_create(void);
++/** Queue a registered App and notify the screen worker to wake/rearm idle.
++ * ESP_OK confirms admission only; startup and rendering remain asynchronous.
++ * Unknown names and foreign display owners are rejected without activity. */
++esp_err_t mosaic_ui_open_app(const char *name);
  /** Queue one simulated tap on the active 480x480 UI. */
  esp_err_t mosaic_ui_simulate_tap(int16_t x, int16_t y);
++/** Queue a drag, 32..2000 ms from press to final movement, then release. */
++esp_err_t mosaic_ui_simulate_drag(int16_t x0, int16_t y0,
++    int16_t x1, int16_t y1, uint32_t duration_ms);
++/** Bounded read, including while asleep. Does not wake or reset idle time. */
++esp_err_t mosaic_ui_get_diagnostics(
++    mosaic_ui_diagnostics_t *out, uint32_t timeout_ms);
++/**
++ * Capture one fully covered, committed awake GSP frame and fence presentation.
++ * Does not wake or reset idle time; busy/foreign/asleep owners are rejected.
++ * All UI locks are released before success. Exactly one frame may be retained.
++ * The caller owns the returned copy until end, including on transport failure.
++ */
++esp_err_t mosaic_ui_capture_begin(mosaic_ui_frame_info_t *out,
++    mosaic_ui_frame_handle_t *out_frame, uint32_t timeout_ms);
++/** Copy a bounded slice of the immutable frame; no UI or presenter lock. */
++esp_err_t mosaic_ui_capture_read(mosaic_ui_frame_handle_t frame,
++    size_t offset, void *dst, size_t length);
++/** Release the copy. Serialize read/end for a handle on the transport owner. */
++void mosaic_ui_capture_end(mosaic_ui_frame_handle_t frame);
  
 -/** Set Hub inactivity timeout used to lock and turn the panel off (0 = never). */
 +/** Set GSP inactivity timeout used to pause and turn the panel off (0 = never). */
@@ -6073,7 +6806,7 @@ index 2d5b399..c4338ed 100644
  /** ISR-safe CST9217 interrupt hook; posts a wake only while the panel is off. */
  void mosaic_ui_screen_wake_from_isr(void *user_ctx);
 diff --git a/components/mosaic_ui/mosaic_ui.c b/components/mosaic_ui/mosaic_ui.c
-index 5280d91..4325924 100644
+index 5280d91..76d80f2 100644
 --- a/components/mosaic_ui/mosaic_ui.c
 +++ b/components/mosaic_ui/mosaic_ui.c
 @@ -15,6 +15,7 @@
@@ -6084,7 +6817,15 @@ index 5280d91..4325924 100644
  #include "freertos/task.h"
  #include "mosaico_camera_service.h"
  #include "mosaico_module_mgr.h"
-@@ -30,9 +31,11 @@
+@@ -22,6 +23,7 @@
+ #include "mosaic_hub_actions.h"
+ #include "mosaic_hub_app.h"
+ #include "mosaic_loader.h"
++#include "mosaic_frame_capture.h"
+ #include "mosaic_logic.h"
+ #include "mosaic_settings.h"
+ #include "mosaic_system.h"
+@@ -30,13 +32,15 @@
  
  static const char *TAG = "mosaic_ui";
  
@@ -6097,7 +6838,12 @@ index 5280d91..4325924 100644
  #define SCREEN_PAUSE_TIMEOUT_MS 1500U
  #define SCREEN_POWER_TASK_STACK 4096U
  
-@@ -44,6 +47,7 @@ static bool s_battery_notice_subscribed;
+-static bool s_started;
++static atomic_bool s_started;
+ static const char s_present_producer;
+ static mosaic_system_flow_t s_system_flow;
+ static bool s_system_flow_ready;
+@@ -44,6 +48,7 @@ static bool s_battery_notice_subscribed;
  static bool s_low_battery_notice_issued;
  static bool s_critical_battery_notice_issued;
  static mosaico_module_subscription_t s_module_subscription;
@@ -6105,7 +6851,7 @@ index 5280d91..4325924 100644
  
  #define MOSAIC_BATTERY_LOW_NOTICE_SOC 10U
  #define MOSAIC_BATTERY_CRITICAL_NOTICE_SOC 2U
-@@ -54,6 +58,7 @@ static void on_battery_notice(
+@@ -54,6 +59,7 @@ static void on_battery_notice(
      const mosaic_settings_battery_t *battery, void *user_ctx)
  {
      (void)user_ctx;
@@ -6113,7 +6859,7 @@ index 5280d91..4325924 100644
      if (battery == NULL || !battery->available) {
          return;
      }
-@@ -86,14 +91,28 @@ static void on_battery_notice(
+@@ -86,14 +92,28 @@ static void on_battery_notice(
      }
  }
  
@@ -6132,7 +6878,7 @@ index 5280d91..4325924 100644
  static atomic_bool s_ignore_wake_pointer;
 -static atomic_bool s_hub_foreground;
  static atomic_bool s_hub_presenter_active = true;
-+static bool s_screen_dimmed;
++static atomic_bool s_screen_dimmed;
 +static bool s_poweroff_requested;
 +static int64_t s_last_activity_us;
  static TaskHandle_t s_screen_task;
@@ -6144,7 +6890,7 @@ index 5280d91..4325924 100644
  
  static void screen_post(uint32_t cmd, bool from_isr)
  {
-@@ -112,19 +131,57 @@ static void screen_post(uint32_t cmd, bool from_isr)
+@@ -112,19 +132,57 @@ static void screen_post(uint32_t cmd, bool from_isr)
      xTaskNotifyGive(s_screen_task);
  }
  
@@ -6207,7 +6953,7 @@ index 5280d91..4325924 100644
      if (err != ESP_OK) {
          ESP_LOGE(TAG, "arm screen idle timer failed: %s", esp_err_to_name(err));
      }
-@@ -133,19 +190,41 @@ static void screen_rearm_idle_timer(void)
+@@ -133,19 +191,49 @@ static void screen_rearm_idle_timer(void)
  static void screen_idle_timer_cb(void *arg)
  {
      (void)arg;
@@ -6241,6 +6987,14 @@ index 5280d91..4325924 100644
      if (!atomic_load(&s_screen_asleep) && display_service_panel_enabled()) {
 -        screen_rearm_idle_timer();
 -        return;
++        /* A failed diagnostic resume can leave a powered panel with its
++         * renderer paused. Input activity must retry that same pause token. */
++        const esp_err_t resume_err = mosaic_loader_resume_screen();
++        if (resume_err != ESP_OK) {
++            ESP_LOGE(TAG, "awake GSP resume retry failed: %s",
++                     esp_err_to_name(resume_err));
++            return false;
++        }
 +        if (!consume_pointer) {
 +            atomic_store(&s_ignore_wake_pointer, false);
 +        }
@@ -6254,7 +7008,7 @@ index 5280d91..4325924 100644
      }
      /* CO5300 restarts TE after Display On. Resume GSP only after that. */
      vTaskDelay(pdMS_TO_TICKS(20));
-@@ -154,46 +233,100 @@ static void screen_apply_wake(void)
+@@ -154,46 +242,100 @@ static void screen_apply_wake(void)
          ESP_LOGE(TAG, "screen wake GSP resume failed: %s",
                   esp_err_to_name(resume_err));
          (void)display_service_set_panel_enabled(false);
@@ -6371,7 +7125,7 @@ index 5280d91..4325924 100644
  }
  
  void mosaic_ui_note_screen_activity(void)
-@@ -203,7 +336,7 @@ void mosaic_ui_note_screen_activity(void)
+@@ -203,7 +345,7 @@ void mosaic_ui_note_screen_activity(void)
  
  void mosaic_ui_set_hub_foreground(bool foreground)
  {
@@ -6380,7 +7134,7 @@ index 5280d91..4325924 100644
      screen_post(SCREEN_CMD_REARM, false);
  }
  
-@@ -236,19 +369,57 @@ static void screen_power_task(void *arg)
+@@ -236,19 +378,57 @@ static void screen_power_task(void *arg)
      for (;;) {
          (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
          const uint32_t cmd = atomic_exchange(&s_screen_cmd, 0U);
@@ -6445,7 +7199,7 @@ index 5280d91..4325924 100644
  }
  
  esp_err_t mosaic_system_configure(const mosaic_system_ops_t *ops)
-@@ -314,6 +485,7 @@ esp_err_t mosaic_welcome_open(void)
+@@ -314,6 +494,7 @@ esp_err_t mosaic_welcome_open(void)
  
  esp_err_t mosaic_ui_back(void)
  {
@@ -6453,15 +7207,134 @@ index 5280d91..4325924 100644
      esp_err_t err = display_service_request_exit();
      if (err != ESP_ERR_NOT_FOUND) {
          return err;
-@@ -354,6 +526,7 @@ static esp_err_t prepare_simulated_tap(void)
+@@ -331,8 +512,28 @@ esp_err_t mosaic_ui_open_ai_create(void)
+     return mosaic_loader_request(app);
+ }
+ 
++esp_err_t mosaic_ui_open_app(const char *name)
++{
++    if (name == NULL || name[0] == '\0') {
++        return ESP_ERR_INVALID_ARG;
++    }
++    if (!atomic_load(&s_started) || !atomic_load(&s_hub_presenter_active)) {
++        return ESP_ERR_INVALID_STATE;
++    }
++    const mosaic_app_descriptor_t *app = mosaic_app_descriptor_for_name(name);
++    if (app == NULL) {
++        return ESP_ERR_NOT_FOUND;
++    }
++    /* The screen worker handles wake/recovery; admission never waits for it. */
++    mosaic_ui_note_screen_activity();
++    return mosaic_loader_request(app);
++}
++
+ static esp_err_t prepare_simulated_tap(void)
+ {
++    if (!atomic_load(&s_started) || !atomic_load(&s_hub_presenter_active)) {
++        return ESP_ERR_INVALID_STATE;
++    }
+     bool woke_screen = false;
+     if (atomic_load(&s_screen_asleep) ||
+             !display_service_panel_enabled()) {
+@@ -354,7 +555,18 @@ static esp_err_t prepare_simulated_tap(void)
      /* Let the resumed renderer publish its first frame before input. */
      if (woke_screen) {
          vTaskDelay(pdMS_TO_TICKS(100));
 +        atomic_store(&s_ignore_wake_pointer, false);
      }
++    if (xSemaphoreTake(s_screen_control_lock,
++            pdMS_TO_TICKS(SCREEN_PAUSE_TIMEOUT_MS)) != pdTRUE) {
++        return ESP_ERR_TIMEOUT;
++    }
++    /* Match screen-control -> runtime lock order, including recovery from a
++     * failed capture resume while Display On and asleep=false already hold. */
++    const esp_err_t resume_error = atomic_load(&s_hub_presenter_active)
++        ? mosaic_loader_resume_screen() : ESP_ERR_INVALID_STATE;
++    xSemaphoreGive(s_screen_control_lock);
++    if (resume_error != ESP_OK) return resume_error;
      mosaic_ui_note_screen_activity();
      return ESP_OK;
-@@ -371,11 +544,22 @@ esp_err_t mosaic_ui_simulate_tap(int16_t x, int16_t y)
+ }
+@@ -368,14 +580,101 @@ esp_err_t mosaic_ui_simulate_tap(int16_t x, int16_t y)
+     return mosaic_loader_simulate_tap(x, y);
+ }
+ 
++esp_err_t mosaic_ui_simulate_drag(int16_t x0, int16_t y0,
++    int16_t x1, int16_t y1, uint32_t duration_ms)
++{
++    if (x0 < 0 || x0 >= 480 || y0 < 0 || y0 >= 480 ||
++            x1 < 0 || x1 >= 480 || y1 < 0 || y1 >= 480 ||
++            duration_ms < 32U || duration_ms > 2000U) return ESP_ERR_INVALID_ARG;
++    ESP_RETURN_ON_ERROR(prepare_simulated_tap(), TAG, "prepare simulated drag");
++    return mosaic_loader_simulate_drag(x0, y0, x1, y1, duration_ms);
++}
++
++esp_err_t mosaic_ui_get_diagnostics(mosaic_ui_diagnostics_t *out,
++    uint32_t timeout_ms)
++{
++    if (out == NULL) return ESP_ERR_INVALID_ARG;
++    memset(out, 0, sizeof(*out));
++    out->started = atomic_load(&s_started);
++    out->asleep = atomic_load(&s_screen_asleep);
++    out->dimmed = atomic_load(&s_screen_dimmed);
++    out->panel_enabled = display_service_panel_enabled();
++    out->hub_presenter_active = atomic_load(&s_hub_presenter_active);
++    out->width = (uint16_t)display_service_width();
++    out->height = (uint16_t)display_service_height();
++    (void)display_service_get_rotation(&out->rotation);
++    (void)display_service_get_brightness(&out->brightness_percent);
++    out->display_owner = !display_service_is_started()
++        ? MOSAIC_UI_DISPLAY_OWNER_NONE : display_service_has_exclusive_session()
++        ? MOSAIC_UI_DISPLAY_OWNER_EXCLUSIVE : MOSAIC_UI_DISPLAY_OWNER_GSP;
++    return out->started ? mosaic_loader_get_diagnostics(out, timeout_ms) : ESP_OK;
++}
++
++esp_err_t mosaic_ui_capture_begin(mosaic_ui_frame_info_t *out,
++    mosaic_ui_frame_handle_t *out_frame, uint32_t timeout_ms)
++{
++    if (out == NULL || out_frame == NULL || timeout_ms == 0U) {
++        return ESP_ERR_INVALID_ARG;
++    }
++    memset(out, 0, sizeof(*out));
++    *out_frame = NULL;
++    if (!atomic_load(&s_started) || s_screen_control_lock == NULL) {
++        return ESP_ERR_INVALID_STATE;
++    }
++    const int64_t start_us = esp_timer_get_time();
++    if (xSemaphoreTake(s_screen_control_lock, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
++        return ESP_ERR_TIMEOUT;
++    }
++    esp_err_t error = ESP_ERR_INVALID_STATE;
++    if (!atomic_load(&s_screen_asleep) && display_service_panel_enabled() &&
++            atomic_load(&s_hub_presenter_active) &&
++            !display_service_has_exclusive_session()) {
++        const uint64_t elapsed_ms = (uint64_t)(esp_timer_get_time() - start_us) / 1000U;
++        error = elapsed_ms < timeout_ms ? mosaic_loader_capture_begin(
++            out_frame, timeout_ms - (uint32_t)elapsed_ms) : ESP_ERR_TIMEOUT;
++        if (error == ESP_OK) {
++            error = mosaic_frame_capture_info(*out_frame, out);
++            if (error == ESP_OK) (void)display_service_get_rotation(&out->rotation);
++            if (error != ESP_OK) {
++                mosaic_frame_capture_delete(*out_frame);
++                *out_frame = NULL;
++            }
++        }
++    }
++    xSemaphoreGive(s_screen_control_lock);
++    return error;
++}
++
++esp_err_t mosaic_ui_capture_read(mosaic_ui_frame_handle_t frame,
++    size_t offset, void *dst, size_t length)
++{
++    return mosaic_frame_capture_read(frame, offset, dst, length);
++}
++
++void mosaic_ui_capture_end(mosaic_ui_frame_handle_t frame)
++{
++    mosaic_frame_capture_delete(frame);
++}
++
  static esp_err_t present_quiesce(void *ctx, uint32_t timeout_ms)
  {
      (void)ctx;
@@ -6485,7 +7358,7 @@ index 5280d91..4325924 100644
      return err;
  }
  
-@@ -387,11 +571,16 @@ static esp_err_t present_activate(
+@@ -387,11 +686,16 @@ static esp_err_t present_activate(
              &s_present_producer, generation)) {
          return ESP_ERR_INVALID_STATE;
      }
@@ -6503,7 +7376,7 @@ index 5280d91..4325924 100644
      return err;
  }
  
-@@ -459,8 +648,13 @@ esp_err_t mosaic_ui_start(void)
+@@ -459,8 +763,13 @@ esp_err_t mosaic_ui_start(void)
          s_system_flow_ready = true;
      }
  
@@ -6519,7 +7392,7 @@ index 5280d91..4325924 100644
  
      esp_display_presenter_t *presenter = NULL;
      esp_lcd_touch_handle_t touch = NULL;
-@@ -493,6 +687,7 @@ esp_err_t mosaic_ui_start(void)
+@@ -493,6 +802,7 @@ esp_err_t mosaic_ui_start(void)
      };
      ESP_RETURN_ON_ERROR(esp_timer_create(&idle_timer_args, &s_screen_idle_timer),
                          TAG, "create screen idle timer");
@@ -6527,7 +7400,7 @@ index 5280d91..4325924 100644
      if (xTaskCreate(screen_power_task, "screen_power",
                      SCREEN_POWER_TASK_STACK, NULL, 4,
                      &s_screen_task) != pdPASS) {
-@@ -501,7 +696,7 @@ esp_err_t mosaic_ui_start(void)
+@@ -501,7 +811,7 @@ esp_err_t mosaic_ui_start(void)
          s_screen_idle_timer = NULL;
          return ESP_ERR_NO_MEM;
      }
@@ -6536,7 +7409,7 @@ index 5280d91..4325924 100644
      ESP_RETURN_ON_ERROR(mosaic_loader_start_hub(), TAG, "mosaic_loader_start_hub failed");
      if (!s_battery_notice_subscribed) {
          ESP_RETURN_ON_ERROR(mosaic_settings_subscribe_battery(
-@@ -523,11 +718,14 @@ esp_err_t mosaic_ui_start(void)
+@@ -523,11 +833,14 @@ esp_err_t mosaic_ui_start(void)
                              "open initial app %s", initial_app);
      }
  
@@ -6720,20 +7593,21 @@ index 97540be..9f21e4f 100644
  
  esp_err_t wifi_manager_apply_sta_config(const wifi_manager_config_t *config)
 diff --git a/main/CMakeLists.txt b/main/CMakeLists.txt
-index b881d05..7577f21 100644
+index b881d05..001b5c9 100644
 --- a/main/CMakeLists.txt
 +++ b/main/CMakeLists.txt
-@@ -2,6 +2,9 @@ idf_component_register(
+@@ -2,6 +2,10 @@ idf_component_register(
      SRC_DIRS "." "platform"
      INCLUDE_DIRS "." "platform"
      PRIV_REQUIRES
 +        corallium
 +        mosaico_audio
++        mosaico_diagnostics
 +        esp_pm
          app_settings_service
          app_system_config
          audio_hub
-@@ -20,6 +23,5 @@ idf_component_register(
+@@ -20,6 +24,5 @@ idf_component_register(
          mosaico_boot_splash
          nvs_flash
          weather_service

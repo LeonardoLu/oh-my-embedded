@@ -33,6 +33,45 @@ and Python/Clang prerequisites. Covered behavior includes:
   an awake Back press queues activity before exit or loader dispatch, including
   both dispatch error paths. This establishes command ordering; the display
   service regression separately covers brightness restoration.
+- The actual bounded USB parser and service task execute with CDC/UI boundary
+  doubles under ASan/UBSan. Tests cover malformed/overlength input, rate limits,
+  queued input, read-only status, full output slots, bounded CDC writes,
+  short writes, slow frame-copy time, cancellation, disconnect/stall cleanup and
+  the disabled configuration. Independent zlib checks validate maximum-sized
+  frames, padding and Base64 tails. The actual C formatter's four status sections
+  and frames also decode through the real host client with fragmented reads.
+  Twenty-three client tests cover identity gates, whitelist output, CRC/PNG integrity,
+  delayed USB reception, fixed task records/application admission and safe connected/closing DTR/RTS ordering. A simulated
+  receive-delay negative control reproduces the old client's rate-limit failure.
+  These use explicit host doubles;
+  they do not open serial ports or produce physical-device screenshots.
+  The MAC check compiles against the pinned SDK's actual address types and checks
+  its factory MAC-48 length contract. A negative control reproduces the S31
+  default getter's eight-byte EUI-64 write; ASan rejects its six-byte buffer.
+  A target-libc negative control models the reviewed Picolibc ELF: the old sender
+  pairs global-lock acquire with FILE-lock release and retains the global lock
+  after three packets. The current real service task executes with FILE-lock
+  APIs forbidden and makes zero calls to them. This is an ABI-aware host model;
+  the linked diagnostic archive is also checked for absence of FILE-lock imports.
+  The actual task collector runs with 32/64-bit counter doubles, expired name/
+  stack pointers and 64-slot growth/overflow. It publishes only copied scalar
+  values and fixed names. Fourteen streamed task records, one-second admission
+  limits, total/stall deadlines, clock rollback and disabled statistics are
+  checked; the actual C transcript decodes through the real client.
+- The actual loader and frame-capture wrappers execute with SDK/RTOS/presenter
+  doubles. Forty-eight reused 480x10 tiles assemble a complete 480x480 RGB565LE
+  frame; missing coverage, failed commit/cancel, invalid bounds, absent fences,
+  PSRAM failures, concurrent detach and timeouts reject capture. Unarmed wrappers
+  leave the real call and buffer unchanged. Verbatim public UI functions cover
+  asleep status without activity, sleeping/foreign capture rejection, dim-state
+  preservation, lock release before USB reads and failed-resume recovery through
+  the next tap or Back. Verbatim public application-open code and the actual
+  catalog/loader path admit all four diagnostic routes without waiting for a
+  stalled runtime lock, reject a full queue immediately, and preserve capture
+  interruption/wake ordering. The transparent quiesce probe distinguishes
+  command acknowledgement from presenter-fence failures with stage fault doubles.
+  They verify lifecycle/control flow, not PPA/cache or the
+  physical panel.
 - Startup ordering and queue ownership: saved controls and local provider/
   callback setup precede UI, association/HTTP starts follow UI, and the actual
   queued Wi-Fi configuration owns/rebinds every string. Prepared START consumes
@@ -135,7 +174,7 @@ runtime, live Wi-Fi/weather state or physical panel behavior.
 The full ESP32-S31 firmware compiled and linked with the pinned ESP-IDF checkout,
 RISC-V toolchain `esp-16.1.0_20260609`, and the official board generator. The build
 disables performance logging. Image generation and partition-size checks passed.
-The application uses approximately 3.99 MiB, with about 49% of the smallest app partition free.
+The application uses approximately 4.01 MiB, with about 49% of the smallest app partition free.
 Inactive vendor helpers can produce unused-function warnings; these are not
 treated as hardware evidence.
 
@@ -143,36 +182,57 @@ treated as hardware evidence.
 firmware. It checks the generated configuration, actual linked ELF symbols and
 linker wrapping flags. It requires TinyUSB CDC and both factory
 auto-init/download options, the pre-application wrapper, console initialization
-and reset handlers to remain linked. This catches a build that silently omits
-USB startup even though the board declares the console device. Host-side USB
+and reset handlers to remain linked. It also requires the separate diagnostic
+service, independent RTOS task statistics, queued UI APIs and five device-frame presenter wrappers, while rejecting
+the unused Claw CLI configuration and incompatible FILE-lock imports from
+the diagnostic archive. Runtime statistics must use the ESP timer microsecond
+source, and the CDC TX FIFO must hold a complete 512-byte output slot. This catches a build that silently omits
+USB startup or the input reader even though the board declares the console device. Host-side USB
 enumeration and DTR/RTS reset behavior are separate physical-device checks.
 
 ## Current physical evidence
 
 The identified ESP32-S31 board reports CoreBoard version 1.2 through eFuse.
-The firmware was installed through that ROM loader without creating a firmware
-backup. Written application/SYSTEM images were verified; retained boot, partition,
-OTA-initialization and UI images match their earlier verified hashes. NVS was
-outside the erase/write ranges. Application USB CDC enumerated, startup reached Ready at
-about 5.2 seconds, stored Wi-Fi reconnected and weather refreshed at about
-32.3 seconds. Ready preceded completed Wi-Fi association and the weather result.
-No missing scene resource, runtime failure, panic or backtrace appeared in the
-bounded startup capture. This is execution evidence, not visual acceptance.
+The application/SYSTEM images were written and hash-verified through its ROM
+loader without a firmware backup. Retained boot, partition, OTA-initialization
+and UI images match their verified baseline; NVS is outside the write ranges.
 
-The previous device failure is captured as Settings asset_ref 50 / resource 44
-missing from its GRB, followed by a return to Hub. The corrected main-bank
-assembly and resource checks reject that failed bundle. Earlier drawer gesture
-logs establish 480-pixel travel and an upward close from the bottom edge; they
-do not accept the current icon colors or equal-height plates. The user rejected
-the three Fluid apps for slow motion and unsuitable appearance; the current
-packed SYSTEM image contains only the three official app launchers.
+Factory CDC initialization and startup logs were already present. The local
+Corallium startup did not consume console commands because it did not start the
+Claw application; its unused UART CLI option did not supply the missing USB
+consumer. The added diagnostics now verify the typed factory MAC, report live
+UI/control/task state, admit fixed application routes and return complete
+480x480 RGB565 frames with matching block and whole-frame CRCs. The first
+available status showed the native Home active with restored brightness, volume,
+Bluetooth and idle choices before Wi-Fi association completed. This establishes
+local-state ordering for a powered software restart, not an unplugged cold-start
+acceptance test.
 
-Settings entry/transparency/switch colors, drawer glyphs/equal-height plates,
-Home/Weather art, panel wake, charging policy, whole-device shutdown and measured
-frame rate still need their separate physical checks. The tagged-lease registry
-correction is build/resource-checked and Lua audio cleanup has host coverage;
-repeated local-job cleanup, Flappy sound and Back brightness restoration must
-also be observed on the device.
+The initial diagnostic sender introduced a separate target-libc regression.
+Actual Picolibc ELF disassembly showed its manual FILE lock acquire/release pair
+operated on different mutexes. On the device, the USB task retained inherited
+priority while UI work stopped. After removing that pair, Settings became the
+active application, frames advanced through navigation and captures, error
+counters remained zero and USB task priority matched its base priority. This
+explains that diagnostic regression; it does not explain every earlier product
+UI fault. The earlier missing Settings GRB resource remains a distinct
+bank-assembly fault rejected by the resource checks.
+
+Captured device frames show Settings/Works/Album in the intended Home order,
+an orange Bluetooth switch, complete Display selector arrows and the same large
+Cloudy dot pattern on Home and Weather. The pull-down covers the 480x480 screen,
+has white control glyphs, omits slider explanations and has two equal-height
+220-pixel top plates. Works Lab contains Dino and Flappy Bird; rejected Fluid
+apps are absent from the packed SYSTEM image. These are the device's submitted
+pixels, not optical panel photographs or GRAM readback.
+
+The captures also expose missing Settings list icons and black Weather forecast
+icon rectangles. Native host previews did not reproduce these target rendering
+faults; they remain unresolved until corrected and recaptured on the device.
+Panel wake, charging policy, whole-device shutdown, measured frame rate,
+repeated local-job cleanup, Flappy sound and Back brightness restoration still
+need their separate physical checks. Host coverage of these paths is not
+hardware acceptance.
 
 ## Earlier-firmware hardware observations
 

@@ -8,6 +8,7 @@
 #include "claw_paths.h"
 #include "corallium.h"
 #include "mosaico_audio.h"
+#include "mosaico_diagnostics_platform.h"
 #include "esp_board_manager_includes.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -95,6 +96,8 @@ void app_main(void) {
     ESP_ERROR_CHECK(mosaic_settings_platform_start_battery_monitor());
     ESP_ERROR_CHECK(mosaic_button_platform_init());
     ESP_ERROR_CHECK(mosaic_imu_platform_init());
+    const esp_err_t diagnostics_err = mosaico_diagnostics_platform_start(settings);
+    if (diagnostics_err != ESP_OK) ESP_LOGW(TAG, "USB diagnostics unavailable: %s", esp_err_to_name(diagnostics_err));
     ESP_ERROR_CHECK(corallium_start());
     ESP_ERROR_CHECK(wifi_manager_register_event_callback(network_changed, NULL));
     if (network_err == ESP_OK) network_err = wifi_manager_start_prepared();

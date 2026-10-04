@@ -6,7 +6,7 @@ and battery power/runtime telemetry are retained. Official update checking and
 upgrade entries are removed; About still shows the installed version.
 See [behavior and limits](specs/behavior.md). The connected board identifies as
 CoreBoard 1.2 through eFuse. [Validation evidence](specs/validation.md) separates
-host/build checks, earlier-firmware observations and pending physical checks.
+host/build checks, current device-frame evidence and remaining physical checks.
 
 ## Source and build
 
@@ -46,7 +46,8 @@ idf.py -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.corallium' build
 The overlay enables the factory `USB_HS_CONSOLE_USB_CDC_AUTO_DOWNLOAD` and
 `USB_HS_CONSOLE_USB_CDC_AUTO_INIT` options. These initialize Type-C TinyUSB CDC
 before `app_main` and retain the vendor DTR/RTS download-reset mechanism. When
-updating an existing build, enable both options in `idf.py menuconfig`; saved
+updating an existing build, enable both options and `MOSAICO_USB_DIAGNOSTICS`,
+and disable the unused `APP_CLAW_ENABLE_CLI` in `idf.py menuconfig`; saved
 `sdkconfig` values take precedence over defaults. Verify the resulting ELF with
 the activated ESP-IDF toolchain:
 
@@ -99,6 +100,36 @@ pairing or encryption;
 JSONL, including Wi-Fi credentials, is transmitted in plaintext. Passwords remain
 excluded from responses and logs. [Validation scope](specs/validation.md) records actual
 evidence and remaining hardware checks.
+
+USB diagnostics reuse the initialized factory console and add its missing
+command reader. With the ESP-IDF Python environment activated (providing
+`pyserial`), run from the repository root:
+
+```sh
+python projects/espressif-esp-mosaico/corallium-firmware/tools/device_diagnostics.py --list
+python projects/espressif-esp-mosaico/corallium-firmware/tools/device_diagnostics.py status
+python projects/espressif-esp-mosaico/corallium-firmware/tools/device_diagnostics.py tasks
+python projects/espressif-esp-mosaico/corallium-firmware/tools/device_diagnostics.py open settings
+python projects/espressif-esp-mosaico/corallium-firmware/tools/device_diagnostics.py tap 71 352
+python projects/espressif-esp-mosaico/corallium-firmware/tools/device_diagnostics.py drag 240 20 240 450 400
+python projects/espressif-esp-mosaico/corallium-firmware/tools/device_diagnostics.py --output tmp/mosaico/device-diagnostics capture
+python projects/espressif-esp-mosaico/corallium-firmware/tools/device_diagnostics.py back
+```
+
+The client selects only the identified application's USB topology, then verifies
+its MAC through `ping` before sending UI commands. Other attached boards are not
+probed. It preserves the factory's safe connected DTR/RTS state and does not
+issue reset/download sequences. `status` returns local controls, panel state and
+actual renderer/error counters without keeping the screen awake. `capture`
+saves CRC-verified RGB565, PNG and metadata under ignored `tmp/`; it observes
+the actual device's submitted frame, with physical panel appearance and sound
+still requiring their own observations. Sleeping or exclusive-presenter screens
+reject capture. The importable `DiagnosticClient` supports multiple operations
+through one serial connection, including status polling during idle tests.
+`tasks` reports a fixed list of live RTOS task states, stack high-water marks and
+32-bit runtime counters independently of UI locks; counters wrap and this does
+not provide a call stack. `open` accepts only Settings, Works, Album or Weather,
+and acknowledges queue admission. Poll `status` to verify that startup completed.
 
 The pull-down always covers the whole screen. It groups Wi-Fi/Bluetooth and
 mute/vibration into a compact 2×2 block, with vertical volume and brightness

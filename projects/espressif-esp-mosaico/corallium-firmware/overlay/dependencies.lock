@@ -2104,6 +2104,7 @@ direct_dependencies:
 - espressif/esp_lv_eaf_player
 - espressif/esp_mmap_assets
 - espressif/esp_new_jpeg
+- espressif/esp_tinyusb
 - espressif/esp_websocket_client
 - espressif/gmf_io
 - espressif/ramfs
@@ -2163,6 +2164,6 @@ direct_dependencies:
 - weather_service
 - wechat_binding_service
 - wifi_manager
-manifest_hash: 172caedc6fa8b80aecca4b8d3659dd8c658d3d3a3e0882ec796a8c1b77ff7cd0
+manifest_hash: c5445b8227d623b401a15521d7cd51e2d34dbe242f5c75c444b5e27beca8371d
 target: esp32s31
 version: 3.0.0

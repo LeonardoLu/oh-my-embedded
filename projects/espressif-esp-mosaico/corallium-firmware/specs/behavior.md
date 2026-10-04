@@ -104,8 +104,65 @@ application startup. `USB_HS_CONSOLE_USB_CDC_AUTO_INIT` and its required
 `USB_HS_CONSOLE_USB_CDC_AUTO_DOWNLOAD` option are enabled. The board manager's
 `init_skip: true` remains intentional: the wrapper owns initialization. The
 vendor TinyUSB interface provides CDC diagnostics and its 303a:1001 DTR/RTS reset
-sequence for returning to the ROM downloader. This console is not advertised as
-a Corallium protocol transport; application commands use BLE.
+sequence for returning to the ROM downloader. The Corallium v1 application
+protocol remains on BLE.
+
+`MOSAICO_USB_DIAGNOSTICS` connects a separate bounded CDC input service after UI
+startup and before asynchronous association/weather work. The local-only boot
+does not invoke `app_claw_start`; its unused CLI option is disabled. Enabling the
+old Claw CLI option alone did not create an input consumer, and that REPL's UART
+selection would not select the existing TinyUSB VFS console.
+Device identity uses `esp_read_mac(..., ESP_MAC_EFUSE_FACTORY)` for the six-byte
+factory MAC. The S31 default eFuse getter can emit an eight-byte EUI-64 and must
+not receive a six-byte buffer.
+
+Diagnostic lines use `@MOSAICO <uint32-id>` followed by `ping`, `status`, `tasks`,
+`open`, `tap`, `drag`, `back`, `capture` or `abort`. Requests are limited to 128 bytes and ten commands
+per second; coordinates and gesture duration are checked before queueing.
+Responses carry the same ID and fixed result codes. Status exposes only device
+identity, UI/render counters, local control values and battery availability/
+charging state. It does not print arbitrary input, scene text or credentials.
+The host client leaves at least 120 ms after a matching response before its
+next command, accounting for USB reception timing rather than only write timing.
+Status reads do not wake the display or renew the inactivity timer. Tap, drag
+and Back use the existing UI/loader input path and count as user activity.
+The SDK can ignore injected touch while a physical contact is active; admission
+is not proof of a delivered gesture. `open` restricts names to Settings, Works,
+Album and Weather, requests activity asynchronously and submits the existing
+loader queue without waiting for screen or renderer locks. Its `admitted` result
+must be followed by a status check to establish the active application.
+
+`tasks` takes a bounded 64-slot FreeRTOS statistics snapshot independently of UI
+locks, then streams only fourteen fixed task names and scalar metadata. USB and
+formatting happen after the kernel statistics API returns. Task states and
+runtime/stack high-water counters are best-effort samples; runtime counters are
+32-bit microseconds and wrap. Pin affinity does not report the currently running
+core. No task stack, pointer or program counter is dereferenced or transmitted.
+This build explicitly reports `pc_supported=false`. Snapshot requests are limited
+to once per second, and the client waits 1020 ms after the previous task response.
+
+The pinned target uses Picolibc. Its linked `ftrylockfile` acquires the global
+libc recursive mutex, while `funlockfile` releases a distinct FILE mutex. The
+diagnostic sender therefore avoids manual stdio locking and writes bounded
+packets directly to CDC, using capacity checks, zero-wait flushes and finite
+short-write/stall handling. Console output can interleave; strict JSON framing,
+frame coverage and CRC checks reject incomplete or mixed data.
+
+An explicit awake-GSP capture assembles real RGB565 tiles from the device's
+presenter submission path. It uses a temporary PSRAM frame, requires full tile
+coverage and a completed presentation fence, and releases UI locks before USB
+transfer. UI locking, pause and flush share a finite budget. A successful copy
+restores rendering before transfer, but the SDK resume call has no caller-set
+deadline; a failed resume retains its token for recovery on subsequent input.
+The frame is transferred with bounds and per-block/whole-frame CRC checks. This observes the
+pixels submitted by the device firmware, not an optical photograph or panel
+GRAM readback. Sleeping screens and other presenter owners are rejected rather
+than replaced with host-generated images. Global INFO logging remains unchanged;
+diagnostic counters provide observability without enabling verbose library logs.
+Capture failures identify the stage and time spent pausing. A transparent
+presenter-quiesce probe distinguishes failure before entering presenter fences
+from a fence error; it neither changes SDK waits nor treats failed capture as an
+accepted frame.
 
 [Root v1 protocol](../../../../protocols/corallium-v1/README.md) is authoritative.
 BLE defaults off. Settings → Bluetooth, the Bluetooth tile or a 500 ms top-key hold

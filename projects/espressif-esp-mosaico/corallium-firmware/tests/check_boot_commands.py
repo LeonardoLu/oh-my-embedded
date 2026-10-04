@@ -17,6 +17,10 @@ assert boot.index("corallium_restore_switch()") < boot.index("mosaic_ui_start()"
 assert boot.index("network_provisioning_service_start(network)") < boot.index("mosaic_ui_start()")
 assert boot.index("mosaic_ui_start()") < boot.index("wifi_manager_start_prepared()")
 assert boot.index("mosaic_ui_start()") < boot.index("weather_service_start()")
+assert boot.index("mosaic_ui_start()") < boot.index("mosaico_diagnostics_platform_start(settings)")
+assert boot.index("mosaic_settings_platform_start_battery_monitor()") < boot.index("mosaico_diagnostics_platform_start(settings)")
+assert boot.index("mosaico_diagnostics_platform_start(settings)") < boot.index("wifi_manager_start_prepared()")
+assert "app_claw_start(" not in boot
 assert "wifi_manager_wait_connected(" not in boot
 for name in ("wifi_manager_start", "wifi_manager_start_prepared"):
     body = source.split("esp_err_t " + name + "(", 1)[1].split("\n}", 1)[0]

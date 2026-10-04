@@ -25,3 +25,7 @@ CONFIG_BT_MULTI_CONNECTION_ENBALE=n
 # The Type-C application console requires the factory TinyUSB app_main wrapper.
 CONFIG_USB_HS_CONSOLE_USB_CDC_AUTO_DOWNLOAD=y
 CONFIG_USB_HS_CONSOLE_USB_CDC_AUTO_INIT=y
+# A bounded CDC input service supports actual-device UI diagnostics. The full
+# Claw REPL is unused by this local-only startup and must not imply USB input.
+CONFIG_MOSAICO_USB_DIAGNOSTICS=y
+CONFIG_APP_CLAW_ENABLE_CLI=n

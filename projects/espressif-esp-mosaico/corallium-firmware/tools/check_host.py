@@ -28,8 +28,12 @@ run([compiler, *flags, "-I", PROJECT / "overlay/components/mosaic_ui/common",
      PROJECT / "tests/test_weather_art.c", "-o", output / "test-weather-art"])
 run([output / "test-weather-art"])
 run([sys.executable, PROJECT / "tests/test_scene_resource_refs.py"])
+run([sys.executable, PROJECT / "tests/test_device_diagnostics.py"])
+run([sys.executable, PROJECT / "tests/check_diagnostics.py"])
 if args.upstream:
     upstream = args.upstream.resolve()
+    run([sys.executable, PROJECT / "tests/test_ui_diagnostics.py", "--upstream", upstream])
+    run([sys.executable, PROJECT / "tests/check_diagnostics_open.py", upstream])
     cjson = upstream / "managed_components/espressif__cjson/cJSON"
     if not (cjson / "cJSON.c").is_file():
         raise SystemExit("Run firmware dependency configuration first; cJSON test source is unavailable.")
