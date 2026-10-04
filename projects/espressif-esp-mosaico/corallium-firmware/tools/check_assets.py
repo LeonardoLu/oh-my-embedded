@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate generated font references and the exact assets packed for flashing."""
+"""Validate all scene resources and the exact assets packed for flashing."""
 import argparse
 from pathlib import Path
 import struct
@@ -9,7 +9,7 @@ import sys
 PROJECT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(PROJECT / "overlay/components/mosaic_ui/common"))
-from check_font_refs import require, validate_bundle
+from check_font_refs import require, validate_bundle, validate_scene_resources
 
 
 def mmap_files(data):
@@ -43,6 +43,7 @@ def main():
     intermediate = sorted(p for p in generated.glob("*/*.gspb") if p.parent.name != "linked")
     require(bool(intermediate), "No generated application bundles")
     original_refs = sum(validate_bundle(p.read_bytes(), name=str(p)) for p in intermediate)
+    original_images = sum(validate_scene_resources(p.read_bytes(), str(p)) for p in intermediate)
 
     packed = mmap_files((build / "mmap_build/ui_apps/ui_apps/ui_apps.bin").read_bytes())
     staged = {p.name: p.read_bytes() for p in (assets / "ui_apps").iterdir() if p.is_file()}
@@ -50,8 +51,10 @@ def main():
     catalog = packed["common-fonts.gspb"]
     final_refs = sum(validate_bundle(data, catalog, name) for name, data in packed.items()
                      if name.endswith(".gspb") and name != "common-fonts.gspb")
-    print(f"PASS: {len(intermediate)} original bundles / {original_refs} font references")
-    print(f"PASS: {len(packed)} packed assets match staging; {final_refs} font references resolve in the flash image")
+    final_images = sum(validate_scene_resources(data, name) for name, data in packed.items()
+                       if name.endswith(".gspb") and name != "common-fonts.gspb")
+    print(f"PASS: {len(intermediate)} original bundles / {original_refs} font references / {original_images} image/vector references")
+    print(f"PASS: {len(packed)} packed assets match staging; {final_refs} font and {final_images} image/vector references resolve in the flash image")
     subprocess.run([sys.executable, str(Path(__file__).with_name("check_system_assets.py")),
                     "--build", str(build)], check=True)
 

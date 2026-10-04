@@ -6,6 +6,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import xml.etree.ElementTree as ET
 
 from PIL import Image, ImageChops, ImageFont
 
@@ -17,11 +18,16 @@ def load_module(name, path):
     return module
 
 
+def pixels(image):
+    return getattr(image, "get_flattened_data", image.getdata)()
+
+
 def decode_qoi(data):
     assert data[:4] == b"qoif"
     width = int.from_bytes(data[4:8], "big")
     height = int.from_bytes(data[8:12], "big")
-    assert data[12] == 3 and data[-8:] == b"\0\0\0\0\0\0\0\1"
+    channels = data[12]
+    assert channels in (3, 4) and data[-8:] == b"\0\0\0\0\0\0\0\1"
     index = [(0, 0, 0, 0)] * 64
     pixel = (0, 0, 0, 255)
     pixels = []
@@ -50,14 +56,14 @@ def decode_qoi(data):
                      (pixel[2] + green_delta + (second & 15) - 8) & 255,
                      pixel[3])
         else:
-            pixels.extend([pixel[:3]] * ((command & 63) + 1))
+            pixels.extend([pixel[:channels]] * ((command & 63) + 1))
             continue
         slot = sum(value * weight for value, weight in
                    zip(pixel, (3, 5, 7, 11))) % 64
         index[slot] = pixel
-        pixels.append(pixel[:3])
+        pixels.append(pixel[:channels])
     assert len(pixels) == width * height
-    return Image.frombytes("RGB", (width, height),
+    return Image.frombytes("RGB" if channels == 3 else "RGBA", (width, height),
                            bytes(value for pixel in pixels for value in pixel))
 
 
@@ -104,14 +110,22 @@ def main():
     assert not any(obj.get("type") == "dropdown" for obj in objects)
     for name in ("rotation", "screen_timeout", "dim_timeout", "poweroff_timeout"):
         control = by_name[f"settings_{name}_selector"][1]
-        chevrons = [obj for obj in objects if obj.get("type") == "shape"
-                    and obj.get("parent") == control["parent"]
-                    and obj.get("y") == control["y"] + 20]
-        assert len(chevrons) == 2
-        assert all(control["x"] < obj["x"] and
-                   obj["x"] + obj["w"] < control["x"] + control["w"] and
-                   obj["y"] + obj["h"] < control["y"] + control["h"]
-                   for obj in chevrons)
+        chevron = by_name[f"settings_{name}_chevron"][1]
+        assert chevron["parent"] == control["parent"]
+        assert control["x"] < chevron["x"]
+        assert chevron["x"] + chevron["w"] < control["x"] + control["w"]
+        assert control["y"] < chevron["y"]
+        assert chevron["y"] + chevron["h"] < control["y"] + control["h"]
+        assert chevron["fit"] == "stretch" and chevron["svg_layout"] == "canvas"
+        svg = ET.parse(scene_dir / chevron["image"]).getroot()
+        path = svg.find("{http://www.w3.org/2000/svg}path")
+        assert path.get("id") == chevron["svg_element"]
+        assert path.get("stroke-linejoin") == path.get("stroke-linecap") == "round"
+        coords = [float(value) for value in re.findall(r"[\d.]+", path.get("d"))]
+        xs, ys = coords[::2], coords[1::2]
+        radius = float(path.get("stroke-width")) / 2
+        assert min(xs) - radius >= 4 and max(xs) + radius <= chevron["w"] - 4
+        assert min(ys) - radius >= 4 and max(ys) + radius <= chevron["h"] - 4
     for name in ("dim_while_charging", "sleep_while_charging"):
         row = by_name[f"settings_{name}"][1]
         assert row["parent"] == content_index
@@ -129,6 +143,17 @@ def main():
     assert ble["events"][0]["target_name"] == "settings_bluetooth_toggle"
     assert 'SETTINGS_ROOT_ROW("Corallium", corallium)' in source
     assert 'SETTINGS_ROOT_ROW("Bluetooth", bluetooth)' in source
+    assert source.count("esp_gsp_component_set_checked(") == 1
+    for key in ("BLUETOOTH_ENABLED", "WLAN_ENABLED", "WLAN_AUTO_JOIN",
+                "NOTIFICATION_SOUND", "DIM_WHILE_CHARGING", "SLEEP_WHILE_CHARGING"):
+        assert re.search(r"settings_set_toggle\(\s*ui,\s*GSP_OBJ_KEY_SETTINGS_" + key,
+                         source), key
+    placeholder = Image.open(scene_dir / scene.ROOT_DYNAMIC_PLACEHOLDER)
+    assert placeholder.size == (48, 48) and placeholder.mode == "RGBA"
+    # Preserve a local alpha-bearing template. Runtime decoding inherits this
+    # format, so an opaque RGB fallback would discard all uploaded mask alpha.
+    assert placeholder.getchannel("A").getextrema() == (0, 1)
+    assert by_name["settings_root_row_icon"][1]["image"] == scene.ROOT_DYNAMIC_PLACEHOLDER
 
     header = (app / "settings_root_icon_data.h").read_text()
     tiles = {}
@@ -136,10 +161,18 @@ def main():
             r"settings_root_icon_(\w+)\[\] = \{(.*?)\};", header, re.S):
         data = bytes(int(byte, 16) for byte in re.findall(r"0x([0-9a-f]{2})", encoded))
         tile = decode_qoi(data)
-        assert tile.size == (48, 48)
-        bounds = ImageChops.difference(tile, Image.new("RGB", tile.size)).getbbox()
+        assert tile.size == (48, 48) and tile.mode == "RGBA"
+        alpha = tile.getchannel("A")
+        bounds = alpha.getbbox()
         assert bounds and min(bounds[:2]) >= 7
         assert max(bounds[2:]) <= 41, (name, bounds)
+        assert all(value == 0 for value in pixels(alpha.crop((0, 0, 48, 7))))
+        # Runtime icons must blend over a row's press/selection background.
+        backdrop = Image.new("RGBA", tile.size, (41, 41, 43, 255))
+        composite = Image.alpha_composite(backdrop, tile)
+        assert composite.getpixel((0, 0)) == backdrop.getpixel((0, 0)), name
+        assert not any(red == green == blue == 0 and opacity for
+                       red, green, blue, opacity in pixels(tile)), name
         tiles[name] = tile
     assert set(tiles) == set(icons.ICONS)
     assert ImageChops.difference(tiles["corallium"], tiles["network"]).getbbox()
@@ -147,12 +180,14 @@ def main():
     assert all(red == green == blue for red, green, blue, alpha in
                getattr(protocol, "get_flattened_data", protocol.getdata)()
                if alpha)
-    # Opaque black cutouts in vendor PNGs must remain empty after tinting.
+    # Opaque black cutouts in retained vendor PNGs must stay empty after tinting.
     about_mask = icons.padded_tint_icon(Image.open(scene_dir / "settings_root_about.png"))
     alpha = about_mask.getchannel("A")
     bounds = alpha.getbbox()
     center = ((bounds[0] + bounds[2]) // 2, (bounds[1] + bounds[3]) // 2)
     assert alpha.getpixel(center) < 255, "About icon lost its information cutout"
+    about = tiles["about"].getchannel("A")
+    assert about.getpixel((17, 24)) == 0, "About ring's negative space became opaque"
     assert by_name["settings_root_row_icon"][1]["fit"] == "contain"
 
     # Back and WLAN-state icons must also fit their authored image slots.

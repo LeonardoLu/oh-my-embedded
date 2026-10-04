@@ -1,8 +1,7 @@
 # Corallium for ESP-Mosaico
 
 Factory-firmware derivative with a compact control center, configurable display
-idle policy, a dot-matrix weather widget and local Works/Lab apps, including two
-fluid simulations. Corallium BLE provisioning, offline app time synchronization
+idle policy, a dot-matrix weather widget and official local Works/Lab apps. Corallium BLE provisioning, offline app time synchronization
 and battery power/runtime telemetry are retained. Official update checking and
 upgrade entries are removed; About still shows the installed version.
 See [behavior and limits](specs/behavior.md). The connected board identifies as
@@ -64,9 +63,8 @@ does not authorize replacing an unidentified attached device.
 
 ## Checks and measurements
 
-Host checks require Python 3, Clang with AddressSanitizer/UBSan, and Lua 5.4 or
-newer available as `lua` on PATH. Scene generation uses the prepared project's
-`requirements.txt` dependencies.
+Host checks require Python 3, CMake and Clang with AddressSanitizer/UBSan.
+Scene generation uses the prepared project's `requirements.txt` dependencies.
 
 ```sh
 python3 projects/espressif-esp-mosaico/corallium-firmware/tools/check_host.py
@@ -78,19 +76,19 @@ python3 projects/espressif-esp-mosaico/corallium-firmware/tools/analyze_performa
 
 Host checks cover protocol framing/validation, failed persistence, saved local
 states, asynchronous boot ordering, charging telemetry, display idle stages and
-brightness restoration. The exact shipped Lua simulations are exercised for
-numerical bounds, touch, pause and exit cleanup. With `--upstream`, the bundled
-Lua runtime is also tested in its firmware float32/int32 mode, including
-millisecond-counter wrap. Generated scene checks cover
+brightness restoration. Generated scene checks cover
 safe icon padding, Display scrolling/choosers, the independent Bluetooth route,
 compact control hit regions and Home navigation.
+The native Settings regression executes the actual C row binder and state setters
+through the pinned GSP simulator, checking RGBA uploads on a gray background,
+row recycling, font-linked alpha, orange switch tracks and complete SVG chevrons.
 Removed controls have hidden ancestors and no touchable route. Update navigation
 and actions are absent; the linked-firmware check rejects the vendor updater and
 official manifest URL.
-It also parses actual compiled font references and the MMAP flash image, rejecting
-wrong font ordinals, missing catalog members and stale staged resources. The
+It parses actual compiled font, bitmap and SVG references plus the MMAP flash
+image, rejecting wrong font ordinals, missing resources and stale staged content. The
 packed SYSTEM filesystem is checked against staging, including Works launchers
-and the shipped fluid Lua sources.
+and the absence of removed simulation resources.
 
 For BLE, use Settings → Bluetooth, toggle the Bluetooth tile or hold the top key
 for 500 ms. The device advertises as ESP-Mosaico until switched off; its switch
@@ -100,8 +98,10 @@ JSONL, including Wi-Fi credentials, is transmitted in plaintext. Passwords remai
 excluded from responses and logs. [Validation scope](specs/validation.md) records actual
 evidence and remaining hardware checks.
 
-The pull-down groups Wi-Fi/Bluetooth and mute/vibration into a compact 2×2 block,
-with vertical volume and brightness sliders beside it. Volume release and unmute
+The pull-down always covers the whole screen. It groups Wi-Fi/Bluetooth and
+mute/vibration into a compact 2×2 block, with vertical volume and brightness
+sliders beside it. Both widget backgrounds are 220 pixels high. Slider icons
+and percentages remain; explanatory labels are removed. Volume release and unmute
 play a short local confirmation; startup stays silent. Muting and the prior
 volume survive restart. Settings has separate Bluetooth, Battery, Corallium
 protocol and About entries. Display defaults to dimming after 10 seconds and
@@ -110,8 +110,8 @@ whole-device auto power-off defaults to Never. See the behavior spec for timeout
 choices and presenter/charging limits.
 
 Home's first page provides Settings, Works and Album. Its weather card opens
-Weather and replaces the analog clock with the latest weather symbol rendered
-as dots; fresh precipitation symbols animate while visible. Saved controls appear
+Weather and replaces the analog clock with Weather's exact dot illustrations
+and shared condition selection. Saved controls appear
 before asynchronous Wi-Fi association and weather fetching. Works provides Lab,
-Recent and Installed views; Lab contains Dino, Flappy Bird, Fluid and Dot Fluid.
+Recent and Installed views; Lab contains the official Dino and Flappy Bird games.
 The local Lua runtime starts on first opening Works.

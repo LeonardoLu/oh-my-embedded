@@ -25,6 +25,12 @@ def main():
     assert 0 <= status["y"] < status["y"] + status["h"] <= header_h
 
     smallest_gap = panel["y"]
+    home_dir = ui / "hub/scene"
+    home = json.loads((home_dir / "mosaic_hub_480.json").read_text())["objects"]
+    home_names = {obj["name"]: obj for obj in home if obj.get("name")}
+    card = home_names["clock_card"]
+    text_right = max(home_names[name]["x"] + home_names[name]["w"]
+                     for name in ("home_weather_temp", "home_weather_desc", "home_weather_city"))
     for name in ("overcast", "sunny", "cloudy", "snow", "windy", "thunder"):
         artwork = by_name[f"weather_art_{name}"]
         icon = by_name[f"weather_{name}_image"]
@@ -47,6 +53,30 @@ def main():
         assert status["y"] + status["h"] <= ink[1], (name, ink)
         smallest_gap = min(smallest_gap, panel["y"] - ink[3])
 
+        home_art = home_names[f"home_weather_art_{name}"]
+        home_icon = home_names[f"home_weather_{name}_image"]
+        assert home[home_icon["parent"]] is home_art
+        assert home_art["clip_children"] and home_icon["fit"] == icon["fit"]
+        # Both packages must use the same original file at the same native
+        # scale, rather than approximating the dots or making a second bitmap.
+        assert (home_dir / home_icon["image"]).resolve() == (scene_dir / icon["image"]).resolve()
+        assert (home_icon["w"], home_icon["h"]) == (icon["w"], icon["h"])
+        hx = home_art["x"] + home_icon["x"]
+        hy = home_art["y"] + home_icon["y"]
+        home_ink = (math.floor(hx + box[0] * scale) - 1,
+                    math.floor(hy + box[1] * scale) - 1,
+                    math.ceil(hx + box[2] * scale) + 1,
+                    math.ceil(hy + box[3] * scale) + 1)
+        assert home_art["x"] <= home_ink[0] and home_ink[2] <= home_art["x"] + home_art["w"], (name, home_ink)
+        assert home_art["y"] <= home_ink[1] and home_ink[3] <= home_art["y"] + home_art["h"], (name, home_ink)
+        assert text_right + 8 <= home_ink[0], (name, home_ink)
+        assert card["x"] + 8 <= home_ink[0] and home_ink[2] <= card["x"] + card["w"] - 8
+        assert card["y"] + 8 <= home_ink[1] and home_ink[3] <= card["y"] + card["h"] - 8
+
+    for source_path in (ui / "hub/mosaic_hub_app.c", ui / "apps/weather/weather_app.c"):
+        assert '"mosaic_weather_art.h"' in source_path.read_text()
+        assert "mosaic_weather_art_select(" in source_path.read_text()
+
     # The native shell uses an A8 asset rather than the scene's font catalog.
     titles = (ui / "common/mosaic_app_shell_titles.c").read_text()
     entry = re.search(
@@ -64,7 +94,7 @@ def main():
     assert title_y + height <= header_h
     assert title_x + width + 16 <= status["x"], "Weather title/status overlap"
     print(f"PASS: six Weather masks keep at least {smallest_gap} px from card; "
-          f"{width}x{height} native title and status fit header")
+          f"{width}x{height} native title and status fit header; Home uses identical art and scale")
 
 
 if __name__ == "__main__":

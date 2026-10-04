@@ -12,34 +12,47 @@ components and legacy scene binding definitions remain private dependencies;
 this patch does not claim to purge every inactive library/asset from flash.
 
 Home opens Weather when its weather card is tapped. The card's analog clock is
-replaced by a dot-matrix symbol for the latest weather snapshot, including
-day/night variants and an unavailable symbol. Fresh precipitation animates only
-while Home is visible; stale data remains static. Weather refreshes hourly and
-is marked stale after six hours, so the symbol does not imply a live sensor.
+replaced by Weather's exact six original dot illustrations, with the same
+240×240 image scale and shared single-layer selection. Combined precipitation
+symbols select one illustration; night symbols use the factory art's daytime
+fallback. Missing data shows overcast art with unavailable text, and stale data
+keeps its last illustration. Weather refreshes hourly and is marked stale after
+six hours, so the picture does not imply a live sensor.
 Settings, Works and Album shortcuts occupy the first page. The adjacent launcher
 retains Settings, IMU, Album, Bricks, Weather and Works. The interaction-board
 page is removed.
 
-Pull-down buttons form a 2×2 block: Wi-Fi/Bluetooth, then mute/vibration. The
-220×220 block occupies less than one quarter of the 480×480 screen. Buttons
-contain centered icons; vertical volume and brightness sliders, labels and
-values sit beside the block. Music player, L/R slots and unsupported
+The pull-down has an opaque 480×480 background independent of its internal
+components. Buttons form a 2×2 block: Wi-Fi/Bluetooth, then mute/vibration.
+Both widget backgrounds are 220×220 and align at the same top edge.
+The button block occupies less than one quarter of the screen. Buttons
+contain centered icons; vertical volume and brightness sliders use embedded
+icons and percentage values beside the block, with no explanatory text labels.
+Music player, L/R slots and unsupported
 interconnect/low-power controls have no visible or touchable route.
 Hidden offscreen ancestor nodes preserve generated factory accessor ABI.
+Small drawer glyphs use uncompressed RGB565+A8 resources, preserving their
+transparent padding while bypassing the compressed image decoder. Button
+glyphs are white in both states; slider glyphs retain the factory orange.
 
 Scene bundles preserve the compiler's numeric font ordinals: `font10` follows
 `font9`. Each generated GSB font reference must match the GFB at that bundle
 ordinal, or resolve to the shared catalog when externalized. Build checks reject
 a font that exists at the wrong ordinal and verify the final MMAP flash image
-contains the validated assets. Fixed render policies use GSP's external override
+contains the validated assets. Bitmap and SVG refs must also resolve to the
+bundle's shared GRB bank; Settings bundles the main scene's complete bank to
+include its authored SVG variants. Fixed render policies use GSP's external override
 table, leaving its eight inline slots for per-app capacities.
 
 Settings root exposes Network, Bluetooth, Display, Battery, Corallium and About.
 Claw/AI/IM/security integration rows are removed from the root mapping. Network's
 Wi-Fi password page has no Bluetooth action; the persistent BLE switch has its
-own Bluetooth page. Root icons use padded tint masks, including a distinct
-Corallium protocol icon. Display selectors use inset native stroke chevrons and a
-separate chooser within a scrollable page, avoiding glyph/row-edge clipping.
+own Bluetooth page. Checked switches use the same orange track, including when
+the saved value is applied after creation. Root icons use padded RGBA tint masks,
+including a distinct Corallium protocol icon. Their local placeholder retains
+alpha in the compiled template, so runtime uploads do not acquire an opaque
+rectangle. Display selectors use a continuous, padded SVG chevron and a separate
+chooser within a scrollable page, keeping stroke endpoints inside the image.
 Weather's detail page separates its header condition text from the main artwork
 and keeps the artwork's visible extent above the forecast cards.
 About retains the locally installed firmware version and hardware identity;
@@ -74,19 +87,15 @@ queue copying. Startup therefore neither restores a stale pre-UI enable choice
 nor refers to a caller's expired credential storage.
 
 Works is restored with Lab, Recent and Installed views. Lab contains the factory
-Dino and Flappy Bird games plus Fluid and Dot Fluid. Installed enumerates the
-local app catalog; Recent records launched apps in local storage. The runtime
+Dino and Flappy Bird games. Installed enumerates the local app catalog; Recent records launched apps in local storage. The runtime
 and required Lua capabilities initialize lazily on first opening Works, without
 starting Claw/AI, cloud authentication or an HTTP configuration portal.
 The local bootstrap also initializes the empty tagged-lease registry used by
 Lua job cleanup; it does not start a hardware bridge or acquire device leases.
 
-Fluid simulates a continuous liquid field; Dot Fluid displays interacting
-particles as dots. Both use the factory RAW display presenter, support touch
-interaction, Reset, Pause/Play and Quit, and release the owning Lua job/display
-on Quit, physical Back, stop or an eligible idle deadline. Their numerical
-models are interactive visual simulations, with no claim of calibrated physics
-or measured device frame rate.
+The experimental Fluid, Dot Fluid and Liquid Toy apps are removed: device
+feedback found their motion too slow and their appearance unsuitable. Their
+private solvers, Lua modules, gravity provider and app assets are not shipped.
 
 ## Connections
 
@@ -102,7 +111,8 @@ a Corallium protocol transport; application commands use BLE.
 BLE defaults off. Settings → Bluetooth, the Bluetooth tile or a 500 ms top-key hold
 changes the switch; successful changes persist before runtime state changes.
 Startup restores the saved switch, factory reset clears it, and there is no
-connection deadline. Disconnection resumes advertising while enabled. The pull-down Bluetooth icon stays grey while off and orange while enabled.
+connection deadline. Disconnection resumes advertising while enabled. The pull-down Bluetooth tile
+is charcoal while off and orange while enabled, with a white glyph in both states.
 A non-interactive lower-right `1` badge appears only while its single supported
 peer is connected; disconnect hides the badge without changing the enabled
 color. The broadcast name is ESP-Mosaico. Corallium branding belongs to the
@@ -194,25 +204,20 @@ discharging cell may therefore report no charging. Missing gauge samples block
 auto power-off. The default Never avoids inferring external-power presence.
 
 Foreign RAW/LVGL presenter ownership defers GSP dimming, panel-off and shutdown.
-The two new fluid jobs cooperate by recording actual touches and closing RAW
-at the eligible screen-off or power-off deadline; GSP then applies the elapsed
-policy safely. RAW dimming is deferred until that return. Legacy Dino/Flappy
-RAW jobs and Album's LVGL presenter do not yet cooperate with idle deadlines;
-their idle effects apply after returning to GSP. The firmware does not pause
-the panel underneath a foreign owner.
+Dino/Flappy RAW jobs and Album's LVGL presenter do not cooperate with idle
+deadlines; their idle effects apply after returning to GSP. The firmware does
+not pause the panel underneath a foreign owner.
 
 GSP active tick is 16 ms, pointer poll 8 ms, idle poll 50 ms, and transition snapshots
 are enabled. These are scheduling targets, not measured FPS. Hub dispatcher polling
 relaxes from 16 to 50 ms after two seconds without commands; foreground applications
 retain 16 ms ticks. Unchanged status/AOD minute/date text is cached rather than
 rerasterized each second, reducing stable text update batches from 60 to 1 per
-minute. The Home weather Canvas uses two borrowed RGB565 buffers with release
-callbacks; producers only write a free buffer. The bounded pair is retained for
-Hub reuse even when a stop/fence fails, avoiding an unfenced free. At 169×169,
-the pair occupies about 112 KiB. Canvas updates are nonblocking and hidden-page,
-drawer and lock visibility gates suppress precipitation animation. Its nominal
-phase interval is 400 ms, not an observed animation rate. Removed controls also
-reduce visible scene work.
+minute. Home reuses Weather's static image assets and changes visibility only
+when applying a staged snapshot. There is no independent weather drawing,
+Canvas producer, borrowed frame pair or precipitation timer. The complete
+painted masks fit the Home card and remain clear of the text. Removed controls
+also reduce visible scene work.
 
 Optional `CONFIG_CORALLIUM_PERF_LOG` records native rendered-frame counts and
 busy microseconds every five seconds. Use the same gestures, brightness, power

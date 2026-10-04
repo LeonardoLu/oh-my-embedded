@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import re
-import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -25,13 +24,10 @@ run([output / "test-core"])
 run([compiler, *flags, "-I", PROJECT / "tests/audio_stubs", "-I", PROJECT / "overlay/components/mosaico_audio/include",
      PROJECT / "tests/test_audio.c", PROJECT / "overlay/components/mosaico_audio/mosaico_audio.c", "-o", output / "test-audio"])
 run([output / "test-audio"])
-run([compiler, *flags, "-I", PROJECT / "overlay/components/mosaic_ui/hub",
-     PROJECT / "tests/test_weather_dots.c", "-o", output / "test-weather-dots"])
-run([output / "test-weather-dots"])
-lua = shutil.which("lua")
-if lua is None:
-    raise SystemExit("Lua 5.4+ is required for the shipped fluid simulations' numerical/lifecycle checks.")
-run([lua, PROJECT / "tests/test_fluid.lua"])
+run([compiler, *flags, "-I", PROJECT / "overlay/components/mosaic_ui/common",
+     PROJECT / "tests/test_weather_art.c", "-o", output / "test-weather-art"])
+run([output / "test-weather-art"])
+run([sys.executable, PROJECT / "tests/test_scene_resource_refs.py"])
 if args.upstream:
     upstream = args.upstream.resolve()
     cjson = upstream / "managed_components/espressif__cjson/cJSON"
@@ -54,8 +50,6 @@ if args.upstream:
          upstream / "components/app_settings_service/app_settings_service.c",
          "-o", output / "test-display-idle"])
     run([output / "test-display-idle"])
-    run([sys.executable, PROJECT / "tests/check_fluid_runtime.py", "--lua-component",
-         upstream / "managed_components/georgik__lua", "--sanitize"])
     run([sys.executable, upstream / "components/mosaic_ui/hub/scene/gen_scenes.py"])
     scene = json.loads((upstream / "components/mosaic_ui/hub/scene/mosaic_hub_480.json").read_text())
     objects = scene["objects"]
@@ -114,10 +108,8 @@ if args.upstream:
     controls = objects[group]
     assert controls["w"] == controls["h"] == 220
     assert controls["w"] * controls["h"] <= 480 * 480 / 4
-    visual = next(o for o in objects if o.get("name") == "home_weather_visual")
-    assert visual["w"] == visual["h"] == 169 and visual["bind"] == "home_weather_visual"
     assert not any(o.get("name", "").startswith("home_clock") for o in objects)
-    print("Factory scene: Settings/Works/Album Home, weather Canvas, compact icons, hit regions and one-peer badge verified")
+    print("Factory scene: Settings/Works/Album Home, compact icons, hit regions and one-peer badge verified")
     run([sys.executable, upstream / "components/mosaic_ui/apps/settings/scene/gen_scene.py"])
     settings = json.loads((upstream / "components/mosaic_ui/apps/settings/scene/settings_480.json").read_text())
     for obj in settings["objects"]:
@@ -135,8 +127,15 @@ if args.upstream:
         labels = re.findall(r'\{"([^"]+)"', source.split(array + "[] = {", 1)[1].split("};", 1)[0])
         assert all(font.getlength(label) <= 180 for label in labels), f"{array} label exceeds its actual column"
     run([sys.executable, PROJECT / "tests/test_settings_scene.py", "--upstream", upstream])
+    from gsp.execute import executable_from_environment
+    version = (upstream / "managed_components/espressif__esp-gsp/.gspc_version").read_text().strip()
+    gspc = executable_from_environment("gspc", version=version)
+    run([sys.executable, PROJECT / "tests/test_settings_native.py", "--upstream", upstream,
+         "--gspc", gspc, "--output", output / "settings-native"])
+    run([sys.executable, PROJECT / "tests/test_hub_drawer.py", "--upstream", upstream,
+         "--gspc", gspc, "--output", output / "hub-drawer"])
     run([sys.executable, upstream / "components/mosaic_ui/apps/weather/scene/gen_scene.py"])
     run([sys.executable, PROJECT / "tests/test_weather_scene.py", "--upstream", upstream])
     print("Settings scene: updater absent; separate protocol/Bluetooth routes; battery labels fit actual font")
 else:
-    print("Protocol/scene checks require --upstream with configured factory checkout.")
+    print("Protocol and scene checks require --upstream with configured factory checkout.")

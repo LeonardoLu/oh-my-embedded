@@ -25,6 +25,7 @@ def main():
         return
 
     from littlefs import LittleFS, UserContext
+    from littlefs.errors import LittleFSError
     image = (build / "system.bin").read_bytes()
     assert len(image) % 4096 == 0
     context = UserContext(len(image))
@@ -43,17 +44,29 @@ def main():
     for path in (PROJECT / "overlay/fatfs_image/system").rglob("*"):
         if path.is_file():
             relative = path.relative_to(PROJECT / "overlay/fatfs_image/system")
-            assert (staging / relative).read_bytes() == path.read_bytes(), f"Stale fluid staging: {relative}"
-    for app in ("dino", "flappybird", "album_app", "fluid_liquid", "fluid_particles"):
+            assert (staging / relative).read_bytes() == path.read_bytes(), f"Stale SYSTEM staging: {relative}"
+    for app in ("dino", "flappybird", "album_app"):
         with filesystem.open(f"/apps/{app}/launcher.json", "r") as launcher:
             descriptor = json.load(launcher)
         assert descriptor["id"] == app and descriptor.get("visible", True)
         with filesystem.open(f"/apps/{app}/{descriptor['entry']}", "rb") as script:
             assert script.read(), f"Empty Works entry: {app}"
+    removed = ("apps/fluid_liquid", "apps/fluid_particles", "apps/fluid_toy",
+               "scripts/builtin/lib/corallium_fluid.lua",
+               "scripts/builtin/lib/corallium_fluid_app.lua",
+               "scripts/builtin/lib/corallium_fluid_reference_licenses.txt")
+    for relative in removed:
+        assert not (staging / relative).exists(), f"Removed resource still staged: {relative}"
+        try:
+            filesystem.stat("/" + relative)
+        except LittleFSError as error:
+            assert error.code == LittleFSError.Error.LFS_ERR_NOENT, error
+        else:
+            raise AssertionError(f"Removed resource still packed: {relative}")
     registry = (build / "esp-idf/mosaic_ui/generated/mosaic_app_registry.c").read_text()
     assert "&mosaic_works_app," in registry
     filesystem.unmount()
-    print(f"PASS: {len(paths)} SYSTEM files match packed image; Works launchers and latest fluid sources included")
+    print(f"PASS: {len(paths)} SYSTEM files match packed image; official Works launchers present; removed simulations absent")
 
 
 if __name__ == "__main__":
