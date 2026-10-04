@@ -1,11 +1,24 @@
 /* Run the real Settings binder and state setters through ESP-GSP's C bridge. */
 #include "gsp_sim_bridge.h"
 #include "settings_objects.h"
+#undef NDEBUG
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static bool s_bluetooth_enabled;
+static bool s_capture_probe;
+static unsigned s_capture_refreshes;
+static unsigned s_snapshot_calls;
+static unsigned s_control_writes;
+
+static esp_gsp_err_t native_list_refresh(esp_gsp_handle_t ui,
+    esp_gsp_list_t list)
+{
+    if (s_capture_probe) ++s_capture_refreshes;
+    return esp_gsp_list_refresh(ui, list);
+}
 
 static bool settings_native_bluetooth_enabled(void)
 {
@@ -31,13 +44,16 @@ static esp_gsp_err_t native_poweroff_label(esp_gsp_handle_t ui,
 
 #define gsp_settings_settings_bluetooth_status_set_text native_bluetooth_status
 #define gsp_settings_settings_poweroff_timeout_value_set_text native_poweroff_label
+#define esp_gsp_list_refresh native_list_refresh
 #include SETTINGS_APP_SOURCE
 #undef gsp_settings_settings_bluetooth_status_set_text
 #undef gsp_settings_settings_poweroff_timeout_value_set_text
+#undef esp_gsp_list_refresh
 
 static unsigned s_ticks;
 static uint32_t s_poweroff_timeout;
 static unsigned s_display_input;
+static bool s_capture_refresh;
 
 int64_t esp_timer_get_time(void)
 {
@@ -53,6 +69,7 @@ const char *esp_err_to_name(esp_err_t err)
 static esp_err_t snapshot(void *ctx, mosaic_settings_snapshot_t *out)
 {
     (void)ctx;
+    ++s_snapshot_calls;
     memset(out, 0, sizeof(*out));
     out->brightness = 80;
     out->volume = 80;
@@ -69,6 +86,7 @@ static esp_err_t rotation(void *ctx, uint16_t value)
 {
     (void)ctx;
     (void)value;
+    ++s_control_writes;
     return ESP_OK;
 }
 
@@ -77,18 +95,21 @@ static esp_err_t level(void *ctx, int value, bool persist)
     (void)ctx;
     (void)value;
     (void)persist;
+    ++s_control_writes;
     return ESP_OK;
 }
 
 static esp_err_t network(void *ctx)
 {
     (void)ctx;
+    ++s_control_writes;
     return ESP_OK;
 }
 
 static esp_err_t poweroff_timeout(void *ctx, uint32_t timeout_ms)
 {
     (void)ctx;
+    ++s_control_writes;
     s_poweroff_timeout = timeout_ms;
     fprintf(stderr, "native Power-off saved=%u\n", (unsigned)timeout_ms);
     return ESP_OK;
@@ -149,6 +170,32 @@ static void tick(esp_gsp_handle_t ui, void *ctx)
         .timestamp_us = esp_timer_get_time(),
     };
     mosaic_settings_app.on_event(ui, &input);
+    if (s_capture_refresh && s_ticks == 80) {
+        uint16_t page_before = UINT16_MAX;
+        assert(esp_gsp_stack_view_get_top(ui, GSP_OBJ_KEY_SETTINGS_STACK,
+            &page_before) == ESP_GSP_OK);
+        unsigned char before[sizeof(s_state)];
+        memcpy(before, &s_state, sizeof(before));
+        const esp_gsp_list_t list_before = s_root_list;
+        const unsigned snapshots_before = s_snapshot_calls;
+        const unsigned writes_before = s_control_writes;
+        const unsigned refreshes_before = s_capture_refreshes;
+        const mosaic_event_t capture = {.type = MOSAIC_EVENT_CAPTURE_REFRESH};
+        s_capture_probe = true;
+        mosaic_settings_app.on_event(ui, &capture);
+        s_capture_probe = false;
+        uint16_t page_after = UINT16_MAX;
+        assert(esp_gsp_stack_view_get_top(ui, GSP_OBJ_KEY_SETTINGS_STACK,
+            &page_after) == ESP_GSP_OK);
+        assert(page_before == page_after && s_root_list == list_before);
+        assert(!memcmp(before, &s_state, sizeof(before)));
+        assert(s_snapshot_calls == snapshots_before &&
+            s_control_writes == writes_before);
+        const unsigned refreshes = s_capture_refreshes - refreshes_before;
+        assert(refreshes == (page_before == 0 && list_before != ESP_GSP_LIST_NONE));
+        fprintf(stderr, "native capture refresh page=%u requests=%u state=preserved providers=0 writes=0\n",
+            page_before, refreshes);
+    }
     /* Native host CLI samples are not forwarded by every bridge release.
      * Inject only the input boundary: the registered observers still invoke
      * the unchanged Settings C scrolling/action/setter/render paths. */
@@ -198,6 +245,7 @@ esp_gsp_err_t gsp_bridge_app_init(esp_gsp_handle_t ui)
             (uint16_t)atoi(page), false);
     }
     const char *input = getenv("SETTINGS_NATIVE_DISPLAY_INPUT");
+    s_capture_refresh = getenv("SETTINGS_NATIVE_CAPTURE_REFRESH") != NULL;
     if (input) {
         s_display_input = !strcmp(input, "selected") ? 3
             : !strcmp(input, "chooser") ? 2 : 1;

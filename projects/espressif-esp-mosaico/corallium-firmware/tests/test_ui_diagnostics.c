@@ -26,8 +26,12 @@ static int16_t touch_x[128], touch_y[128];
 static bool touch_down[128];
 static uint16_t page;
 static unsigned pause_fail_on, resume_fail_on;
+static unsigned capture_refresh_calls, capture_refresh_fail_on;
 static bool pause_error_token, missing_tile, partial_plan, cancel_frame, input_during_flush;
-static esp_err_t flush_error, submit_error, commit_error, quiesce_error;
+static bool late_update_pending;
+static unsigned settle_extra_us;
+static void render_fixture_update(void);
+static esp_err_t begin_error, flush_error, submit_error, commit_error, quiesce_error;
 static unsigned real_begins, real_submits, real_commits, real_cancels, allocations;
 static unsigned fail_allocation;
 static char capture_warning[256];
@@ -109,7 +113,18 @@ void *heap_caps_calloc(size_t count, size_t size, unsigned caps)
     ++allocations;
     return fail_allocation == allocations ? NULL : calloc(count,size);
 }
-void vTaskDelay(TickType_t ticks) { (void)ticks; brief_wait(); }
+void vTaskDelay(TickType_t ticks)
+{
+    if(ticks==pdMS_TO_TICKS(100)) {
+        assert(capture_refresh_calls>0 && !platform_paused);
+        clock_us+=100000+settle_extra_us;
+        if(late_update_pending && !platform_paused) {
+            late_update_pending=false;
+            render_fixture_update();
+        }
+    }
+    brief_wait();
+}
 TaskHandle_t xTaskGetCurrentTaskHandle(void) { return (void *)1; }
 BaseType_t xTaskCreate(void (*task)(void *), const char *name, uint32_t stack,
     void *arg, UBaseType_t priority, TaskHandle_t *out) { *out=(void *)2; return pdPASS; }
@@ -151,7 +166,7 @@ void vQueueDelete(QueueHandle_t queue) { free(queue->items);free(queue); }
 static void begin_frame(void)
 {
     size_t count=0; bool full=false;
-    assert(__wrap_esp_display_presenter_begin_next_frame(&presenter,NULL,NULL,0,&count,&full)==ESP_OK);
+    assert(__wrap_esp_display_presenter_begin_next_frame(&presenter,NULL,NULL,0,&count,&full)==begin_error);
 }
 static void submit_band(unsigned y, unsigned rows)
 {
@@ -174,10 +189,29 @@ static void render_fixture_frame(void)
         assert(__wrap_esp_display_presenter_commit_frame(&presenter,&submit)==commit_error);
     }
 }
+static void render_fixture_pixel(int x,int y,uint16_t color)
+{
+    partial_plan=true;
+    begin_frame();
+    partial_plan=false;
+    if(begin_error!=ESP_OK) return;
+    uint16_t pixel=color;
+    const esp_display_presenter_buffer_t buffer={
+        .surface={.pixels=&pixel,.pixel_format=ESP_DISPLAY_PRESENT_PIXEL_FORMAT_RGB565},
+        .capacity_bytes=sizeof(pixel),.lease_id=1};
+    const esp_display_present_area_t area={x,y,x,y};
+    assert(__wrap_esp_display_presenter_submit_buffer(&presenter,&buffer,&area,2)==submit_error);
+    if(cancel_frame) __wrap_esp_display_presenter_cancel_frame(&presenter);
+    else {
+        const esp_display_presenter_submit_t submit={.coverage=ESP_DISPLAY_PRESENT_COVERAGE_FULL};
+        assert(__wrap_esp_display_presenter_commit_frame(&presenter,&submit)==commit_error);
+    }
+}
+static void render_fixture_update(void) { render_fixture_pixel(1,1,0xf7df); }
 esp_err_t __real_esp_display_presenter_begin_next_frame(esp_display_presenter_t *p,
     const esp_display_present_surface_request_t *request,esp_display_present_area_t *areas,
     size_t capacity,size_t *count,bool *full)
-{ assert(p==&presenter);++real_begins;*count=0;*full=!partial_plan;return ESP_OK; }
+{ assert(p==&presenter);++real_begins;*count=0;*full=!partial_plan;return begin_error; }
 esp_err_t __real_esp_display_presenter_submit_buffer(esp_display_presenter_t *p,
     const esp_display_presenter_buffer_t *buffer,const esp_display_present_area_t *area,size_t stride)
 {
@@ -227,6 +261,13 @@ esp_err_t mosaic_esp_platform_resume_screen(mosaic_esp_platform_handle_t p)
     if(resume_fail_on==resume_calls) return ESP_FAIL;
     if(platform_paused) { platform_paused=false;render_fixture_frame(); }
     return ESP_OK;
+}
+esp_err_t mosaic_esp_platform_prepare_capture(mosaic_esp_platform_handle_t p)
+{
+    assert(!platform_paused && s_runtime_lock->held);
+    ++capture_refresh_calls;
+    return capture_refresh_calls==capture_refresh_fail_on
+        ? ESP_ERR_INVALID_STATE : ESP_OK;
 }
 esp_gsp_err_t esp_gsp_flush(esp_gsp_handle_t ui,uint32_t ms)
 {
@@ -290,8 +331,11 @@ static void reset_faults(void)
     atomic_store(&s_input_pending,false);atomic_store(&s_capture_in_progress,false);
     s_quiesced=false;s_screen_paused=false;platform_paused=false;mutex_timeout=false;
     pause_calls=resume_calls=pause_fail_on=resume_fail_on=0;
+    capture_refresh_calls=capture_refresh_fail_on=0;
     pause_error_token=missing_tile=partial_plan=cancel_frame=input_during_flush=false;
-    flush_error=submit_error=commit_error=quiesce_error=ESP_OK;fail_allocation=0;
+    late_update_pending=false;
+    settle_extra_us=0;
+    begin_error=flush_error=submit_error=commit_error=quiesce_error=ESP_OK;fail_allocation=0;
     capture_warning[0]='\0';
 }
 static void assert_frame_pixels(mosaic_ui_frame_handle_t frame)
@@ -375,6 +419,7 @@ static void test_capture_control(void)
     reset_faults();
     assert(mosaic_loader_capture_begin(&frame,1000)==ESP_OK);
     assert(pause_calls==2 && resume_calls==2 && !platform_paused);
+    assert(capture_refresh_calls==2);
     assert_frame_pixels(frame);
     assert(!s_runtime_lock->held && activity==before);
     mosaic_ui_frame_handle_t another=NULL;
@@ -422,12 +467,28 @@ static void test_capture_control(void)
     assert(mosaic_loader_capture_begin(&frame,1000)==ESP_FAIL);
     assert(strstr(capture_warning,"failed stage=resume_restore error="));
     assert(frame==NULL && platform_paused && s_screen_paused);
+    assert(capture_refresh_calls==1);
     /* This is the actual retry called by the UI awake/prepare-input path. */
     assert(mosaic_loader_resume_screen()==ESP_OK);
     assert(!platform_paused && !s_screen_paused);
     assert(mosaic_loader_simulate_tap(30,40)==ESP_OK);process_next();
     clock_us+=32000;advance_simulated_input(clock_us);
     assert(!s_gesture.active && !touch_down[touches-1]);
+
+    for(unsigned failed=1;failed<=2;++failed) {
+        reset_faults();capture_refresh_fail_on=failed;
+        assert(mosaic_loader_capture_begin(&frame,1000)==ESP_ERR_INVALID_STATE);
+        assert(frame==NULL && !platform_paused && !s_screen_paused);
+        assert(!s_runtime_lock->held && !atomic_load(&s_capture_in_progress));
+        assert(capture_refresh_calls==2);
+        assert(strstr(capture_warning,failed==1
+            ? "failed stage=refresh error=" : "failed stage=refresh_restore error="));
+    }
+    reset_faults();resume_fail_on=1;
+    assert(mosaic_loader_capture_begin(&frame,1000)==ESP_FAIL);
+    assert(frame==NULL && !platform_paused && !s_screen_paused);
+    assert(capture_refresh_calls==1 && !s_runtime_lock->held);
+    assert(strstr(capture_warning,"failed stage=resume_frame error="));
 
     reset_faults();s_pointer_pressed=true;
     assert(mosaic_loader_capture_begin(&frame,1000)==ESP_ERR_INVALID_STATE && frame==NULL);
@@ -442,6 +503,7 @@ static void test_capture_control(void)
     assert(activity==before);
     puts("Device capture control: full coverage/commit/fence, tile reuse, no UI lock during reads; missing/partial/cancel/error/timeout/owner/input/PSRAM failures and failed-resume input recovery passed");
     puts("Capture failure diagnostics: exact stage and numeric seen/full/tiles/coverage/commit distinguish pause, flush, incomplete raster and resume recovery; no pixel/scene payloads");
+    puts("Capture refresh: admitted after resume under owner lock, before sampling; restored after detach; initial/restore failure cleanup and failed-resume refresh exclusion passed");
     puts("Pause timeout diagnostics: no presenter call distinguishes command48 pause/ack failure from a real transfer/present-fence timeout; public quiesce arguments/results pass through unchanged");
 }
 
@@ -501,6 +563,78 @@ static void test_capture_boundary(void)
     atomic_store(&block_copy,false);
     assert(atomic_load(&detach_returned));mosaic_frame_capture_delete(frame);
     puts("Capture wrapper: unarmed zero-copy passthrough, duplicate coverage/invalid lease bounds rejection, mandatory present fence and concurrent detach lifetime passed");
+}
+
+static void assert_updated_pixels(mosaic_ui_frame_handle_t frame)
+{
+    uint16_t pixels[16];
+    assert(mosaic_frame_capture_read(frame,0,pixels,sizeof(pixels))==ESP_OK);
+    for(unsigned i=0;i<16;++i) assert(pixels[i]==(i==5 ? 0xf7df : 0x2100+i));
+    mosaic_frame_capture_progress_t progress;
+    mosaic_frame_capture_progress(frame,&progress);
+    assert(progress.commits==2 && progress.covered_pixels==16 && progress.tiles==3);
+}
+
+static void test_capture_later_frames(void)
+{
+    reset_faults();
+    mosaic_ui_frame_handle_t frame=create_frame();
+    render_fixture_frame();
+    render_fixture_update();
+    mosaic_frame_capture_detach(frame);
+    assert(mosaic_frame_capture_complete(frame,true)==ESP_OK);
+    assert_updated_pixels(frame);
+    mosaic_frame_capture_delete(frame);
+
+    frame=create_frame();render_fixture_frame();
+    render_fixture_pixel(1,1,0xf7df);
+    render_fixture_pixel(2,2,0xe4e4);
+    render_fixture_pixel(1,1,0xfd20);
+    mosaic_frame_capture_detach(frame);
+    assert(mosaic_frame_capture_complete(frame,true)==ESP_OK);
+    uint16_t pixels[16];
+    assert(mosaic_frame_capture_read(frame,0,pixels,sizeof(pixels))==ESP_OK);
+    for(unsigned i=0;i<16;++i) assert(pixels[i]==(i==5 ? 0xfd20 : i==10 ? 0xe4e4 : 0x2100+i));
+    mosaic_frame_capture_progress_t progress;
+    mosaic_frame_capture_progress(frame,&progress);
+    assert(progress.commits==4 && progress.covered_pixels==16);
+    mosaic_frame_capture_delete(frame);
+
+    frame=create_frame();render_fixture_frame();render_fixture_update();
+    render_fixture_frame();mosaic_frame_capture_detach(frame);
+    assert(mosaic_frame_capture_complete(frame,true)==ESP_OK);
+    assert_frame_pixels(frame);mosaic_frame_capture_delete(frame);
+    frame=create_frame();render_fixture_frame();
+    missing_tile=true;render_fixture_frame();missing_tile=false;
+    mosaic_frame_capture_detach(frame);
+    assert(mosaic_frame_capture_complete(frame,true)==ESP_ERR_INVALID_STATE);
+    mosaic_frame_capture_delete(frame);
+    frame=create_frame();render_fixture_frame();begin_frame();
+    mosaic_frame_capture_detach(frame);
+    assert(mosaic_frame_capture_complete(frame,true)==ESP_ERR_INVALID_STATE);
+    mosaic_frame_capture_delete(frame);
+
+    /* A later bad/cancelled raster must never turn into an accepted mixture. */
+    for(unsigned mode=0;mode<4;++mode) {
+        frame=create_frame();render_fixture_frame();
+        if(mode==0) cancel_frame=true;
+        else if(mode==1) commit_error=ESP_FAIL;
+        else if(mode==2) submit_error=ESP_FAIL;
+        else begin_error=ESP_FAIL;
+        render_fixture_update();
+        mosaic_frame_capture_detach(frame);
+        assert(mosaic_frame_capture_complete(frame,true)!=ESP_OK);
+        mosaic_frame_capture_delete(frame);reset_faults();
+    }
+    late_update_pending=true;
+    assert(mosaic_loader_capture_begin(&frame,1000)==ESP_OK);
+    assert_updated_pixels(frame);mosaic_frame_capture_delete(frame);
+    assert(mosaic_loader_capture_begin(&frame,100)==ESP_ERR_TIMEOUT && frame==NULL);
+    assert(strstr(capture_warning,"failed stage=settle error="));
+    settle_extra_us=100000;
+    assert(mosaic_loader_capture_begin(&frame,150)==ESP_ERR_TIMEOUT && frame==NULL);
+    assert(strstr(capture_warning,"failed stage=flush error="));
+    puts("Capture sampling: complete base plus later committed dirty pixels, rejection after later error/cancel, budgeted normal-runner window passed");
 }
 
 static void test_full_device_geometry(void)
@@ -647,7 +781,7 @@ int main(void)
     s_screen_control_lock=xSemaphoreCreateMutex();
     assert(mosaic_loader_init(&config)==ESP_OK);
     assert(mosaic_loader_start_hub()==ESP_OK);
-    test_input();reset_faults();test_status();test_capture_control();test_capture_boundary();test_full_device_geometry();test_public_ui();test_public_open_app();
+    test_input();reset_faults();test_status();test_capture_control();test_capture_boundary();test_capture_later_frames();test_full_device_geometry();test_public_ui();test_public_open_app();
     cleanup_partial_init();
     vSemaphoreDelete(s_screen_control_lock);
     assert(real_begins>0 && real_submits>0 && real_commits>0 && real_cancels>0);

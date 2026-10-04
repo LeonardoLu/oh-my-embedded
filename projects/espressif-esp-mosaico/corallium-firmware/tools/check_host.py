@@ -33,6 +33,7 @@ run([sys.executable, PROJECT / "tests/check_diagnostics.py"])
 if args.upstream:
     upstream = args.upstream.resolve()
     run([sys.executable, PROJECT / "tests/test_ui_diagnostics.py", "--upstream", upstream])
+    run([sys.executable, PROJECT / "tests/test_capture_app_refresh.py", "--upstream", upstream])
     run([sys.executable, PROJECT / "tests/check_diagnostics_open.py", upstream])
     cjson = upstream / "managed_components/espressif__cjson/cJSON"
     if not (cjson / "cJSON.c").is_file():

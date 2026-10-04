@@ -164,6 +164,20 @@ presenter-quiesce probe distinguishes failure before entering presenter fences
 from a fence error; it neither changes SDK waits nor treats failed capture as an
 accepted frame.
 
+The resumed full raster forms a base; subsequent committed dirty tiles update
+the copy until the final fence. A native capture event refreshes Settings' root
+list and Weather's forecast list after resume, preserving their visible items
+and scroll position. It bypasses reducers, providers and product timers. The
+event is also sent after the final restoring resume, once the mirror is detached.
+Its return value establishes callback admission only; an internal List enqueue
+failure is logged separately. A 100 ms sampling window permits normal runner
+steps after resume's prepare/render pass, within the caller's existing deadline.
+This is not a guarantee that every runtime resource is ready. A later cancelled
+or failed raster rejects the whole copy. Pause can release decoded image caches,
+so a screenshot must not be treated as proof of a persistent visual fault when
+the user's later panel observation differs. Runtime row images use QOI; authored
+PNG icons compiled into bitmap banks do not imply runtime PNG decoding.
+
 [Root v1 protocol](../../../../protocols/corallium-v1/README.md) is authoritative.
 BLE defaults off. Settings → Bluetooth, the Bluetooth tile or a 500 ms top-key hold
 changes the switch; successful changes persist before runtime state changes.

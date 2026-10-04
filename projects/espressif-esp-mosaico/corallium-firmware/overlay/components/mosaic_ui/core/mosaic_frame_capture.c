@@ -21,6 +21,7 @@ struct mosaic_ui_frame {
     uint8_t *coverage;
     atomic_uint covered_pixels;
     atomic_uint tiles;
+    atomic_uint commits;
     uint32_t readers;
     atomic_int error;
     atomic_bool seen;
@@ -143,6 +144,7 @@ void mosaic_frame_capture_progress(mosaic_ui_frame_handle_t frame,
         out->full = atomic_load(&frame->full);
         out->committed = atomic_load(&frame->committed);
         out->tiles = atomic_load(&frame->tiles);
+        out->commits = atomic_load(&frame->commits);
         out->covered_pixels = atomic_load(&frame->covered_pixels);
     }
 }
@@ -232,6 +234,22 @@ esp_err_t __wrap_esp_display_presenter_begin_next_frame(
             frame->active = frame->full;
             frame->error = error != ESP_OK ? error :
                 frame->active ? ESP_OK : ESP_ERR_INVALID_STATE;
+        } else if (frame->error == ESP_OK) {
+            /* Keep later dirty updates over the complete base. Resume's
+             * first raster can precede the normal media/cache step. */
+            if (error != ESP_OK || frame->active || !frame->committed ||
+                    frame->covered_pixels !=
+                        (uint32_t)frame->info.width * frame->info.height) {
+                frame->error = error != ESP_OK ? error : ESP_ERR_INVALID_STATE;
+            } else {
+                frame->active = true;
+                frame->committed = false;
+                if (full != NULL && *full) {
+                    memset(frame->coverage, 0,
+                        ((size_t)frame->info.width * frame->info.height + 7U) / 8U);
+                    frame->covered_pixels = 0U;
+                }
+            }
         }
         capture_release(frame);
     }
@@ -314,6 +332,7 @@ esp_err_t __wrap_esp_display_presenter_commit_frame(esp_display_presenter_t *pre
         if (frame->active) {
             frame->active = false;
             frame->committed = error == ESP_OK;
+            if (error == ESP_OK) ++frame->commits;
             if (error != ESP_OK) frame->error = error;
         }
         capture_release(frame);

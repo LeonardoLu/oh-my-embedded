@@ -165,7 +165,7 @@ def check(args, output):
     def capture(name, scene_bundle, overrides=None, scroll=False, script=None, page=None):
         env = dict(os.environ)
         for key in ("SETTINGS_NATIVE_SCROLL", "SETTINGS_NATIVE_CHECKED", "SETTINGS_NATIVE_PAGE",
-                    "SETTINGS_NATIVE_DISPLAY_INPUT"):
+                    "SETTINGS_NATIVE_DISPLAY_INPUT", "SETTINGS_NATIVE_CAPTURE_REFRESH"):
             env.pop(key, None)
         env.update(overrides or {})
         if page is not None:
@@ -211,9 +211,15 @@ def check(args, output):
             assert max(maximum for _, maximum in extrema) <= 6, (name, extrema)
 
     first = ["network", "bluetooth", "display", "battery"]
-    check_rows(capture("root-gray", bundle), first)
-    check_rows(capture("root-gray-scrolled", bundle, scroll=True),
-               ["display", "battery", "corallium", "about"])
+    initial = capture("root-gray", bundle)
+    check_rows(initial, first)
+    scrolled = capture("root-gray-scrolled", bundle, scroll=True)
+    check_rows(scrolled, ["display", "battery", "corallium", "about"])
+    for name, reference, scroll in (("root-gray-capture-refresh", initial, False),
+                                    ("root-gray-scrolled-capture-refresh", scrolled, True)):
+        refreshed = capture(name, bundle, {"SETTINGS_NATIVE_CAPTURE_REFRESH": "1"}, scroll=scroll)
+        assert "native capture refresh page=0 requests=1 state=preserved providers=0 writes=0\n" in (output / f"{name}.log").read_text()
+        assert not ImageChops.difference(reference, refreshed).getbbox(), name
     check_rows(capture("root-font-linked", materialized / bundle.name), first)
 
     index, toggle = by_name["settings_bluetooth_enabled"]
@@ -241,6 +247,10 @@ def check(args, output):
     picture = capture("display", display, page=1)
     for name in ("rotation", "screen_timeout", "dim_timeout"):
         check_chevron(picture, name)
+    unchanged = capture("display-capture-refresh-noop", display,
+                        {"SETTINGS_NATIVE_CAPTURE_REFRESH": "1"}, page=1)
+    assert "native capture refresh page=1 requests=0 state=preserved providers=0 writes=0\n" in (output / "display-capture-refresh-noop.log").read_text()
+    assert not ImageChops.difference(picture, unchanged).getbbox()
 
     lower = capture("display-lower", display,
                     overrides={"SETTINGS_NATIVE_DISPLAY_INPUT": "lower"}, page=1)
@@ -288,6 +298,7 @@ def check(args, output):
     after.paste((0, 0, 0), box)
     assert not ImageChops.difference(before, after).getbbox()
     print("PASS: real C binder RGBA upload, initial/recycled/refreshed rows, "
+          "capture refresh preserving root/scrolled pixels and Display no-op, "
           "font-linked A8 bank, runtime Bluetooth text/colors, all 4 native SVG "
           "chevrons, lower charge toggles and real C Power-off chooser/save/return "
           "(observer/callback input doubles)")

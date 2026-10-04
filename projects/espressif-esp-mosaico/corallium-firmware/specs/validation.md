@@ -70,6 +70,14 @@ and Python/Clang prerequisites. Covered behavior includes:
   stalled runtime lock, reject a full queue immediately, and preserve capture
   interruption/wake ordering. The transparent quiesce probe distinguishes
   command acknowledgement from presenter-fence failures with stage fault doubles.
+  Later committed tiles overwrite a complete base; later incomplete, cancelled
+  or failed rasters reject the copy. Capture refresh admission and restoration
+  failures preserve cleanup and screen state. Verbatim native capture handlers
+  and platform admission run under ASan/UBSan with explicit SDK boundary doubles:
+  inactive/paused/stopping guards, NULL callbacks, native event timestamp, root
+  page gates and fixed enqueue-error logs are checked. The native Settings
+  fixture also compares complete state/provider/write counters and initial and
+  scrolled pixels across the real descriptor callback.
   They verify lifecycle/control flow, not PPA/cache or the
   physical panel.
 - Startup ordering and queue ownership: saved controls and local provider/
@@ -226,9 +234,24 @@ has white control glyphs, omits slider explanations and has two equal-height
 apps are absent from the packed SYSTEM image. These are the device's submitted
 pixels, not optical panel photographs or GRAM readback.
 
-The captures also expose missing Settings list icons and black Weather forecast
-icon rectangles. Native host previews did not reproduce these target rendering
-faults; they remain unresolved until corrected and recaptured on the device.
+First-resume captures omitted Settings list icons and showed black Weather
+forecast rectangles while the user still saw Settings icons on the panel.
+Pause releases decoded caches, and the first resumed raster precedes the
+ordinary app step. Re-decoding appended runtime resources did not itself dirty
+their existing list rows. A same-pixel QOI/PNG comparison reproduced the
+snapshot discrepancy, so it did not establish a codec failure.
+
+Native capture refresh now rebinds those visible rows through the supported
+List API and the mirror retains their subsequent committed tiles. Device
+captures show all six QOI Settings icons across the initial and scrolled lists,
+and all five Weather forecast icons with transparent surroundings. Each sample
+included a second presentation commit; settings values remained unchanged and
+render/runtime error counters remained zero. Repeated scrolled Settings
+captures match pixel for pixel. Runtime images retain QOI. The
+independent async-decode worker is disabled in the linked configuration and
+absent from the live task inventory; fallback media work still runs during
+ordinary UI steps. Captures remain submitted-pixel evidence rather than optical
+panel acceptance.
 Panel wake, charging policy, whole-device shutdown, measured frame rate,
 repeated local-job cleanup, Flappy sound and Back brightness restoration still
 need their separate physical checks. Host coverage of these paths is not

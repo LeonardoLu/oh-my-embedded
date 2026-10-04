@@ -126,6 +126,10 @@ the actual device's submitted frame, with physical panel appearance and sound
 still requiring their own observations. Sleeping or exclusive-presenter screens
 reject capture. The importable `DiagnosticClient` supports multiple operations
 through one serial connection, including status polling during idle tests.
+Capture refreshes visible native rows after resuming the renderer and retains
+later committed updates, preserving the page, scroll position and control
+values. Runtime list masks use QOI. Source PNGs compiled into bitmap banks do
+not require PNG decoding on the device.
 `tasks` reports a fixed list of live RTOS task states, stack high-water marks and
 32-bit runtime counters independently of UI locks; counters wrap and this does
 not provide a call stack. `open` accepts only Settings, Works, Album or Weather,

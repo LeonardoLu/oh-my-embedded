@@ -1515,7 +1515,7 @@ index 1ada0c3..722ba99 100755
  cp "$OUT/${STEM}_binds.h" "$GENERATED_DIR/${STEM}_binds.h"
  cp "$OUT/${STEM}_actions.h" "$GENERATED_DIR/${STEM}_actions.h"
 diff --git a/components/mosaic_ui/apps/settings/settings_app.c b/components/mosaic_ui/apps/settings/settings_app.c
-index d3b4859..0ad71e6 100644
+index d3b4859..1bc53c5 100644
 --- a/components/mosaic_ui/apps/settings/settings_app.c
 +++ b/components/mosaic_ui/apps/settings/settings_app.c
 @@ -5,6 +5,9 @@
@@ -1911,7 +1911,7 @@ index d3b4859..0ad71e6 100644
  static const settings_root_row_t s_root_rows[] = {
      SETTINGS_ROOT_ROW("AI Model", ai),
      SETTINGS_ROOT_ROW("IM Channels", channels),
-@@ -1026,8 +1107,27 @@ static const settings_root_row_t s_root_rows[] = {
+@@ -1026,8 +1107,42 @@ static const settings_root_row_t s_root_rows[] = {
      SETTINGS_ROOT_ROW("Security", security),
      SETTINGS_ROOT_ROW("Battery", battery),
      SETTINGS_ROOT_ROW("About", about),
@@ -1919,6 +1919,21 @@ index d3b4859..0ad71e6 100644
 +    SETTINGS_ROOT_ROW("Bluetooth", bluetooth),
  };
  
++static void settings_root_icon_complete(
++    esp_gsp_handle_t ui, uint16_t bind, gsp_err_t status, void *user_ctx)
++{
++    (void)ui;
++    (void)bind;
++    const settings_root_row_t *item = user_ctx;
++    /* Each request retains an immutable, process-lifetime table entry. */
++    ESP_LOGI(TAG, "root image complete item=%u slot=%u size=%u err=%d",
++        (unsigned)(item - s_root_rows),
++        (unsigned)GSP_TEMPLATE_SETTINGS_ROOT_ROW_SETTINGS_ROOT_ROW_ICON_RESOURCE_SLOT,
++        (unsigned)item->icon_size, (int)status);
++    (void)item;
++    (void)status;
++}
++
 +static bool settings_bluetooth_enabled(void)
 +{
 +#if defined(ESP_PLATFORM)
@@ -1939,7 +1954,7 @@ index d3b4859..0ad71e6 100644
  static const char *settings_wlan_summary(void)
  {
      const settings_wlan_state_t *wlan = &s_state.wlan;
-@@ -1073,9 +1173,8 @@ static gsp_err_t settings_root_list_bind_item(
+@@ -1073,9 +1188,8 @@ static gsp_err_t settings_root_list_bind_item(
      void *user_ctx)
  {
      (void)user_ctx;
@@ -1951,7 +1966,7 @@ index d3b4859..0ad71e6 100644
      char value[16] = "";
      const char *value_text = value;
      switch (item_index) {
-@@ -1104,6 +1203,9 @@ static gsp_err_t settings_root_list_bind_item(
+@@ -1104,13 +1218,22 @@ static gsp_err_t settings_root_list_bind_item(
              value_text = "--";
          }
          break;
@@ -1961,7 +1976,24 @@ index d3b4859..0ad71e6 100644
      default:
          break;
      }
-@@ -1141,7 +1243,7 @@ static void settings_root_list_attach(esp_gsp_handle_t ui)
+-    esp_gsp_err_t err =
+-        gsp_settings_settings_root_row_row_set_icon_resource(
+-            ui, row, s_root_rows[item_index].icon,
+-            s_root_rows[item_index].icon_size);
++    const esp_gsp_image_options_t image_options = {
++        .ownership = ESP_GSP_IMAGE_COPY,
++        .on_complete = settings_root_icon_complete,
++        .complete_ctx = (void *)&s_root_rows[item_index],
++    };
++    esp_gsp_err_t err = esp_gsp_row_set_image_ex(
++        ui, row,
++        GSP_TEMPLATE_SETTINGS_ROOT_ROW_SETTINGS_ROOT_ROW_ICON_RESOURCE_SLOT,
++        s_root_rows[item_index].icon, s_root_rows[item_index].icon_size,
++        &image_options);
+     if (err == ESP_GSP_OK) {
+         err = gsp_settings_settings_root_row_row_set_title_text(
+             ui, row, s_root_rows[item_index].title);
+@@ -1141,7 +1264,7 @@ static void settings_root_list_attach(esp_gsp_handle_t ui)
          return;
      }
      (void)esp_gsp_list_set_total(
@@ -1970,7 +2002,7 @@ index d3b4859..0ad71e6 100644
      settings_root_list_refresh(ui);
  }
  
-@@ -1436,7 +1538,7 @@ static esp_err_t settings_wlan_render(esp_gsp_handle_t ui)
+@@ -1436,7 +1559,7 @@ static esp_err_t settings_wlan_render(esp_gsp_handle_t ui)
      esp_err_t result = ESP_OK;
  
      keep_first_error(&result,
@@ -1979,7 +2011,7 @@ index d3b4859..0ad71e6 100644
      keep_first_error(&result,
          gsp_settings_settings_wlan_off_layer_set_visible(
              ui, false));
-@@ -1482,8 +1584,8 @@ static esp_err_t settings_wlan_render(esp_gsp_handle_t ui)
+@@ -1482,8 +1605,8 @@ static esp_err_t settings_wlan_render(esp_gsp_handle_t ui)
              gsp_settings_settings_wlan_detail_ssid_set_text(ui, "Network"));
      }
      keep_first_error(&result,
@@ -1990,7 +2022,7 @@ index d3b4859..0ad71e6 100644
      if (wlan->selected_ssid[0] != '\0') {
          keep_first_error(&result,
              gsp_settings_settings_wlan_password_ssid_set_text(
-@@ -2068,465 +2170,112 @@ static void settings_refresh_snapshot(esp_gsp_handle_t ui)
+@@ -2068,465 +2191,112 @@ static void settings_refresh_snapshot(esp_gsp_handle_t ui)
      }
  }
  
@@ -2049,8 +2081,7 @@ index d3b4859..0ad71e6 100644
 -}
 -
 -static void settings_update_note_append_text(const char *text, bool title)
-+static void settings_display_options_close(esp_gsp_handle_t ui)
- {
+-{
 -    if (text == NULL) {
 -        return;
 -    }
@@ -2105,7 +2136,8 @@ index d3b4859..0ad71e6 100644
 -static gsp_err_t settings_update_note_bind_item(
 -    esp_gsp_handle_t ui, esp_gsp_row_t row, uint32_t item_index,
 -    void *user_ctx)
--{
++static void settings_display_options_close(esp_gsp_handle_t ui)
+ {
 -    (void)user_ctx;
 -    if (item_index >= s_update_note_count) {
 -        return GSP_ERR_INVALID_ARG;
@@ -2537,7 +2569,7 @@ index d3b4859..0ad71e6 100644
  }
  
  static void settings_refresh_battery_detail(esp_gsp_handle_t ui)
-@@ -2714,36 +2463,6 @@ static void settings_qr_push(
+@@ -2714,36 +2484,6 @@ static void settings_qr_push(
      strlcpy(rendered, payload, rendered_size);
  }
  
@@ -2574,7 +2606,7 @@ index d3b4859..0ad71e6 100644
  static void settings_llm_render(esp_gsp_handle_t ui)
  {
      (void)esp_gsp_set_visible(ui,
-@@ -2936,10 +2655,8 @@ static void settings_dispatch_call(
+@@ -2936,10 +2676,8 @@ static void settings_dispatch_call(
  {
      switch (event->data.call.action_id) {
      case GSP_ACT_ID_SETTINGS_ROOT_ROW: {
@@ -2587,7 +2619,7 @@ index d3b4859..0ad71e6 100644
          if (item <= 1U) {
              settings_open_integration(ui, item == 0U);
              return;
-@@ -2982,8 +2699,18 @@ static void settings_dispatch_call(
+@@ -2982,8 +2720,18 @@ static void settings_dispatch_call(
          if (item == 7U) {
              settings_refresh_snapshot(ui);
              settings_open_detail(ui, SETTINGS_DETAIL_ABOUT);
@@ -2608,7 +2640,7 @@ index d3b4859..0ad71e6 100644
              return;
          }
          static const uint16_t pages[] = {
-@@ -3000,6 +2727,11 @@ static void settings_dispatch_call(
+@@ -3000,6 +2748,11 @@ static void settings_dispatch_call(
          if (item == 3U || item == 4U) {
              s_state.display_page_active = true;
              s_state.display_reset_pending = false;
@@ -2620,7 +2652,7 @@ index d3b4859..0ad71e6 100644
              settings_display_request_render();
          }
          return;
-@@ -3028,45 +2760,54 @@ static void settings_dispatch_call(
+@@ -3028,45 +2781,54 @@ static void settings_dispatch_call(
      case GSP_ACT_ID_SETTINGS_INTEGRATIONS_LLM_SKIP:
          settings_integrations_pop(ui);
          return;
@@ -2704,7 +2736,7 @@ index d3b4859..0ad71e6 100644
      case GSP_ACT_ID_SETTINGS_WLAN_LEAVE:
          if (!s_state.wlan_page_active || s_state.wlan_leave_pending ||
                  s_state.wlan_detail_active ||
-@@ -3097,6 +2838,7 @@ static void settings_dispatch_call(
+@@ -3097,6 +2859,7 @@ static void settings_dispatch_call(
               * periodic callback performs it after the StackView pop has
               * completed. */
              s_state.display_reset_pending = true;
@@ -2712,7 +2744,7 @@ index d3b4859..0ad71e6 100644
              s_state.display_pointer_pressed = false;
              s_state.display_pointer_scrolled = false;
              s_state.display_tap = SETTINGS_DISPLAY_TAP_NONE;
-@@ -3108,11 +2850,6 @@ static void settings_dispatch_call(
+@@ -3108,11 +2871,6 @@ static void settings_dispatch_call(
          }
          return;
      case GSP_ACT_ID_SETTINGS_DETAIL_ROW:
@@ -2724,7 +2756,7 @@ index d3b4859..0ad71e6 100644
          if (s_detail_kind == SETTINGS_DETAIL_SAFE_MODE &&
                  event->data.call.item == 3U) {
              (void)mosaic_top_notice_show(
-@@ -3120,15 +2857,6 @@ static void settings_dispatch_call(
+@@ -3120,15 +2878,6 @@ static void settings_dispatch_call(
                  SETTINGS_NOTICE_DURATION_MS);
          }
          return;
@@ -2740,7 +2772,7 @@ index d3b4859..0ad71e6 100644
      case GSP_ACT_ID_WLAN_TOGGLE:
          if (event->timestamp_us - s_state.wlan_toggle_last_us < 100000) {
              return;
-@@ -3184,19 +2912,6 @@ static void settings_dispatch_call(
+@@ -3184,19 +2933,6 @@ static void settings_dispatch_call(
      case GSP_ACT_ID_WLAN_PASSWORD_DETACH:
          settings_wlan_cancel_password(ui);
          return;
@@ -2760,7 +2792,7 @@ index d3b4859..0ad71e6 100644
      case GSP_ACT_ID_WLAN_PHONE_SETUP_CLOSE:
          s_state.wlan_phone_active = false;
          s_state.wlan_phone_exit_pending = false;
-@@ -3334,6 +3049,9 @@ static void settings_dispatch_pointer(
+@@ -3334,6 +3070,9 @@ static void settings_dispatch_pointer(
          s_state.display_tap = SETTINGS_DISPLAY_TAP_NONE;
          return;
      }
@@ -2770,7 +2802,7 @@ index d3b4859..0ad71e6 100644
      if (!s_state.brightness_drag_active && !s_state.volume_drag_active) {
          /* Only the initial press may claim a slider. A vertical scroll that
           * later crosses a track must stay a scroll gesture. */
-@@ -3345,6 +3063,21 @@ static void settings_dispatch_pointer(
+@@ -3345,6 +3084,21 @@ static void settings_dispatch_pointer(
                  s_state.display_pointer_scrolled = true;
                  s_state.display_tap = SETTINGS_DISPLAY_TAP_NONE;
              }
@@ -2792,7 +2824,7 @@ index d3b4859..0ad71e6 100644
              s_state.display_last_y = y;
              return;
          }
-@@ -3368,9 +3101,13 @@ static void settings_dispatch_pointer(
+@@ -3368,9 +3122,13 @@ static void settings_dispatch_pointer(
                  &active_page) != ESP_GSP_OK) {
              return;
          }
@@ -2808,7 +2840,7 @@ index d3b4859..0ad71e6 100644
              s_state.brightness_drag_active = true;
          } else if (active_page == SETTINGS_SOUND_PAGE &&
                     y >= SETTINGS_VOLUME_TRACK_Y_MIN &&
-@@ -3385,9 +3122,6 @@ static void settings_dispatch_pointer(
+@@ -3385,9 +3143,6 @@ static void settings_dispatch_pointer(
      if (!s_state.brightness_drag_active && !s_state.volume_drag_active) {
          return;
      }
@@ -2818,7 +2850,7 @@ index d3b4859..0ad71e6 100644
      const int32_t level = settings_level_from_x(event->data.pointer.x);
      if (s_state.brightness_drag_active) {
          if (level == s_state.brightness) {
-@@ -3441,6 +3175,7 @@ static void settings_event(
+@@ -3441,6 +3196,7 @@ static void settings_event(
      }
      switch (event->type) {
      case MOSAIC_EVENT_START:
@@ -2826,7 +2858,7 @@ index d3b4859..0ad71e6 100644
          s_state.ui = ui;
          atomic_store_explicit(
              &s_state.display_render_pending, false, memory_order_release);
-@@ -3450,6 +3185,7 @@ static void settings_event(
+@@ -3450,6 +3206,7 @@ static void settings_event(
          if (s_state.display_render_timer == NULL) {
              ESP_LOGE(TAG, "create Display render timer failed");
          }
@@ -2834,7 +2866,7 @@ index d3b4859..0ad71e6 100644
          /* App state is static, while every open owns a new GSP handle and
           * List pool. Never carry navigation/list lifecycle across a forced
           * home-swipe close and subsequent reopen. */
-@@ -3480,10 +3216,6 @@ static void settings_event(
+@@ -3480,10 +3237,6 @@ static void settings_event(
          s_root_list = ESP_GSP_LIST_NONE;
          s_wlan_list = ESP_GSP_LIST_NONE;
          s_detail_list = ESP_GSP_LIST_NONE;
@@ -2845,7 +2877,7 @@ index d3b4859..0ad71e6 100644
          s_state.wlan_scan_compact_valid = false;
          s_wlan_network_count = 0;
          s_state.display_page_active = false;
-@@ -3494,20 +3226,23 @@ static void settings_event(
+@@ -3494,20 +3247,23 @@ static void settings_event(
          s_state.brightness_drag_active = false;
          s_state.brightness_dirty = false;
          s_state.brightness_hw_available = true;
@@ -2873,7 +2905,7 @@ index d3b4859..0ad71e6 100644
          if (s_state.snapshot.network.ssid[0] != '\0') {
              s_state.wlan.connected = s_state.snapshot.network.connected;
              strlcpy(s_state.wlan.current_ssid,
-@@ -3515,6 +3250,7 @@ static void settings_event(
+@@ -3515,6 +3271,7 @@ static void settings_event(
                      sizeof(s_state.wlan.current_ssid));
          }
          (void)settings_wlan_render(ui);
@@ -2881,8 +2913,23 @@ index d3b4859..0ad71e6 100644
          break;
      case MOSAIC_EVENT_UI_CALL:
          settings_dispatch_call(ui, event);
-@@ -3524,13 +3260,10 @@ static void settings_event(
+@@ -3522,15 +3279,25 @@ static void settings_event(
+     case MOSAIC_EVENT_POINTER:
+         settings_dispatch_pointer(ui, event);
          break;
++    case MOSAIC_EVENT_CAPTURE_REFRESH: {
++        uint16_t top = 0U;
++        if (s_root_list != ESP_GSP_LIST_NONE &&
++                esp_gsp_stack_view_get_top(
++                    ui, GSP_OBJ_KEY_SETTINGS_STACK, &top) == ESP_GSP_OK &&
++                top == 0U) {
++            const esp_gsp_err_t err = esp_gsp_list_refresh(ui, s_root_list);
++            if (err != ESP_GSP_OK) {
++                ESP_LOGW(TAG, "capture refresh failed err=%d", (int)err);
++            }
++        }
++        break;
++    }
      case MOSAIC_EVENT_MODEL_CHANGED:
          settings_refresh_snapshot(ui);
 +        settings_bluetooth_render(ui);
@@ -2896,7 +2943,7 @@ index d3b4859..0ad71e6 100644
          uint16_t model_top = 0U;
          if (s_detail_kind == SETTINGS_DETAIL_BATTERY &&
                  esp_gsp_stack_view_get_top(
-@@ -3592,15 +3325,6 @@ static void settings_event(
+@@ -3592,15 +3359,6 @@ static void settings_event(
                  }
              }
          }
@@ -2912,7 +2959,7 @@ index d3b4859..0ad71e6 100644
          if (settings_wlan_reconcile_navigation(ui)) {
              break;
          }
-@@ -3678,11 +3402,9 @@ static void settings_event(
+@@ -3678,11 +3436,9 @@ static void settings_event(
          (void)settings_wlan_set_loading(ui, false);
          settings_wlan_password_detach(ui);
          settings_wlan_list_park(ui);
@@ -2924,7 +2971,7 @@ index d3b4859..0ad71e6 100644
          s_state.wlan_scan_compact_valid = false;
          s_state.wlan_notice_pending = false;
          s_state.wlan_notice_title = NULL;
-@@ -3719,11 +3441,8 @@ static void settings_event(
+@@ -3719,11 +3475,8 @@ static void settings_event(
  
  static bool settings_back(esp_gsp_handle_t ui, int64_t timestamp_us)
  {
@@ -2937,7 +2984,7 @@ index d3b4859..0ad71e6 100644
      s_state.integration_page = 0;
      /* Return false so the loader performs the normal Settings StackView pop. */
      return false;
-@@ -3742,14 +3461,13 @@ const mosaic_app_descriptor_t mosaic_settings_app = {
+@@ -3742,14 +3495,13 @@ const mosaic_app_descriptor_t mosaic_settings_app = {
      .root_stack_key = GSP_OBJ_KEY_SETTINGS_STACK,
      .disable_swipe = true,
      .root_header_in_stack = false,
@@ -4399,18 +4446,103 @@ index d50b552..b02d1df 100755
      "$OUT"/${STEM}_font*.gfb \
      "$OUT/${STEM}.grb"
 diff --git a/components/mosaic_ui/apps/weather/weather_app.c b/components/mosaic_ui/apps/weather/weather_app.c
-index fd8fd4c..87441b0 100644
+index fd8fd4c..b8f3ba4 100644
 --- a/components/mosaic_ui/apps/weather/weather_app.c
 +++ b/components/mosaic_ui/apps/weather/weather_app.c
-@@ -11,6 +11,7 @@
+@@ -8,9 +8,15 @@
+ #include <string.h>
+ #include <time.h>
+ 
++#if defined(ESP_PLATFORM)
++#include "esp_log.h"
++#endif
++
  #include "mosaic_app_catalog.h"
  #include "mosaic_hub_actions.h"
++#include "mosaic_runtime.h"
  #include "weather_binds.h"
 +#include "mosaic_weather_art.h"
  #include "weather_forecast_icon_data.h"
  #include "weather_objects.h"
  #include "weather_templates.h"
-@@ -188,22 +189,17 @@ static void weather_render(esp_gsp_handle_t ui,
+@@ -28,6 +34,58 @@ typedef struct {
+ static weather_forecast_row_t s_forecast_rows[WEATHER_FORECAST_DAYS];
+ static esp_gsp_list_t s_forecast_list = ESP_GSP_LIST_NONE;
+ 
++typedef struct {
++    unsigned item;
++    size_t size;
++} weather_icon_diagnostic_t;
++
++#define WEATHER_ICON_DIAGNOSTICS(_item) { \
++    {(_item), sizeof(weather_forecast_icon_sunny)}, \
++    {(_item), sizeof(weather_forecast_icon_cloudy)}, \
++    {(_item), sizeof(weather_forecast_icon_snow)}, \
++    {(_item), sizeof(weather_forecast_icon_windy)}, \
++    {(_item), sizeof(weather_forecast_icon_thunder)}, \
++}
++static const weather_icon_diagnostic_t s_icon_diagnostics[WEATHER_FORECAST_DAYS][5] = {
++    WEATHER_ICON_DIAGNOSTICS(0), WEATHER_ICON_DIAGNOSTICS(1),
++    WEATHER_ICON_DIAGNOSTICS(2), WEATHER_ICON_DIAGNOSTICS(3),
++    WEATHER_ICON_DIAGNOSTICS(4), WEATHER_ICON_DIAGNOSTICS(5),
++    WEATHER_ICON_DIAGNOSTICS(6),
++};
++#undef WEATHER_ICON_DIAGNOSTICS
++
++static void weather_icon_complete(
++    esp_gsp_handle_t ui, uint16_t bind, gsp_err_t status, void *user_ctx)
++{
++    (void)ui;
++    (void)bind;
++#if defined(ESP_PLATFORM)
++    const weather_icon_diagnostic_t *item = user_ctx;
++    ESP_LOGI("mosaic_weather", "forecast image complete item=%u slot=%u size=%u err=%d",
++        item->item, (unsigned)GSP_TEMPLATE_WEATHER_FORECAST_ROW_ICON_RESOURCE_SLOT,
++        (unsigned)item->size, (int)status);
++#else
++    (void)user_ctx;
++    (void)status;
++#endif
++}
++
++static const weather_icon_diagnostic_t *weather_icon_diagnostic(
++    uint32_t item_index, const uint8_t *icon)
++{
++    static const uint8_t *const icons[] = {
++        weather_forecast_icon_sunny, weather_forecast_icon_cloudy,
++        weather_forecast_icon_snow, weather_forecast_icon_windy,
++        weather_forecast_icon_thunder,
++    };
++    for (size_t i = 0; i < sizeof(icons) / sizeof(icons[0]); ++i) {
++        if (icons[i] == icon) {
++            return &s_icon_diagnostics[item_index][i];
++        }
++    }
++    return &s_icon_diagnostics[item_index][1];
++}
++
+ static void weather_forecast_set_icon(weather_forecast_row_t *row,
+                                       const char *symbol)
+ {
+@@ -83,8 +141,15 @@ static gsp_err_t weather_forecast_bind_item(
+     gsp_err_t err = gsp_weather_weather_forecast_row_row_set_date_text(
+         ui, row, item->date);
+     if (err == GSP_OK) {
+-        err = gsp_weather_weather_forecast_row_row_set_icon_resource(
+-            ui, row, item->icon, item->icon_size);
++        /* An immutable table entry outlives deferred decode/publication. */
++        const esp_gsp_image_options_t image_options = {
++            .ownership = ESP_GSP_IMAGE_COPY,
++            .on_complete = weather_icon_complete,
++            .complete_ctx = (void *)weather_icon_diagnostic(item_index, item->icon),
++        };
++        err = esp_gsp_row_set_image_ex(
++            ui, row, GSP_TEMPLATE_WEATHER_FORECAST_ROW_ICON_RESOURCE_SLOT,
++            item->icon, item->icon_size, &image_options);
+     }
+     if (err == GSP_OK) {
+         err = gsp_weather_weather_forecast_row_row_set_low_text(
+@@ -188,22 +253,17 @@ static void weather_render(esp_gsp_handle_t ui,
                            snapshot->stale ? "CACHED" :
                            snapshot->online ? "LIVE" : "OFFLINE");
  
@@ -4444,6 +4576,37 @@ index fd8fd4c..87441b0 100644
  }
  #endif
  
+@@ -251,6 +311,24 @@ static void weather_stopping(esp_gsp_handle_t ui)
+ #endif
+ }
+ 
++static void weather_event(
++    esp_gsp_handle_t ui, const struct mosaic_event *raw_event)
++{
++    const mosaic_event_t *event = raw_event;
++    if (event == NULL || event->type != MOSAIC_EVENT_CAPTURE_REFRESH ||
++            s_forecast_list == ESP_GSP_LIST_NONE) {
++        return;
++    }
++    const esp_gsp_err_t err = esp_gsp_list_refresh(ui, s_forecast_list);
++#if defined(ESP_PLATFORM)
++    if (err != ESP_GSP_OK) {
++        ESP_LOGW("mosaic_weather", "capture refresh failed err=%d", (int)err);
++    }
++#else
++    (void)err;
++#endif
++}
++
+ const mosaic_app_descriptor_t mosaic_weather_app = {
+     .id = 13,
+     .launch_action = GSP_ACT_ID_APP_WEATHER,
+@@ -263,4 +341,5 @@ const mosaic_app_descriptor_t mosaic_weather_app = {
+     .dynamic_image_slots = GSP_TEMPLATE_WEATHER_FORECAST_ROW_MAX_INSTANCES,
+     .on_started = weather_started,
+     .on_stopping = weather_stopping,
++    .on_event = weather_event,
+ };
 diff --git a/components/mosaic_ui/apps/works/scene/gen_scene.py b/components/mosaic_ui/apps/works/scene/gen_scene.py
 index 41ab4ce..6c6c420 100644
 --- a/components/mosaic_ui/apps/works/scene/gen_scene.py
@@ -5086,7 +5249,7 @@ index 310f645..adf9f3c 100644
  esp_err_t works_runtime_refresh(void);
  esp_err_t works_runtime_flush(void);
 diff --git a/components/mosaic_ui/core/mosaic_esp_platform.c b/components/mosaic_ui/core/mosaic_esp_platform.c
-index 79d0bd7..7dcc259 100644
+index 79d0bd7..90c0d94 100644
 --- a/components/mosaic_ui/core/mosaic_esp_platform.c
 +++ b/components/mosaic_ui/core/mosaic_esp_platform.c
 @@ -14,6 +14,7 @@
@@ -5223,10 +5386,32 @@ index 79d0bd7..7dcc259 100644
      err = esp_gsp_set_pointer_observer(
          app->ui, on_gsp_pointer, app);
      if (err != ESP_OK) {
-@@ -828,6 +836,19 @@ esp_gsp_handle_t mosaic_esp_platform_ui(mosaic_esp_platform_handle_t platform)
+@@ -828,6 +836,41 @@ esp_gsp_handle_t mosaic_esp_platform_ui(mosaic_esp_platform_handle_t platform)
          : NULL;
  }
  
++esp_err_t mosaic_esp_platform_prepare_capture(
++    mosaic_esp_platform_handle_t platform)
++{
++    if (platform == NULL || platform->active == NULL || platform->paused ||
++            platform->screen_pause != NULL || platform->active->stopping ||
++            platform->active->ui == NULL || platform->active->package == NULL ||
++            platform->active->package->descriptor == NULL) {
++        return ESP_ERR_INVALID_STATE;
++    }
++    mosaic_esp_app_t* app = platform->active;
++    if (app->package->descriptor->on_event != NULL) {
++        const mosaic_event_t event = {
++            .type = MOSAIC_EVENT_CAPTURE_REFRESH,
++            .timestamp_us = esp_timer_get_time(),
++        };
++        /* Rebind existing native rows after resume releases decoded caches.
++         * Keep reducers, providers and product timers outside this operation. */
++        app->package->descriptor->on_event(app->ui, &event);
++    }
++    return ESP_OK;
++}
++
 +esp_gsp_handle_t mosaic_esp_platform_retained_ui(
 +    mosaic_esp_platform_handle_t platform)
 +{
@@ -5244,13 +5429,17 @@ index 79d0bd7..7dcc259 100644
      mosaic_esp_platform_handle_t platform, uint32_t timeout_ms)
  {
 diff --git a/components/mosaic_ui/core/mosaic_esp_platform.h b/components/mosaic_ui/core/mosaic_esp_platform.h
-index 0bbc195..3dc5ac6 100644
+index 0bbc195..2a2e897 100644
 --- a/components/mosaic_ui/core/mosaic_esp_platform.h
 +++ b/components/mosaic_ui/core/mosaic_esp_platform.h
-@@ -44,6 +44,11 @@ bool mosaic_esp_platform_deliver_pointer(
+@@ -44,6 +44,15 @@ bool mosaic_esp_platform_deliver_pointer(
      uint32_t generation, int32_t x, int32_t y, bool pressed);
  
  esp_gsp_handle_t mosaic_esp_platform_ui(mosaic_esp_platform_handle_t platform);
++/** Capture only; caller holds the loader mutex. Native callback admission does
++ * not establish that queued row refreshes or image decoding have completed. */
++esp_err_t mosaic_esp_platform_prepare_capture(
++    mosaic_esp_platform_handle_t platform);
 +/** Diagnostics only; caller holds the loader mutex, including while paused. */
 +esp_gsp_handle_t mosaic_esp_platform_retained_ui(
 +    mosaic_esp_platform_handle_t platform);
@@ -5260,7 +5449,7 @@ index 0bbc195..3dc5ac6 100644
      mosaic_esp_platform_handle_t platform, uint32_t timeout_ms);
  esp_err_t mosaic_esp_platform_activate(mosaic_esp_platform_handle_t platform,
 diff --git a/components/mosaic_ui/core/mosaic_loader.c b/components/mosaic_ui/core/mosaic_loader.c
-index 5636bb0..bdb4e84 100644
+index 5636bb0..107f70a 100644
 --- a/components/mosaic_ui/core/mosaic_loader.c
 +++ b/components/mosaic_ui/core/mosaic_loader.c
 @@ -7,18 +7,24 @@
@@ -5656,7 +5845,7 @@ index 5636bb0..bdb4e84 100644
  }
  
  esp_err_t mosaic_loader_invalidate_app(uint16_t app_id, uint32_t revision)
-@@ -500,6 +692,173 @@ bool mosaic_loader_poll(void)
+@@ -500,6 +692,199 @@ bool mosaic_loader_poll(void)
          && uxQueueMessagesWaiting(s_command_queue) != 0;
  }
  
@@ -5767,6 +5956,19 @@ index 5636bb0..bdb4e84 100644
 +    stage = "resume_frame";
 +    error = mosaic_esp_platform_resume_screen(s_platform);
 +    if (error != ESP_OK) goto done;
++    stage = "refresh";
++    error = mosaic_esp_platform_prepare_capture(s_platform);
++    if (error != ESP_OK) goto done;
++    /* Resume's full raster runs prepare/render before the ordinary app step.
++     * Keep mirroring later dirty updates while the 50 ms idle runner can step.
++     * This is a bounded sampling window, not a resource-readiness guarantee. */
++    stage = "settle";
++    remaining_ms = capture_remaining_ms(deadline_us);
++    if (remaining_ms <= 100U) {
++        error = ESP_ERR_TIMEOUT;
++        goto done;
++    }
++    vTaskDelay(pdMS_TO_TICKS(100U));
 +    remaining_ms = capture_remaining_ms(deadline_us);
 +    esp_gsp_handle_t ui = mosaic_esp_platform_ui(s_platform);
 +    stage = "flush";
@@ -5801,12 +6003,25 @@ index 5636bb0..bdb4e84 100644
 +            s_screen_paused = true;
 +            stage = "resume_restore";
 +            error = resume_error;
++        } else {
++            /* The restoring resume can release the same decoded caches. The
++             * mirror is detached, so these redraws cannot change USB pixels. */
++            const esp_err_t refresh_error =
++                mosaic_esp_platform_prepare_capture(s_platform);
++            if (refresh_error != ESP_OK && error == ESP_OK) {
++                stage = "refresh_restore";
++                error = refresh_error;
++            }
 +        }
 +    }
 +    if (pause_probe_active) {
 +        mosaic_frame_capture_pause_probe_end(&pause_progress);
 +    }
 +    if (error == ESP_OK) {
++        mosaic_frame_capture_progress_t progress;
++        mosaic_frame_capture_progress(frame, &progress);
++        ESP_LOGI("mosaic_capture", "complete commits=%lu tiles=%lu",
++            (unsigned long)progress.commits, (unsigned long)progress.tiles);
 +        *out_frame = frame;
 +    } else {
 +        mosaic_frame_capture_progress_t progress;
@@ -5830,7 +6045,7 @@ index 5636bb0..bdb4e84 100644
  const mosaic_app_descriptor_t* mosaic_loader_app(void)
  {
      return s_runtime != NULL ? mosaic_runtime_active_app(s_runtime)
-@@ -529,6 +888,7 @@ esp_err_t mosaic_loader_quiesce(uint32_t timeout_ms)
+@@ -529,6 +914,7 @@ esp_err_t mosaic_loader_quiesce(uint32_t timeout_ms)
          return ESP_ERR_TIMEOUT;
      }
      int64_t start_us = esp_timer_get_time();
@@ -5838,7 +6053,7 @@ index 5636bb0..bdb4e84 100644
      esp_err_t err = mosaic_esp_platform_quiesce(s_platform, timeout_ms);
      if (err == ESP_OK) {
          s_quiesced = true;
-@@ -552,12 +912,14 @@ esp_err_t mosaic_loader_activate(
+@@ -552,12 +938,14 @@ esp_err_t mosaic_loader_activate(
      if (err == ESP_OK) {
          s_config.producer_generation = producer_generation;
          s_quiesced = false;
@@ -5854,7 +6069,7 @@ index 5636bb0..bdb4e84 100644
  {
      if (timeout_ms == 0 || s_runtime_lock == NULL || !s_runtime_started) {
          return ESP_ERR_INVALID_STATE;
-@@ -566,10 +928,18 @@ esp_err_t mosaic_loader_lock_and_pause_hub(uint32_t timeout_ms)
+@@ -566,10 +954,18 @@ esp_err_t mosaic_loader_lock_and_pause_hub(uint32_t timeout_ms)
          return ESP_ERR_TIMEOUT;
      }
  
@@ -5875,7 +6090,7 @@ index 5636bb0..bdb4e84 100644
          /* The panel retains its last GRAM contents while it is off. Fence the
           * asynchronous Lock Screen setters so Display On cannot expose the
           * previous Hub/Home frame. */
-@@ -578,19 +948,39 @@ esp_err_t mosaic_loader_lock_and_pause_hub(uint32_t timeout_ms)
+@@ -578,19 +974,39 @@ esp_err_t mosaic_loader_lock_and_pause_hub(uint32_t timeout_ms)
          err = flush_err == ESP_GSP_OK ? ESP_OK : (esp_err_t)flush_err;
          if (err == ESP_OK) {
              err = mosaic_esp_platform_pause_screen(s_platform, timeout_ms);
@@ -7425,6 +7640,18 @@ index 5280d91..76d80f2 100644
      ESP_LOGI(TAG, "mosaic hub live (ported esp-gsp example)");
      return ESP_OK;
  }
+diff --git a/components/mosaic_ui/runtime/mosaic_runtime.h b/components/mosaic_ui/runtime/mosaic_runtime.h
+index aa96efb..fcaabd3 100644
+--- a/components/mosaic_ui/runtime/mosaic_runtime.h
++++ b/components/mosaic_ui/runtime/mosaic_runtime.h
+@@ -31,6 +31,7 @@ typedef enum {
+     MOSAIC_EVENT_POINTER,
+     MOSAIC_EVENT_TIMER,
+     MOSAIC_EVENT_MODEL_CHANGED,
++    MOSAIC_EVENT_CAPTURE_REFRESH,
+ } mosaic_event_type_t;
+ 
+ typedef struct mosaic_event {
 diff --git a/components/wifi_manager/include/wifi_manager.h b/components/wifi_manager/include/wifi_manager.h
 index 938bc7d..1bbcee4 100644
 --- a/components/wifi_manager/include/wifi_manager.h

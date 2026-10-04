@@ -14,6 +14,7 @@ typedef struct {
     bool full;
     bool committed;
     uint32_t tiles;
+    uint32_t commits;
     uint32_t covered_pixels;
 } mosaic_frame_capture_progress_t;
 /** Numeric progress only; safe while the renderer is submitting tiles. */
