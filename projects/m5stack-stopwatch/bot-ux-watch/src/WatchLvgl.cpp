@@ -1,4 +1,5 @@
 #include "WatchLvgl.h"
+#include "WatchControls.h"
 #include "WatchStrings.h"
 #include <UxText.h>
 #include <cstring>
@@ -48,6 +49,26 @@ lv_obj_t* label(lv_obj_t* parent,const char* text,int x,int y,int width,bool lit
     lv_label_set_long_mode(obj,LV_LABEL_LONG_DOT);
     lv_obj_set_pos(obj,x,y); lv_obj_set_width(obj,width);
     return obj;
+}
+void footerEvent(lv_event_t* e) {
+    if(lv_event_get_code(e)==LV_EVENT_HIT_TEST) {
+        auto* hit=lv_event_get_hit_test_info(e);
+        hit->res=watchcontrols::doneContains(hit->point->x,hit->point->y);
+    } else if(lv_event_get_code(e)==LV_EVENT_DRAW_MAIN) {
+        auto* obj=lv_event_get_target(e);
+        auto* context=lv_event_get_draw_ctx(e);
+        lv_draw_rect_dsc_t style;
+        lv_draw_rect_dsc_init(&style);
+        style.bg_color=lv_obj_get_style_bg_color(obj,LV_PART_MAIN);
+        const auto bounds=watchcontrols::doneBounds();
+        // Use the same circular scanlines for visible pixels and LVGL hit testing.
+        for(int16_t y=bounds.y;y<bounds.y+bounds.h;++y) {
+            if(y<context->clip_area->y1||y>context->clip_area->y2) continue;
+            const auto span=watchcontrols::doneRowSpan(y);
+            lv_area_t area={(lv_coord_t)span.x,y,(lv_coord_t)(span.x+span.w-1),y};
+            lv_draw_rect(context,&style,&area);
+        }
+    }
 }
 }
 
@@ -145,9 +166,11 @@ void WatchLvgl::build(const Model& model) {
         _image=lv_img_create(_root); lv_img_set_src(_image,&_imageDescriptor);
         lv_img_set_zoom(_image,184); lv_obj_set_pos(_image,144,65);
     }
+    const bool canCancel=model.editor&&!model.immediate;
+    const int contentTop=model.preview?218:88,contentBottom=canCancel?346:382;
     _list=lv_obj_create(_root); clean(_list);
-    lv_obj_set_pos(_list,60,model.preview?218:88);
-    lv_obj_set_size(_list,346,model.preview?164:294);
+    lv_obj_set_pos(_list,60,contentTop);
+    lv_obj_set_size(_list,346,contentBottom-contentTop);
     lv_obj_add_flag(_list,LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(_list,LV_DIR_VER);
     lv_obj_set_scrollbar_mode(_list,LV_SCROLLBAR_MODE_AUTO);
@@ -160,7 +183,8 @@ void WatchLvgl::build(const Model& model) {
         lv_obj_set_style_bg_color(_name,lv_color_hex(0x253137),0);
         bind(_name,Action::Name,0);
         auto* keyboard=lv_keyboard_create(_root);
-        lv_obj_set_pos(keyboard,65,157); lv_obj_set_size(keyboard,336,222);
+        lv_obj_set_align(keyboard,LV_ALIGN_TOP_LEFT);
+        lv_obj_set_pos(keyboard,65,157); lv_obj_set_size(keyboard,336,contentBottom-157);
         lv_keyboard_set_textarea(keyboard,_name);
         lv_obj_add_event_cb(keyboard,[](lv_event_t* e) {
             auto* self=(WatchLvgl*)lv_event_get_user_data(e);
@@ -210,11 +234,19 @@ void WatchLvgl::build(const Model& model) {
             }
         }
     }
-    if(model.editor&&!model.immediate) {
-        button(_root,"CANCEL",113,393,112,43,Action::Cancel);
-        button(_root,"DONE",241,393,112,43,Action::Save);
-    } else button(_root,"DONE",166,393,134,43,Action::Save);
-    _error=label(_root,"Error",168,365,130);
+    if(canCancel) button(_root,"CANCEL",166,358,134,40,Action::Cancel);
+    const auto bounds=watchcontrols::doneBounds();
+    auto* footer=button(_root,"DONE",bounds.x,bounds.y,bounds.w,bounds.h,Action::Save);
+    lv_obj_set_style_radius(footer,0,0);
+    lv_obj_set_style_bg_opa(footer,LV_OPA_TRANSP,0);
+    lv_obj_set_style_bg_color(footer,lv_color_hex(0x86CFC4),0);
+    lv_obj_set_style_bg_color(footer,lv_color_hex(0xB4E4DB),LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(footer,lv_color_hex(0x080D10),0);
+    lv_obj_add_flag(footer,LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_add_event_cb(footer,footerEvent,LV_EVENT_ALL,nullptr);
+    lv_obj_align(lv_obj_get_child(footer,0),LV_ALIGN_CENTER,0,
+        watchcontrols::doneLabelY()-(bounds.y+bounds.h/2));
+    _error=label(_root,"Error",72,365,90);
     lv_obj_set_style_text_color(_error,lv_color_hex(0xFF8A80),0);
     lv_obj_set_style_text_align(_error,LV_TEXT_ALIGN_CENTER,0);
     lv_obj_add_flag(_error,LV_OBJ_FLAG_HIDDEN);
