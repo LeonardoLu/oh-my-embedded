@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -24,6 +25,13 @@ run([output / "test-core"])
 run([compiler, *flags, "-I", PROJECT / "tests/audio_stubs", "-I", PROJECT / "overlay/components/mosaico_audio/include",
      PROJECT / "tests/test_audio.c", PROJECT / "overlay/components/mosaico_audio/mosaico_audio.c", "-o", output / "test-audio"])
 run([output / "test-audio"])
+run([compiler, *flags, "-I", PROJECT / "overlay/components/mosaic_ui/hub",
+     PROJECT / "tests/test_weather_dots.c", "-o", output / "test-weather-dots"])
+run([output / "test-weather-dots"])
+lua = shutil.which("lua")
+if lua is None:
+    raise SystemExit("Lua 5.4+ is required for the shipped fluid simulations' numerical/lifecycle checks.")
+run([lua, PROJECT / "tests/test_fluid.lua"])
 if args.upstream:
     upstream = args.upstream.resolve()
     cjson = upstream / "managed_components/espressif__cjson/cJSON"
@@ -33,10 +41,25 @@ if args.upstream:
     run([compiler, *flags, "-I", include, "-I", PROJECT / "tests/stubs", "-I", cjson,
          PROJECT / "tests/test_protocol.c", PROJECT / "overlay/components/corallium/corallium_protocol.c", output / "cjson.o", "-o", output / "test-protocol"])
     run([output / "test-protocol"])
+    run([sys.executable, PROJECT / "tests/check_boot_commands.py", upstream])
+    run([compiler, *flags, "-I", PROJECT / "tests/power_stubs",
+         "-I", upstream / "components/app_system_config/include",
+         "-I", upstream / "components/app_settings_service/include",
+         "-I", upstream / "components/app_config/include",
+         "-I", PROJECT / "overlay/components/mosaico_audio/include",
+         "-I", upstream / "components/mosaic_ui/include",
+         "-I", upstream / "third-party/esp-claw/components/common/settings/include",
+         PROJECT / "tests/test_display_idle.c",
+         upstream / "components/app_system_config/app_system_config.c",
+         upstream / "components/app_settings_service/app_settings_service.c",
+         "-o", output / "test-display-idle"])
+    run([output / "test-display-idle"])
+    run([sys.executable, PROJECT / "tests/check_fluid_runtime.py", "--lua-component",
+         upstream / "managed_components/georgik__lua", "--sanitize"])
     run([sys.executable, upstream / "components/mosaic_ui/hub/scene/gen_scenes.py"])
     scene = json.loads((upstream / "components/mosaic_ui/hub/scene/mosaic_hub_480.json").read_text())
     objects = scene["objects"]
-    forbidden = {"app_camera", "app_ai_create", "app_works", "app_music", "app_interact", "quick_join_toggle", "quick_low_power_toggle"}
+    forbidden = {"app_camera", "app_ai_create", "app_music", "app_interact", "quick_join_toggle", "quick_low_power_toggle"}
     def hidden(index):
         seen = set()
         while 0 <= index < len(objects):
@@ -52,11 +75,11 @@ if args.upstream:
         if not hidden(index):
             assert "Corallium" not in str(obj.get("text", "")), "Protocol branding leaked into daily UI"
     assert next(o for o in objects if o.get("name") == "launcher_flow")["page_count"] == 2
-    for icon in ("weather", "settings", "imu"):
+    for icon, app in (("settings", "settings"), ("skills", "works"), ("album", "album")):
         shortcut = next(o for o in objects if o.get("name") == "clock_shortcut_" + icon)
-        assert shortcut.get("callback") == "app_" + icon, f"Home shortcut route missing: {icon}"
+        assert shortcut.get("callback") == "app_" + app, f"Home shortcut route missing: {icon}"
     assert next(o for o in objects if o.get("name") == "clock_card").get("callback") == "app_weather"
-    for name in ("app_weather", "app_settings", "app_imu", "app_album", "app_breakout"):
+    for name in ("app_weather", "app_settings", "app_imu", "app_album", "app_breakout", "app_works"):
         assert sum(o.get("name") == name for o in objects) == 1, f"Launcher entry duplicated/missing: {name}"
     group = next(i for i, o in enumerate(objects) if o.get("name") == "quick_connectivity_group")
     assert not any(o.get("parent") == group and o.get("type") == "label" for o in objects), "Quick buttons must remain icon-only"
@@ -70,9 +93,9 @@ if args.upstream:
             if ancestor.get("name") == "quick_drawer": break
             parent = ancestor.get("parent", -1)
         return x, y
-    for name, xy in {"quick_wlan": (90, 62), "quick_bluetooth": (318, 62),
-                     "quick_ringtone": (90, 154), "quick_vibration": (318, 154),
-                     "quick_volume_input": (34, 280), "quick_brightness_input": (266, 280)}.items():
+    for name, xy in {"quick_wlan": (34, 76), "quick_bluetooth": (138, 76),
+                     "quick_ringtone": (34, 180), "quick_vibration": (138, 180),
+                     "quick_volume_input": (270, 70), "quick_brightness_input": (374, 70)}.items():
         index, obj = next((i, o) for i, o in enumerate(objects) if o.get("name") == name)
         assert not hidden(index), f"Required control hidden: {name}"
         assert position(obj) == xy, f"Control and pointer hit test disagree: {name} {position(obj)}"
@@ -86,9 +109,15 @@ if args.upstream:
     count = next(o for o in objects if o.get("name") == "quick_ble_badge_count")
     assert badge.get("hidden") and badge.get("bind_target") == "visible"
     assert badge.get("bind") == "quick_ble_badge_visible" and count.get("text") == "1"
-    assert count.get("parent") == badge_index and position(badge) == (368, 112)
+    assert count.get("parent") == badge_index and position(badge) == (188, 126)
     assert all(not o.get("events") and not o.get("callback") for o in (badge, count)), "BLE badge must not capture touch"
-    print("Factory scene: Home routes, centered icons, hit regions and one-peer decorative badge verified")
+    controls = objects[group]
+    assert controls["w"] == controls["h"] == 220
+    assert controls["w"] * controls["h"] <= 480 * 480 / 4
+    visual = next(o for o in objects if o.get("name") == "home_weather_visual")
+    assert visual["w"] == visual["h"] == 169 and visual["bind"] == "home_weather_visual"
+    assert not any(o.get("name", "").startswith("home_clock") for o in objects)
+    print("Factory scene: Settings/Works/Album Home, weather Canvas, compact icons, hit regions and one-peer badge verified")
     run([sys.executable, upstream / "components/mosaic_ui/apps/settings/scene/gen_scene.py"])
     settings = json.loads((upstream / "components/mosaic_ui/apps/settings/scene/settings_480.json").read_text())
     for obj in settings["objects"]:
@@ -98,13 +127,16 @@ if args.upstream:
     source = (upstream / "components/mosaic_ui/apps/settings/settings_app.c").read_text()
     about_rows = source.split("s_about_rows[] = {", 1)[1].split("};", 1)[0]
     assert "Corallium" not in about_rows
-    assert 'SETTINGS_ROOT_ROW("Corallium", network)' in source and "settings_open_detail(ui, SETTINGS_DETAIL_PROTOCOL)" in source
+    assert 'SETTINGS_ROOT_ROW("Corallium", corallium)' in source and "settings_open_detail(ui, SETTINGS_DETAIL_PROTOCOL)" in source
     assert '"Disch. Pwr"' in source and '"Runtime"' in source and '"Discharge power"' not in source
     from PIL import ImageFont
     font = ImageFont.truetype(str(upstream / "components/mosaic_ui/apps/settings/scene/settings_font.ttf"), 32)
     for array in ("s_about_rows", "s_protocol_rows", "s_battery_rows"):
         labels = re.findall(r'\{"([^"]+)"', source.split(array + "[] = {", 1)[1].split("};", 1)[0])
         assert all(font.getlength(label) <= 180 for label in labels), f"{array} label exceeds its actual column"
-    print("Settings scene: updater absent; dedicated protocol route; shortened battery labels fit actual font")
+    run([sys.executable, PROJECT / "tests/test_settings_scene.py", "--upstream", upstream])
+    run([sys.executable, upstream / "components/mosaic_ui/apps/weather/scene/gen_scene.py"])
+    run([sys.executable, PROJECT / "tests/test_weather_scene.py", "--upstream", upstream])
+    print("Settings scene: updater absent; separate protocol/Bluetooth routes; battery labels fit actual font")
 else:
     print("Protocol/scene checks require --upstream with configured factory checkout.")

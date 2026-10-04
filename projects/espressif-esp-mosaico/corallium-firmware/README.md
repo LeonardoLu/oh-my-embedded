@@ -1,12 +1,13 @@
 # Corallium for ESP-Mosaico
 
-Factory-firmware derivative with a simpler launcher/settings/control center,
-Corallium BLE provisioning, offline app time synchronization, battery power/runtime
-telemetry and reduced background/rendering work. Official update checking and
+Factory-firmware derivative with a compact control center, configurable display
+idle policy, a dot-matrix weather widget and local Works/Lab apps, including two
+fluid simulations. Corallium BLE provisioning, offline app time synchronization
+and battery power/runtime telemetry are retained. Official update checking and
 upgrade entries are removed; About still shows the installed version.
 See [behavior and limits](specs/behavior.md). The connected board identifies as
 CoreBoard 1.2 through eFuse. [Validation evidence](specs/validation.md) separates
-observed UI/BLE behavior from unmeasured power, battery and offline RTC behavior.
+host/build checks, earlier-firmware observations and pending physical checks.
 
 ## Source and build
 
@@ -63,6 +64,10 @@ does not authorize replacing an unidentified attached device.
 
 ## Checks and measurements
 
+Host checks require Python 3, Clang with AddressSanitizer/UBSan, and Lua 5.4 or
+newer available as `lua` on PATH. Scene generation uses the prepared project's
+`requirements.txt` dependencies.
+
 ```sh
 python3 projects/espressif-esp-mosaico/corallium-firmware/tools/check_host.py
 # After dependency configuration; uses the same cJSON as the firmware:
@@ -71,27 +76,42 @@ python3 projects/espressif-esp-mosaico/corallium-firmware/tools/check_host.py --
 python3 projects/espressif-esp-mosaico/corallium-firmware/tools/analyze_performance.py tmp/mosaico/serial.log
 ```
 
-Host tests use AddressSanitizer/UBSan and cover fragmented UTF-8, maximum line size,
-overflow/NUL/timeout recovery, JSON recursion/UTF-8 guards, clock ranges, Wi-Fi credential boundaries, failed
-persistence and reboot enable state, response-shaped mutation rejection, charging
-telemetry, and renderer scheduling. Scene validation checks
-removed controls have hidden ancestors and no touchable route.
-Settings scene checks also require update navigation and actions to be absent;
-the linked-firmware check rejects the vendor updater and official manifest URL.
+Host checks cover protocol framing/validation, failed persistence, saved local
+states, asynchronous boot ordering, charging telemetry, display idle stages and
+brightness restoration. The exact shipped Lua simulations are exercised for
+numerical bounds, touch, pause and exit cleanup. With `--upstream`, the bundled
+Lua runtime is also tested in its firmware float32/int32 mode, including
+millisecond-counter wrap. Generated scene checks cover
+safe icon padding, Display scrolling/choosers, the independent Bluetooth route,
+compact control hit regions and Home navigation.
+Removed controls have hidden ancestors and no touchable route. Update navigation
+and actions are absent; the linked-firmware check rejects the vendor updater and
+official manifest URL.
 It also parses actual compiled font references and the MMAP flash image, rejecting
-wrong font ordinals, missing catalog members and stale staged resources.
+wrong font ordinals, missing catalog members and stale staged resources. The
+packed SYSTEM filesystem is checked against staging, including Works launchers
+and the shipped fluid Lua sources.
 
-For BLE, toggle the Bluetooth tile or hold the top key for 500 ms. The device
-advertises as ESP-Mosaico until switched off; its switch survives restart and
-defaults off after factory reset. The GATT link uses no pairing or encryption;
+For BLE, use Settings → Bluetooth, toggle the Bluetooth tile or hold the top key
+for 500 ms. The device advertises as ESP-Mosaico until switched off; its switch
+survives restart and defaults off after factory reset. The GATT link uses no
+pairing or encryption;
 JSONL, including Wi-Fi credentials, is transmitted in plaintext. Passwords remain
 excluded from responses and logs. [Validation scope](specs/validation.md) records actual
 evidence and remaining hardware checks.
 
-The pull-down has two columns of centered Wi-Fi/Bluetooth and mute/vibration icons,
-with volume and brightness sliders below. Volume release and unmute play a short
-local confirmation; startup stays silent. Muting and the prior volume survive
-restart. Settings has separate Battery, Corallium protocol and About entries.
+The pull-down groups Wi-Fi/Bluetooth and mute/vibration into a compact 2×2 block,
+with vertical volume and brightness sliders beside it. Volume release and unmute
+play a short local confirmation; startup stays silent. Muting and the prior
+volume survive restart. Settings has separate Bluetooth, Battery, Corallium
+protocol and About entries. Display defaults to dimming after 10 seconds and
+screen-off after 30 seconds, with both disabled while the gauge reports charging;
+whole-device auto power-off defaults to Never. See the behavior spec for timeout
+choices and presenter/charging limits.
 
-Home retains Weather, Settings and IMU shortcuts; tapping its weather card also
-opens Weather. The adjacent launcher continues to expose the remaining apps.
+Home's first page provides Settings, Works and Album. Its weather card opens
+Weather and replaces the analog clock with the latest weather symbol rendered
+as dots; fresh precipitation symbols animate while visible. Saved controls appear
+before asynchronous Wi-Fi association and weather fetching. Works provides Lab,
+Recent and Installed views; Lab contains Dino, Flappy Bird, Fluid and Dot Fluid.
+The local Lua runtime starts on first opening Works.

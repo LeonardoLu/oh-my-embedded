@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 import struct
+import subprocess
 import sys
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -51,6 +52,8 @@ def main():
                      if name.endswith(".gspb") and name != "common-fonts.gspb")
     print(f"PASS: {len(intermediate)} original bundles / {original_refs} font references")
     print(f"PASS: {len(packed)} packed assets match staging; {final_refs} font references resolve in the flash image")
+    subprocess.run([sys.executable, str(Path(__file__).with_name("check_system_assets.py")),
+                    "--build", str(build)], check=True)
 
 
 if __name__ == "__main__":

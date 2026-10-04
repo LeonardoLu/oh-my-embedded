@@ -5,6 +5,8 @@
 #include "esp_err.h"
 #include "cJSON.h"
 
+/* Load local switch state before UI creation; performs no radio work. */
+void corallium_restore_switch(void);
 esp_err_t corallium_start(void);
 /* Persistent manual BLE switch; default off. Legacy pairing function names
  * now control ordinary unpaired GATT. Saved on state resumes on boot.

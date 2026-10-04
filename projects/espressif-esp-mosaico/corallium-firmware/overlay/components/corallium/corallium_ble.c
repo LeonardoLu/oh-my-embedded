@@ -36,6 +36,7 @@ static _Atomic uint16_t connection_id;
 static corallium_ble_session_t session;
 static _Atomic bool ready, advertising_pending;
 static bool adv_ready, scan_ready, service_ready;
+static bool switch_restored;
 static QueueHandle_t requests;
 static corallium_stream_t incoming;
 static esp_bd_addr_t peer;
@@ -62,7 +63,9 @@ static esp_err_t save_enabled(bool enabled) {
     nvs_close(handle);
     return err;
 }
-static void load_enabled(void) {
+void corallium_restore_switch(void) {
+    if (switch_restored) return;
+    switch_restored = true;
     nvs_handle_t handle;
     uint8_t enabled = 0;
     esp_err_t err = nvs_open("corallium", NVS_READONLY, &handle);
@@ -92,7 +95,6 @@ esp_err_t corallium_close_pairing(void) {
     return ESP_OK;
 }
 esp_err_t corallium_open_pairing(void) {
-    if (!ready) return ESP_ERR_INVALID_STATE;
     esp_err_t err = corallium_ble_set_enabled(&session, true, save_enabled);
     if (err != ESP_OK) return err;
     advertise();
@@ -248,7 +250,7 @@ static void worker(void *arg) {
     }
 }
 esp_err_t corallium_start(void) {
-    load_enabled();
+    corallium_restore_switch();
     requests = xQueueCreate(1, sizeof(request_t));
     if (!requests) return ESP_ERR_NO_MEM;
     esp_bt_controller_config_t config = BT_CONTROLLER_INIT_CONFIG_DEFAULT();

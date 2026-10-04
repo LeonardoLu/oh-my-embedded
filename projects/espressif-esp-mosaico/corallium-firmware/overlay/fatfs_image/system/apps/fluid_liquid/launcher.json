@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "fluid_liquid",
+  "entry": "scripts/fluid_liquid.lua",
+  "display_name": "Fluid",
+  "args": {},
+  "order": 8,
+  "visible": true
+}
