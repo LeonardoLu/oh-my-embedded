@@ -29,6 +29,10 @@ and Python/Clang prerequisites. Covered behavior includes:
   screen-off, dim/user-brightness separation, preview restoration and failed-save
   rollback. A nonrecursive mutex double checks rotation/quiesce reentry. These
   tests do not operate the physical panel or shutdown line.
+- Extracted real Back/activity functions execute with queue/navigation doubles:
+  an awake Back press queues activity before exit or loader dispatch, including
+  both dispatch error paths. This establishes command ordering; the display
+  service regression separately covers brightness restoration.
 - Startup ordering and queue ownership: saved controls and local provider/
   callback setup precede UI, association/HTTP starts follow UI, and the actual
   queued Wi-Fi configuration owns/rebinds every string. Prepared START consumes
@@ -42,7 +46,17 @@ and Python/Clang prerequisites. Covered behavior includes:
   draining both 2880-byte and 4096-byte DMA rings before mute/close. The test
   rejects the earlier immediate-close implementation because tone samples remain
   queued. Open/query/write/drain failures and mid-play mute close the codec.
-  This checks control flow, not physical sound/power.
+  Works PCM tests check owned copies, clip limits, immediate busy returns,
+  preview/PCM serialization, stream gain without master-volume changes, queued
+  sound discarded on mute, cancellation before/during playback, stale-finalizer
+  isolation and normal DMA draining. This checks control flow with explicit
+  RTOS/codec doubles, not physical sound/power or measured cancellation latency.
+- `tests/check_works_audio.py` compiles the actual bundled Lua source list with
+  its float32/int32 configuration and current stack limit. The real Lua audio
+  facade and speaker worker execute the unchanged official Flappy script with
+  display/delay/input doubles, exercising ready/flap/crash PCM, busy retry,
+  userdata collection, error followed by `lua_close` and stream reuse. This
+  checks script compatibility and cleanup, not game rendering or physical sound.
 - Generated factory scene traversal: removed actions have hidden ancestors,
   retained apps keep their launcher entries and Home provides Settings, Works and
   Album shortcuts plus a Weather card route. The Home analog-clock objects are
@@ -71,10 +85,14 @@ and Python/Clang prerequisites. Covered behavior includes:
   refreshed and touch-scrolled/recycled rows match their RGBA masks on a gray
   background within RGB565 quantization tolerance. The placeholder compiles as
   `rgb565_a8`; font externalization/materialization preserves the image bank
-  byte for byte. Runtime off/on tracks render gray/orange, and three native SVG
-  arrows remain a single connected stroke with four pixels of margin.
-  Providers, navigation and common shell APIs are test doubles; List binding,
-  image decoding/upload and state-property rendering execute the real C path.
+  byte for byte. Runtime off/on tracks render gray/orange, and all four native
+  SVG arrows remain a single connected stroke with four pixels of margin.
+  Registered observer/callback input doubles exercise actual C scrolling to
+  both charging switches and the Power-off chooser/save/return path, preserving
+  the scroll position and removing the chooser overlay. Providers, StackView
+  navigation and common shell APIs are test doubles; List binding, image
+  decoding/upload, scrolling and state-property rendering execute the real C
+  path. GSP hit routing and physical touch are outside this check.
 - Further icon/layout review covers Works paging, Album arrows, the IMU bubble,
   Bricks shapes, forecast icons and common Back bounds. Album thumbnail cover
   cropping remains intentional. `tests/test_weather_scene.py` checks all six
@@ -132,11 +150,12 @@ enumeration and DTR/RTS reset behavior are separate physical-device checks.
 ## Current physical evidence
 
 The identified ESP32-S31 board reports CoreBoard version 1.2 through eFuse.
-The recovery firmware was installed through that ROM loader without creating a
-firmware backup. All six images were verified after writing; NVS was outside the
-erase/write ranges. Application USB CDC enumerated, startup reached Ready at
+The firmware was installed through that ROM loader without creating a firmware
+backup. Written application/SYSTEM images were verified; retained boot, partition,
+OTA-initialization and UI images match their earlier verified hashes. NVS was
+outside the erase/write ranges. Application USB CDC enumerated, startup reached Ready at
 about 5.2 seconds, stored Wi-Fi reconnected and weather refreshed at about
-18.7 seconds. Ready preceded completed Wi-Fi association and the weather result.
+32.3 seconds. Ready preceded completed Wi-Fi association and the weather result.
 No missing scene resource, runtime failure, panic or backtrace appeared in the
 bounded startup capture. This is execution evidence, not visual acceptance.
 
@@ -151,8 +170,9 @@ packed SYSTEM image contains only the three official app launchers.
 Settings entry/transparency/switch colors, drawer glyphs/equal-height plates,
 Home/Weather art, panel wake, charging policy, whole-device shutdown and measured
 frame rate still need their separate physical checks. The tagged-lease registry
-correction is build/resource-checked; repeated local-job cleanup must also be
-observed on the device.
+correction is build/resource-checked and Lua audio cleanup has host coverage;
+repeated local-job cleanup, Flappy sound and Back brightness restoration must
+also be observed on the device.
 
 ## Earlier-firmware hardware observations
 
@@ -209,7 +229,7 @@ Use the same identified device for comparisons:
 | Cold start | With saved controls and unavailable/slow Wi-Fi/weather, open the pull-down immediately: switches and slider values must reflect local saved state. The first page must remain usable while association/fetching progresses. |
 | UI/icons | Confirm Settings/Works/Album on Home and Weather-card navigation. Inspect Network/Corallium/About tint masks, Display selector arrows, scrolling and chooser return. Bluetooth's checked track must match the other orange switches. The Wi-Fi password page must omit Bluetooth. The pull-down must cover all four screen corners with its compact 2×2 controls, icon/percentage sliders and bottom collapse arrow; slider explanations must be absent and both top widget backgrounds must have equal height. Icons must remain white in both toggle states. Check shortened Battery values at their visible hit regions. |
 | Weather | Exercise clear/cloud/precipitation and day/night symbols with real provider data. Confirm unavailable/stale states, identical art between Home and Weather, and safe swipes/drawer/lock/app transitions. |
-| Works | Open Lab/Recent/Installed; Lab has Dino and Flappy, Installed also has Album. No Fluid/Toy entries remain. Repeated game launches and physical Back must release RAW and return to Works. Check local Recent persistence. |
+| Works | Open Lab/Recent/Installed; Lab has Dino and Flappy, Installed also has Album. No Fluid/Toy entries remain. Flappy ready/flap/crash sound must follow master volume/mute and stop on exit. Repeated game launches and physical Back must release RAW and return to Works. Check local Recent persistence. |
 | Audio | Releasing volume/unmuting sounds once; mute produces silence and restores the previous level after reboot. Confirm silent startup/background and no microphone task. |
 | Wi-Fi | Set from app after local Wi-Fi off, join, inspect local SSID/IP, restart and confirm enabled state; wrong password reports failed; forget erases credentials and remains off after restart. Include a 32-byte SSID. |
 | Time | Set without internet; powered software reset should retain plausible RTC time with estimated quality. Full power removal must show invalid/--:-- until app or NTP sync. Measure drift against an external reference. |

@@ -3,8 +3,11 @@
 
 Requires the pinned ESP-GSP component, GSPC, CMake and the Python gsp simulator.
 Only the row background and initial page are changed in presentation fixtures.
-Hardware providers, navigation and common shell APIs are stubbed; List
-materialization, image upload/decoding and state-property rendering are real.
+Hardware providers, StackView navigation and common shell APIs are stubbed;
+List materialization, image upload/decoding, pointer scroll, chooser actions
+and state-property rendering are real.
+Lower-page pointer samples and chooser CALLs are injected at the registered
+observer/callback boundary; this does not test GSP hit routing or hardware input.
 The temporary C copy replaces the host-only constant-false Bluetooth provider;
 the Bluetooth render function and all other UI logic stay byte-for-byte intact.
 """
@@ -159,20 +162,26 @@ def check(args, output):
     run([args.gspc, "font-link", str(linked / bundle.name), "--materialize",
          str(catalog), "--output-dir", str(materialized)], output / "materialize.log")
 
-    def capture(name, scene_bundle, overrides=None, scroll=False):
+    def capture(name, scene_bundle, overrides=None, scroll=False, script=None, page=None):
         env = dict(os.environ)
-        for key in ("SETTINGS_NATIVE_SCROLL", "SETTINGS_NATIVE_CHECKED"):
+        for key in ("SETTINGS_NATIVE_SCROLL", "SETTINGS_NATIVE_CHECKED", "SETTINGS_NATIVE_PAGE",
+                    "SETTINGS_NATIVE_DISPLAY_INPUT"):
             env.pop(key, None)
         env.update(overrides or {})
+        if page is not None:
+            env["SETTINGS_NATIVE_PAGE"] = str(page)
+        if script is None:
+            script = (["--wait", "30", "--drag", "240", "420", "240", "130",
+                       "--wait", "60"] if scroll else [])
         picture = output / f"{name}.png"
         log = run([sys.executable, "-m", "gsp.execute", "--version", args.sim_version,
                    "sim", "--bundle", str(scene_bundle), "--backend-library",
                    manifest["backend_library"], "--backend-required", "--headless",
-                   "--frames", "150", "--instance-slots", str(sum(counts)),
+                   "--frames", "300" if "SETTINGS_NATIVE_DISPLAY_INPUT" in env else "150",
+                   "--instance-slots", str(sum(counts)),
                    "--dynamic-image-slots", str(counts[0] + dynamic), "--dump",
-                   str(picture), "--dump-format", "png"] +
-                  (["--wait", "30", "--drag", "240", "420", "240", "130",
-                    "--wait", "60"] if scroll else []), output / f"{name}.log", env)
+                   str(picture), "--dump-format", "png"] + script,
+                  output / f"{name}.log", env)
         assert "row binder returned" not in log, log
         if overrides and "SETTINGS_NATIVE_CHECKED" in overrides:
             expected = "On - ready to connect" if overrides["SETTINGS_NATIVE_CHECKED"] == "1" else "Off"
@@ -217,17 +226,71 @@ def check(args, output):
             assert red > 200 and 50 < green < 140 and blue < 40, (red, green, blue)
         else:
             assert max(red, green, blue) - min(red, green, blue) < 12 and 30 < red < 100
-    picture = capture("display", display)
-    for name in ("rotation", "screen_timeout", "dim_timeout"):
+    def check_chevron(picture, name, offset=0):
         index, chevron = by_name[f"settings_{name}_chevron"]
         cx, cy = coordinate(objects, index)
+        cy -= offset
+        viewport = by_name["settings_display_viewport"][1]
+        assert viewport["y"] <= cy and cy + chevron["h"] <= viewport["y"] + viewport["h"]
         tile = picture.crop((cx, cy, cx + chevron["w"], cy + chevron["h"]))
         mask = tile.convert("L").point(lambda value: 255 if value >= 200 else 0)
         bounds = mask.getbbox()
         assert bounds and min(bounds[:2]) >= 4 and max(bounds[2:]) <= 28, (name, bounds)
         assert len(connected_components(mask)) == 1, f"{name}: chevron has a clipped or broken join"
+
+    picture = capture("display", display, page=1)
+    for name in ("rotation", "screen_timeout", "dim_timeout"):
+        check_chevron(picture, name)
+
+    lower = capture("display-lower", display,
+                    overrides={"SETTINGS_NATIVE_DISPLAY_INPUT": "lower"}, page=1)
+    lower_log = (output / "display-lower.log").read_text()
+    offsets = re.findall(r"native Display scroll=(\d+)\n", lower_log)
+    assert offsets, "The actual Settings pointer path did not scroll"
+    offset = int(offsets[-1])
+    assert offset == -by_name["settings_display_content"][1]["y"]["min"], offset
+    check_chevron(lower, "poweroff_timeout", offset)
+    for name in ("dim_while_charging", "sleep_while_charging"):
+        index, toggle = by_name[f"settings_{name}"]
+        tx, ty = coordinate(objects, index)
+        ty -= offset
+        viewport = by_name["settings_display_viewport"][1]
+        assert viewport["y"] <= ty and ty + toggle["h"] <= viewport["y"] + viewport["h"]
+        tile = lower.crop((tx, ty, tx + toggle["w"], ty + toggle["h"]))
+        white = tile.convert("L").point(lambda value: 255 if value >= 200 else 0)
+        bounds = white.getbbox()
+        assert bounds and 0 < bounds[0] < bounds[2] < toggle["w"], (name, bounds)
+        assert 0 < bounds[1] < bounds[3] < toggle["h"], (name, bounds)
+        red, green, blue = tile.getpixel((toggle["w"] // 2, toggle["h"] // 2))
+        assert max(red, green, blue) - min(red, green, blue) < 12 and 30 < red < 100
+        label = lower.crop((12, ty, 332, ty + toggle["h"]))
+        assert label.convert("L").point(lambda value: 255 if value >= 200 else 0).getbbox(), name
+
+    chooser = capture("display-poweroff-chooser", display,
+                      overrides={"SETTINGS_NATIVE_DISPLAY_INPUT": "chooser"}, page=1)
+    assert "native chooser open=1 kind=3\n" in (output / "display-poweroff-chooser.log").read_text()
+    assert ImageChops.difference(lower, chooser).crop((24, 70, 456, 452)).getbbox()
+    returned = capture("display-poweroff-selected", display,
+                       overrides={"SETTINGS_NATIVE_DISPLAY_INPUT": "selected"}, page=1)
+    returned_log = (output / "display-poweroff-selected.log").read_text()
+    assert "native Power-off saved=300000\n" in returned_log
+    assert f"native chooser open=0 value=300000 scroll={offset}\n" in returned_log
+    assert "native Power-off label=5 min\n" in returned_log
+    check_chevron(returned, "poweroff_timeout", offset)
+    # Closing the fixed chooser restores every lower-page pixel except the
+    # selected value text. This catches an overlay left on top of the controls.
+    before = lower.copy()
+    after = returned.copy()
+    value_index, value = by_name["settings_poweroff_timeout_value"]
+    vx, vy = coordinate(objects, value_index)
+    box = (vx, vy - offset, vx + value["w"], vy - offset + value["h"])
+    before.paste((0, 0, 0), box)
+    after.paste((0, 0, 0), box)
+    assert not ImageChops.difference(before, after).getbbox()
     print("PASS: real C binder RGBA upload, initial/recycled/refreshed rows, "
-          "font-linked A8 bank, runtime Bluetooth text/colors and 3 native SVG chevrons")
+          "font-linked A8 bank, runtime Bluetooth text/colors, all 4 native SVG "
+          "chevrons, lower charge toggles and real C Power-off chooser/save/return "
+          "(observer/callback input doubles)")
 
 
 def main():

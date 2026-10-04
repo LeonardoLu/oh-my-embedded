@@ -37,7 +37,9 @@ if args.upstream:
     run([compiler, *flags, "-I", include, "-I", PROJECT / "tests/stubs", "-I", cjson,
          PROJECT / "tests/test_protocol.c", PROJECT / "overlay/components/corallium/corallium_protocol.c", output / "cjson.o", "-o", output / "test-protocol"])
     run([output / "test-protocol"])
+    run([sys.executable, PROJECT / "tests/check_works_audio.py", "--upstream", upstream])
     run([sys.executable, PROJECT / "tests/check_boot_commands.py", upstream])
+    run([sys.executable, PROJECT / "tests/check_display_back.py", "--upstream", upstream])
     run([compiler, *flags, "-I", PROJECT / "tests/power_stubs",
          "-I", upstream / "components/app_system_config/include",
          "-I", upstream / "components/app_settings_service/include",

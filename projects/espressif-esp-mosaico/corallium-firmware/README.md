@@ -82,6 +82,8 @@ compact control hit regions and Home navigation.
 The native Settings regression executes the actual C row binder and state setters
 through the pinned GSP simulator, checking RGBA uploads on a gray background,
 row recycling, font-linked alpha, orange switch tracks and complete SVG chevrons.
+Observer/callback input doubles also exercise lower-page scrolling, both
+charging switches and Power-off chooser/save/return through the real C handlers.
 Removed controls have hidden ancestors and no touchable route. Update navigation
 and actions are absent; the linked-firmware check rejects the vendor updater and
 official manifest URL.
@@ -114,4 +116,5 @@ Weather and replaces the analog clock with Weather's exact dot illustrations
 and shared condition selection. Saved controls appear
 before asynchronous Wi-Fi association and weather fetching. Works provides Lab,
 Recent and Installed views; Lab contains the official Dino and Flappy Bird games.
-The local Lua runtime starts on first opening Works.
+The local Lua runtime starts on first opening Works. Flappy sound effects use
+the output-only speaker worker and follow the saved master volume and mute.

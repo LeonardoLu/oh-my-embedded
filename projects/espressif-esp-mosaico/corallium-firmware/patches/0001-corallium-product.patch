@@ -649,10 +649,18 @@ index d37a9b9..1287ac4 100644
  esp_err_t app_system_config_save(const app_system_config_t *config);
  esp_err_t app_system_config_reset(void);
 diff --git a/components/mosaic_ui/CMakeLists.txt b/components/mosaic_ui/CMakeLists.txt
-index 764f30d..71b5903 100644
+index 764f30d..c271ca5 100644
 --- a/components/mosaic_ui/CMakeLists.txt
 +++ b/components/mosaic_ui/CMakeLists.txt
-@@ -46,6 +46,7 @@ idf_component_register(
+@@ -26,6 +26,7 @@ idf_component_register(
+          "common/mosaic_app_shell_titles.c"
+          "common/mosaic_settings_model.c"
+          "common/works_runtime.c"
++         "common/works_audio.c"
+          "common/mosaic_top_notice.c"
+          "common/wechat_binding_flow.c"
+          "common/ai_create_controller.c"
+@@ -46,6 +47,7 @@ idf_component_register(
                   ${MOSAIC_APP_INCLUDE_DIRS}
                   "${CMAKE_CURRENT_BINARY_DIR}/generated"
      REQUIRES
@@ -660,12 +668,13 @@ index 764f30d..71b5903 100644
          esp_timer
          freertos
          pthread
-@@ -54,6 +55,19 @@ idf_component_register(
+@@ -54,6 +56,20 @@ idf_component_register(
          nvs_flash
          esp_driver_jpeg
          esp_driver_ppa
 +    PRIV_REQUIRES
 +        display_service
++        mosaico_audio
 +        app_registry
 +        cap_lua
 +        claw_cap
@@ -4917,10 +4926,18 @@ index 5967bf4..44a3185 100644
      case MOSAIC_SYSTEM_BOOT_HOME:
          *ret_app_name = "mosaic-hub";
 diff --git a/components/mosaic_ui/common/works_runtime.c b/components/mosaic_ui/common/works_runtime.c
-index fe1069a..bbd50fb 100644
+index fe1069a..c206f3f 100644
 --- a/components/mosaic_ui/common/works_runtime.c
 +++ b/components/mosaic_ui/common/works_runtime.c
-@@ -14,6 +14,8 @@
+@@ -5,6 +5,7 @@
+  */
+ 
+ #include "works_runtime.h"
++#include "works_audio.h"
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -14,6 +15,8 @@
  #include "cJSON.h"
  #include "cap_lua.h"
  #include "app_registry.h"
@@ -4929,7 +4946,7 @@ index fe1069a..bbd50fb 100644
  #include "claw_paths.h"
  #include "claw_utils_file.h"
  #include "esp_attr.h"
-@@ -23,6 +25,13 @@
+@@ -23,6 +26,13 @@
  #include "freertos/queue.h"
  #include "freertos/semphr.h"
  #include "freertos/task.h"
@@ -4943,7 +4960,7 @@ index fe1069a..bbd50fb 100644
  
  #define WORKS_CATALOG_LIMIT       64U
  #define WORKS_PATH_MAX            128U
-@@ -80,6 +89,54 @@ typedef struct {
+@@ -80,6 +90,55 @@ typedef struct {
  
  static const char *TAG = "works_runtime";
  static EXT_RAM_BSS_ATTR works_runtime_t s_runtime;
@@ -4966,6 +4983,7 @@ index fe1069a..bbd50fb 100644
 +    ESP_RETURN_ON_ERROR(lua_module_lvgl_register_with_data_root(
 +        claw_paths_get(CLAW_PATH_DATA)), TAG, "register LVGL");
 +    ESP_RETURN_ON_ERROR(lua_module_button_register(), TAG, "register button");
++    ESP_RETURN_ON_ERROR(works_audio_register(), TAG, "register local audio output");
 +    char path[WORKS_PATH_MAX];
 +    ESP_RETURN_ON_ERROR(claw_paths_join(CLAW_PATH_SYSTEM, "scripts/builtin/lib",
 +        path, sizeof(path)), TAG, "builtin library path");
@@ -4998,7 +5016,7 @@ index fe1069a..bbd50fb 100644
  
  static bool state_is_active(works_runtime_state_t state)
  {
-@@ -696,6 +753,7 @@ esp_err_t works_runtime_init(const works_runtime_config_t *config)
+@@ -696,6 +755,7 @@ esp_err_t works_runtime_init(const works_runtime_config_t *config)
      if (!config || !config->on_changed) {
          return ESP_ERR_INVALID_ARG;
      }
@@ -6055,7 +6073,7 @@ index 2d5b399..c4338ed 100644
  /** ISR-safe CST9217 interrupt hook; posts a wake only while the panel is off. */
  void mosaic_ui_screen_wake_from_isr(void *user_ctx);
 diff --git a/components/mosaic_ui/mosaic_ui.c b/components/mosaic_ui/mosaic_ui.c
-index 5280d91..d5f2702 100644
+index 5280d91..4325924 100644
 --- a/components/mosaic_ui/mosaic_ui.c
 +++ b/components/mosaic_ui/mosaic_ui.c
 @@ -15,6 +15,7 @@
@@ -6195,10 +6213,11 @@ index 5280d91..d5f2702 100644
      (void)arg;
 -    screen_post(SCREEN_CMD_SLEEP, false);
 +    screen_post(SCREEN_CMD_TIMER, false);
-+}
-+
+ }
+ 
+-static void screen_apply_wake(void)
 +static bool screen_set_dimmed(bool dimmed)
-+{
+ {
 +    if (dimmed == s_screen_dimmed) {
 +        return true;
 +    }
@@ -6211,11 +6230,10 @@ index 5280d91..d5f2702 100644
 +    }
 +    s_screen_dimmed = dimmed;
 +    return true;
- }
- 
--static void screen_apply_wake(void)
++}
++
 +static bool screen_apply_wake(bool consume_pointer)
- {
++{
 +    if (!atomic_load(&s_hub_presenter_active)) {
 +        return true;
 +    }
@@ -6427,7 +6445,15 @@ index 5280d91..d5f2702 100644
  }
  
  esp_err_t mosaic_system_configure(const mosaic_system_ops_t *ops)
-@@ -354,6 +525,7 @@ static esp_err_t prepare_simulated_tap(void)
+@@ -314,6 +485,7 @@ esp_err_t mosaic_welcome_open(void)
+ 
+ esp_err_t mosaic_ui_back(void)
+ {
++    mosaic_ui_note_screen_activity();
+     esp_err_t err = display_service_request_exit();
+     if (err != ESP_ERR_NOT_FOUND) {
+         return err;
+@@ -354,6 +526,7 @@ static esp_err_t prepare_simulated_tap(void)
      /* Let the resumed renderer publish its first frame before input. */
      if (woke_screen) {
          vTaskDelay(pdMS_TO_TICKS(100));
@@ -6435,7 +6461,7 @@ index 5280d91..d5f2702 100644
      }
      mosaic_ui_note_screen_activity();
      return ESP_OK;
-@@ -371,11 +543,22 @@ esp_err_t mosaic_ui_simulate_tap(int16_t x, int16_t y)
+@@ -371,11 +544,22 @@ esp_err_t mosaic_ui_simulate_tap(int16_t x, int16_t y)
  static esp_err_t present_quiesce(void *ctx, uint32_t timeout_ms)
  {
      (void)ctx;
@@ -6459,7 +6485,7 @@ index 5280d91..d5f2702 100644
      return err;
  }
  
-@@ -387,11 +570,16 @@ static esp_err_t present_activate(
+@@ -387,11 +571,16 @@ static esp_err_t present_activate(
              &s_present_producer, generation)) {
          return ESP_ERR_INVALID_STATE;
      }
@@ -6477,7 +6503,7 @@ index 5280d91..d5f2702 100644
      return err;
  }
  
-@@ -459,8 +647,13 @@ esp_err_t mosaic_ui_start(void)
+@@ -459,8 +648,13 @@ esp_err_t mosaic_ui_start(void)
          s_system_flow_ready = true;
      }
  
@@ -6493,7 +6519,7 @@ index 5280d91..d5f2702 100644
  
      esp_display_presenter_t *presenter = NULL;
      esp_lcd_touch_handle_t touch = NULL;
-@@ -493,6 +686,7 @@ esp_err_t mosaic_ui_start(void)
+@@ -493,6 +687,7 @@ esp_err_t mosaic_ui_start(void)
      };
      ESP_RETURN_ON_ERROR(esp_timer_create(&idle_timer_args, &s_screen_idle_timer),
                          TAG, "create screen idle timer");
@@ -6501,7 +6527,7 @@ index 5280d91..d5f2702 100644
      if (xTaskCreate(screen_power_task, "screen_power",
                      SCREEN_POWER_TASK_STACK, NULL, 4,
                      &s_screen_task) != pdPASS) {
-@@ -501,7 +695,7 @@ esp_err_t mosaic_ui_start(void)
+@@ -501,7 +696,7 @@ esp_err_t mosaic_ui_start(void)
          s_screen_idle_timer = NULL;
          return ESP_ERR_NO_MEM;
      }
@@ -6510,7 +6536,7 @@ index 5280d91..d5f2702 100644
      ESP_RETURN_ON_ERROR(mosaic_loader_start_hub(), TAG, "mosaic_loader_start_hub failed");
      if (!s_battery_notice_subscribed) {
          ESP_RETURN_ON_ERROR(mosaic_settings_subscribe_battery(
-@@ -523,11 +717,14 @@ esp_err_t mosaic_ui_start(void)
+@@ -523,11 +718,14 @@ esp_err_t mosaic_ui_start(void)
                              "open initial app %s", initial_app);
      }
  

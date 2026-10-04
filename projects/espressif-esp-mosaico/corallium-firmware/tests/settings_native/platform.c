@@ -20,11 +20,24 @@ static esp_gsp_err_t native_bluetooth_status(esp_gsp_handle_t ui,
     return err;
 }
 
+static esp_gsp_err_t native_poweroff_label(esp_gsp_handle_t ui,
+    const char *text)
+{
+    const esp_gsp_err_t err =
+        gsp_settings_settings_poweroff_timeout_value_set_text(ui, text);
+    if (err == ESP_GSP_OK) fprintf(stderr, "native Power-off label=%s\n", text);
+    return err;
+}
+
 #define gsp_settings_settings_bluetooth_status_set_text native_bluetooth_status
+#define gsp_settings_settings_poweroff_timeout_value_set_text native_poweroff_label
 #include SETTINGS_APP_SOURCE
 #undef gsp_settings_settings_bluetooth_status_set_text
+#undef gsp_settings_settings_poweroff_timeout_value_set_text
 
 static unsigned s_ticks;
+static uint32_t s_poweroff_timeout;
+static unsigned s_display_input;
 
 int64_t esp_timer_get_time(void)
 {
@@ -45,6 +58,7 @@ static esp_err_t snapshot(void *ctx, mosaic_settings_snapshot_t *out)
     out->volume = 80;
     out->screen_timeout_ms = 30000;
     out->dim_timeout_ms = 10000;
+    out->poweroff_timeout_ms = s_poweroff_timeout;
     out->network.enabled = true;
     out->network.desired_enabled = true;
     out->network.state = MOSAIC_SETTINGS_WIFI_IDLE;
@@ -72,6 +86,57 @@ static esp_err_t network(void *ctx)
     return ESP_OK;
 }
 
+static esp_err_t poweroff_timeout(void *ctx, uint32_t timeout_ms)
+{
+    (void)ctx;
+    s_poweroff_timeout = timeout_ms;
+    fprintf(stderr, "native Power-off saved=%u\n", (unsigned)timeout_ms);
+    return ESP_OK;
+}
+
+static void pointer(esp_gsp_handle_t ui, int32_t x, int32_t y,
+    bool pressed, void *ctx)
+{
+    (void)ctx;
+    const int32_t before = s_state.display_scroll_offset;
+    const mosaic_event_t input = {
+        .type = MOSAIC_EVENT_POINTER,
+        .timestamp_us = esp_timer_get_time(),
+        .data.pointer = {.x = x, .y = y, .pressed = pressed},
+    };
+    mosaic_settings_app.on_event(ui, &input);
+    if (before != s_state.display_scroll_offset) {
+        fprintf(stderr, "native Display scroll=%ld\n",
+            (long)s_state.display_scroll_offset);
+    }
+}
+
+static void call(esp_gsp_handle_t ui, const esp_gsp_event_t *event,
+    void *ctx)
+{
+    (void)ctx;
+    if (event->type != ESP_GSP_EVENT_CALL) return;
+    const mosaic_event_t input = {
+        .type = MOSAIC_EVENT_UI_CALL,
+        .timestamp_us = esp_timer_get_time(),
+        .data.call = {
+            .action_id = event->action_id, .arg = event->arg,
+            .scene_id = event->scene_id, .list = event->list,
+            .item = event->item,
+        },
+    };
+    mosaic_settings_app.on_event(ui, &input);
+    if (event->action_id == GSP_ACT_ID_SETTINGS_DISPLAY_OPTIONS_OPEN) {
+        fprintf(stderr, "native chooser open=%u kind=%u\n",
+            s_state.display_options_open, (unsigned)s_state.display_option);
+    } else if (event->action_id == GSP_ACT_ID_SETTINGS_DISPLAY_OPTION_SELECT) {
+        fprintf(stderr, "native chooser open=%u value=%u scroll=%ld\n",
+            s_state.display_options_open,
+            (unsigned)s_state.snapshot.poweroff_timeout_ms,
+            (long)s_state.display_scroll_offset);
+    }
+}
+
 static void tick(esp_gsp_handle_t ui, void *ctx)
 {
     (void)ctx;
@@ -84,6 +149,33 @@ static void tick(esp_gsp_handle_t ui, void *ctx)
         .timestamp_us = esp_timer_get_time(),
     };
     mosaic_settings_app.on_event(ui, &input);
+    /* Native host CLI samples are not forwarded by every bridge release.
+     * Inject only the input boundary: the registered observers still invoke
+     * the unchanged Settings C scrolling/action/setter/render paths. */
+    if (s_display_input && s_ticks == 20) {
+        pointer(ui, 240, 430, true, NULL);
+        /* Include the tap slop so this drag reaches the bottom clamp. */
+        for (int32_t y = 415; y >= 115; y -= 15) {
+            pointer(ui, 240, y, true, NULL);
+        }
+        pointer(ui, 240, 115, false, NULL);
+    }
+    if (s_display_input >= 2 && s_ticks == 30) {
+        const esp_gsp_event_t open = {
+            .type = ESP_GSP_EVENT_CALL,
+            .action_id = GSP_ACT_ID_SETTINGS_DISPLAY_OPTIONS_OPEN,
+            .arg = SETTINGS_DISPLAY_OPTION_POWEROFF_TIMEOUT,
+        };
+        call(ui, &open, NULL);
+    }
+    if (s_display_input == 3 && s_ticks == 40) {
+        const esp_gsp_event_t select = {
+            .type = ESP_GSP_EVENT_CALL,
+            .action_id = GSP_ACT_ID_SETTINGS_DISPLAY_OPTION_SELECT,
+            .arg = 0,
+        };
+        call(ui, &select, NULL);
+    }
 }
 
 esp_gsp_err_t gsp_bridge_app_init(esp_gsp_handle_t ui)
@@ -94,19 +186,37 @@ esp_gsp_err_t gsp_bridge_app_init(esp_gsp_handle_t ui)
         .set_brightness = level,
         .set_volume = level,
         .request_network_reconfigure = network,
+        .set_poweroff_timeout = poweroff_timeout,
     };
     const char *checked = getenv("SETTINGS_NATIVE_CHECKED");
     s_bluetooth_enabled = checked && checked[0] == '1';
+    const char *page = getenv("SETTINGS_NATIVE_PAGE");
+    if (page) {
+        /* The presentation fixture authors this initial page. Mirror it in
+         * the bridge's navigation double so real C pointer guards agree. */
+        (void)esp_gsp_stack_view_push(ui, GSP_OBJ_KEY_SETTINGS_STACK,
+            (uint16_t)atoi(page), false);
+    }
+    const char *input = getenv("SETTINGS_NATIVE_DISPLAY_INPUT");
+    if (input) {
+        s_display_input = !strcmp(input, "selected") ? 3
+            : !strcmp(input, "chooser") ? 2 : 1;
+        fprintf(stderr, "native input boundary=fixture %s\n", input);
+    }
     mosaic_settings_configure(&ops);
     const mosaic_event_t start = {.type = MOSAIC_EVENT_START};
     mosaic_settings_app.on_event(ui, &start);
     if (checked) settings_bluetooth_render(ui);
     (void)esp_gsp_timer_create(ui, 16, tick, NULL);
-    return ESP_GSP_OK;
+    esp_gsp_err_t err = esp_gsp_set_pointer_observer(ui, pointer, NULL);
+    if (err == ESP_GSP_OK) err = esp_gsp_on_event(ui, call, NULL);
+    return err;
 }
 
 void gsp_bridge_app_deinit(esp_gsp_handle_t ui)
 {
+    (void)esp_gsp_set_pointer_observer(ui, NULL, NULL);
+    (void)esp_gsp_on_event(ui, NULL, NULL);
     const mosaic_event_t stop = {.type = MOSAIC_EVENT_STOP};
     mosaic_settings_app.on_event(ui, &stop);
 }

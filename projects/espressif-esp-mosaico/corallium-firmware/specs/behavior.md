@@ -159,12 +159,13 @@ RTC-derived time reports `source=rtc`, `quality=estimated`; app/NTP sync reports
 ## Power and rendering
 
 The output-only speaker service uses the official ES8311 board DAC/PA path.
-Only a local volume release or unmute requests a 100 ms confirmation; startup
-and background activity are silent. Codec volume and mute apply to actual PCM
-output. After the tone, a finite silent tail advances the actual I2S DMA ring
-capacity so queued samples play before muting; failed writes/open or local mute
-close output without retrying indefinitely. The DAC, I2S output and PA close
-after feedback. No audio capture or continuous mixer task starts. Volume zero
+A local volume release or unmute requests a 100 ms confirmation; official Flappy
+sound effects use the same worker and codec lock. Startup and background activity
+are silent. Codec volume and mute apply to actual PCM output. After a completed
+tone or clip, a finite silent tail advances the actual I2S DMA ring capacity so
+queued samples play before muting; failed writes/open, cancellation or local
+mute close output without retrying indefinitely. The DAC, I2S output and PA close
+between playback requests. No audio capture or continuous mixer task starts. Volume zero
 persists mute; the previous nonzero volume is stored separately for unmute across
 restart. Save errors are surfaced
 and the UI refreshes the actual state. Camera/Claw/ASR/external-module background
@@ -172,6 +173,18 @@ work is absent. GPIO60 stays on because its rail is shared with the display.
 Wi-Fi modem sleep is used after association. DFS permits 80–320 MHz so render work
 can retain peak frequency. Automatic light sleep is deliberately disabled until
 USB and touch wake behavior have been measured.
+
+Works lazily registers an output-only Lua `audio` facade implementing the
+factory Flappy script's `open_output`, `info`, `write` and `close` calls. Its actual
+format is 16 kHz mono signed 16-bit PCM. Stream gain attenuates samples without
+changing the saved master volume. Each clip is at most 16 KiB, with one pending
+clip beside the worker's active clip; a busy write returns immediately for the
+script to retry. Muted writes leave no sound queued for unmute. Closing or Lua
+garbage collection invalidates the stream without waiting for codec I/O, so
+unplayed clips are discarded. Cancellation is checked before each 320-byte
+chunk and skips normal DMA draining; already submitted audio is bounded by the
+actual DMA ring plus one racing chunk. The vendor write fault timeout is one
+second, so this byte bound is not a measured physical cancellation latency.
 
 Display persists dim, screen-off and whole-device power-off delays in NVS, along
 with independent dim/screen-sleep switches for charging. Invalid stored timeout
@@ -192,6 +205,8 @@ including an unsaved slider preview; activity or wake restores that user level.
 Screen-off flushes and pauses the GSP renderer/panel through the existing
 presenter fence and suspends ordinary child-app timers. Touch/button wake
 resumes rendering; the first physical wake touch is consumed until release.
+An awake Back press also records activity before exit/navigation, restoring a
+dimmed screen and restarting its inactivity interval.
 The shutdown timer continues after screen-off. A charging/availability change
 starts a fresh inactivity interval.
 
