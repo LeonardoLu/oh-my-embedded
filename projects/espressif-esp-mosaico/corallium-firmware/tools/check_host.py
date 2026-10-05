@@ -27,18 +27,28 @@ run([output / "test-audio"])
 run([compiler, *flags, "-I", PROJECT / "overlay/components/mosaic_ui/common",
      PROJECT / "tests/test_weather_art.c", "-o", output / "test-weather-art"])
 run([output / "test-weather-art"])
-imu = PROJECT / "overlay/components/mosaic_ui/apps/imu"
+liquid = PROJECT / "overlay/components/mosaic_ui/apps/liquid"
 run([os.environ.get("CXX", "clang++"), "-std=c++11", *flags[1:], "-c",
-     imu / "liquidduck/flip.cpp", "-o", output / "liquidduck-flip.o"])
-run([compiler, *flags, "-c", PROJECT / "tests/test_imu_liquid.c", "-o", output / "test-imu-liquid.o"])
+     liquid / "liquidduck/flip.cpp", "-o", output / "liquidduck-flip.o"])
+run([compiler, *flags, "-c", PROJECT / "tests/test_liquid_engine.c", "-o", output / "test-liquid-engine.o"])
 run([os.environ.get("CXX", "clang++"), "-fsanitize=address,undefined",
-     output / "test-imu-liquid.o", output / "liquidduck-flip.o", "-o", output / "test-imu-liquid"])
-run([output / "test-imu-liquid"])
+     output / "test-liquid-engine.o", output / "liquidduck-flip.o", "-o", output / "test-liquid-engine"])
+run([output / "test-liquid-engine"])
 run([sys.executable, PROJECT / "tests/test_scene_resource_refs.py"])
 run([sys.executable, PROJECT / "tests/test_device_diagnostics.py"])
 run([sys.executable, PROJECT / "tests/check_diagnostics.py"])
 if args.upstream:
     upstream = args.upstream.resolve()
+    run([compiler, *flags, "-I", PROJECT / "tests/settings_native/stubs",
+         "-I", upstream / "managed_components/espressif__esp-gsp/include",
+         "-I", upstream / "components/mosaic_ui/runtime", "-I", upstream / "components/mosaic_ui/common",
+         "-I", upstream / "components/mosaic_ui/include",
+         PROJECT / "tests/test_runtime_app_ticks.c",
+         PROJECT / "overlay/components/mosaic_ui/runtime/mosaic_runtime.c",
+         upstream / "components/mosaic_ui/common/mosaic_app_catalog.c",
+         upstream / "components/mosaic_ui/common/mosaic_system_flow.c",
+         "-o", output / "test-runtime-app-ticks"])
+    run([output / "test-runtime-app-ticks"])
     run([compiler, *flags, "-I", PROJECT / "tests/imu_platform_stubs",
          "-I", PROJECT / "tests/power_stubs", "-I", PROJECT / "tests/stubs",
          "-I", upstream / "managed_components/espressif2022__bmi270",
@@ -151,8 +161,10 @@ if args.upstream:
     from gsp.execute import executable_from_environment
     version = (upstream / "managed_components/espressif__esp-gsp/.gspc_version").read_text().strip()
     gspc = executable_from_environment("gspc", version=version)
-    run([sys.executable, PROJECT / "tests/test_imu_native.py", "--upstream", upstream,
-         "--gspc", gspc, "--output", output / "imu-native"])
+    run([sys.executable, PROJECT / "tests/test_liquid_native.py", "--upstream", upstream,
+         "--gspc", gspc, "--output", output / "liquid-native"])
+    run([sys.executable, PROJECT / "tests/test_works_native.py", "--upstream", upstream,
+         "--gspc", gspc, "--output", output / "works-native"])
     run([sys.executable, PROJECT / "tests/test_settings_native.py", "--upstream", upstream,
          "--gspc", gspc, "--output", output / "settings-native"])
     run([sys.executable, PROJECT / "tests/test_hub_drawer.py", "--upstream", upstream,

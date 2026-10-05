@@ -69,17 +69,22 @@ int main(void)
     raw.acc.x = 8192;
     raw.acc.y = -16384;
     assert(ops.read_accel(&x, &y, ops.user_ctx) == ESP_OK);
-    near(x, .5f); near(y, 1);
+    near(x, -.5f); near(y, -1);
     assert(init_calls == 2 && read_calls == 1);
 
+    /* Right/down gravity opposes the BMI270 support force, USB down. */
     raw.acc.x = -16384;
     raw.acc.y = 8192;
     assert(ops.read_accel(&x, &y, ops.user_ctx) == ESP_OK);
-    near(x, -1); near(y, -.5f);
+    near(x, 1); near(y, .5f);
+    raw.acc.x = 0;
+    raw.acc.y = 16384; /* Vertical with USB down: liquid falls down. */
+    assert(ops.read_accel(&x, &y, ops.user_ctx) == ESP_OK);
+    near(x, 0); near(y, 1);
     raw.acc.x = INT16_MAX;
     raw.acc.y = INT16_MIN;
     assert(ops.read_accel(&x, &y, ops.user_ctx) == ESP_OK);
-    near(x, 32767.0f / 16384.0f); near(y, 2);
+    near(x, -32767.0f / 16384.0f); near(y, -2);
 
     read_error = ESP_FAIL;
     x = 7; y = 8;

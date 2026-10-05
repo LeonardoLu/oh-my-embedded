@@ -77,9 +77,11 @@ python3 projects/espressif-esp-mosaico/corallium-firmware/tools/analyze_performa
 
 Host checks also exercise the native LiquidDuck solver under ASan/UBSan,
 including rotating/shaking gravity, particle conservation, wall bounds and
-RGB565 output bounds. The native IMU regression renders all 24 style/palette
-combinations, exercises real touch routing, mode cycling and reset, and checks
+RGB565 output bounds. The native liquid regression renders all 24 style/palette
+combinations, exercises real theme/reset touches, and checks
 Canvas backpressure, rejected submissions and delayed release after app exit.
+The Works regression checks its three direct liquid routes, mixed native/Lua
+paging, Recent job routing and native entries when Lua is unavailable.
 Sensor inputs are fixtures; host previews do not establish hardware motion or FPS.
 
 Host checks cover protocol framing/validation, failed persistence, saved local
@@ -157,19 +159,22 @@ Home's first page provides Settings, Works and Album. Its weather card opens
 Weather and replaces the analog clock with Weather's exact dot illustrations
 and shared condition selection. Saved controls appear
 before asynchronous Wi-Fi association and weather fetching. Works provides Lab,
-Recent and Installed views; Lab contains the official Dino and Flappy Bird games.
+Recent and Installed views; Lab contains Pixel, Gradient, Water, Dino and
+Flappy Bird.
 The local Lua runtime starts on first opening Works. Flappy sound effects use
 the output-only speaker worker and follow the saved master volume and mute.
 
-Open IMU from the launcher. Its lower-left button cycles **Level → Pixel →
-Gradient → Water → Level**. Pixel, Gradient and Water implement styles 2, 3 and 4
-from [LiquidDuck_ESP32](https://github.com/nongxl/LiquidDuck_ESP32): rounded LED
-cells with a solid bright color, density-colored LED cells, and continuous water.
-The middle button cycles Matrix, Cyberpunk, Amber, Mono, Red, Deep Sea, Toxic and
-Gold; Deep Sea is the initial palette. Reset refills the current tank. Tilt or
-shake the device to move the liquid; the factory Back gesture exits IMU.
-Mode and palette selections are session-local.
+Open **Works → Lab** (or Installed), then choose **Pixel**, **Gradient** or
+**Water**. Each opens its own style directly; the top-left Return button brings you back
+to the same Works tab and page. IMU retains the Level view and Pitch/Roll/Yaw readings.
+The three entries implement styles 2, 3 and 4 from
+[LiquidDuck_ESP32](https://github.com/nongxl/LiquidDuck_ESP32): rounded LED cells
+with a solid bright color, density-colored LED cells, and continuous water.
+The palette button cycles Matrix, Cyberpunk, Amber, Mono, Red, Deep Sea, Toxic
+and Gold; Deep Sea is selected on each launch. Reset refills the current tank.
+Use the device vertically with its USB port down; tilt or shake to move the
+liquid. The palette selection lasts until leaving the liquid view.
 
 The square-screen adaptation uses 14×10 pixel and 28×20 water grids in a native
 456×320 RGB565 Canvas. The solver and palettes retain upstream's PolyForm
-Noncommercial terms; see [source and license notice](overlay/components/mosaic_ui/apps/imu/liquidduck/NOTICE.md).
+Noncommercial terms; see [source and license notice](overlay/components/mosaic_ui/apps/liquid/liquidduck/NOTICE.md).

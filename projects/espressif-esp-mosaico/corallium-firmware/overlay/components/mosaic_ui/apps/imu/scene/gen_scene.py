@@ -5,8 +5,6 @@
 from pathlib import Path
 import sys
 
-from PIL import Image
-
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent.parent / "common"))
 from font_paths import DEJAVU_SANS, DEJAVU_SANS_BOLD  # noqa: E402
@@ -29,8 +27,6 @@ def visible_layer(parent, name, *, hidden=False):
 
 
 def main():
-    # A unique opaque, unscaled RAW resource is required by GSP Canvas.
-    Image.new("RGB", (456, 320), "#000511").save(HERE / "imu_liquid_canvas.png")
     objs, content = shared_prefix([], FONT_POLICIES, DEJAVU_SANS_BOLD)
     page = len(objs)
     objs.append(layer(content, 0, 0, 480, 480, name="imu_root"))
@@ -61,26 +57,6 @@ def main():
                           align="center"))
         objs.append(label(card, 0, 30, 141, 44, "0", size=36, align="center",
                           bind=bind, name=bind, font_charset="-+.0123456789°"))
-    fluid = len(objs)
-    objs.append(visible_layer(page, "imu_fluid", hidden=True))
-    canvas = image(fluid, "imu_liquid_canvas.png", 12, 74, 456, 320,
-                   bind="imu_liquid_canvas", name="imu_liquid_canvas")
-    canvas["codec"] = "raw"
-    objs.append(canvas)
-    objs.append(label(page, 12, 42, 456, 28, "", size=16, align="center",
-                      color="#FFB020", bind="imu_status", name="imu_status"))
-    objs.append(button(page, 12, 410, 134, 42, "", size=18, radius=14,
-                       name="imu_style", callback="imu_style"))
-    objs.append(label(page, 12, 418, 134, 28, "Level", size=18, align="center",
-                      bind="imu_style_name", name="imu_style_name"))
-    controls = len(objs)
-    objs.append(visible_layer(page, "imu_fluid_controls", hidden=True))
-    objs.append(button(controls, 158, 410, 182, 42, "", size=18, radius=14,
-                       name="imu_theme", callback="imu_theme"))
-    objs.append(label(controls, 158, 418, 182, 28, "Deep Sea", size=18, align="center",
-                      bind="imu_palette_name", name="imu_palette_name"))
-    objs.append(button(controls, 352, 410, 116, 42, "Reset", size=18, radius=14,
-                       name="imu_reset", callback="imu_reset"))
     write_scene(scene_out_path(HERE, "imu_480.json"), "imu", objs, font=DEJAVU_SANS)
     asset_scene(scene_out_path(HERE, "imu_assets_480.json"), "imu_assets", [],
                 FONT_POLICIES, DEJAVU_SANS_BOLD, DEJAVU_SANS)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real IMU C app, GSP hit routing and Canvas rendering; sensor inputs are fixtures."""
+"""Real LIQUID C app, GSP hit routing and Canvas rendering; sensor inputs are fixtures."""
 import argparse
 import json
 import os
@@ -37,26 +37,27 @@ def main():
     parser.add_argument("--gspc", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sim-version", default="1.6.0")
+    parser.add_argument("--controls-only", action="store_true")
     args = parser.parse_args()
     upstream, output = args.upstream.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     ui = upstream / "components/mosaic_ui"
     component = upstream / "managed_components/espressif__esp-gsp"
-    run([sys.executable, ui / "apps/imu/scene/gen_scene.py"], output / "scene.log")
-    run(["cmake", "-S", PROJECT / "tests/imu_native", "-B", output / "build",
-         "-DCMAKE_BUILD_TYPE=Release", f"-DIMU_UPSTREAM={upstream}",
+    run([sys.executable, ui / "apps/liquid/scene/gen_scene.py"], output / "scene.log")
+    run(["cmake", "-S", PROJECT / "tests/liquid_native", "-B", output / "build",
+         "-DCMAKE_BUILD_TYPE=Release", f"-DLIQUID_UPSTREAM={upstream}",
          f"-DESP_GSP_COMPONENT_DIR={component}", f"-DGSPC_EXECUTABLE={args.gspc}",
          f"-DESP_GSP_PYTHON_EXECUTABLE={sys.executable}"], output / "configure.log")
-    run(["cmake", "--build", output / "build", "--target", "imu_native",
-         "imu_native_module", "--parallel"], output / "build.log")
-    manifest = json.loads((output / "build/imu_native-Release.json").read_text())
+    run(["cmake", "--build", output / "build", "--target", "liquid_native",
+         "liquid_native_module", "--parallel"], output / "build.log")
+    manifest = json.loads((output / "build/liquid_native-Release.json").read_text())
     generated = Path(manifest["bundle"]).parent / "scene0"
-    resources = json.loads((generated / "imu.execution.json").read_text())["resources"]
-    canvas = [item for item in resources if item.get("source") == "imu_liquid_canvas.png"]
+    resources = json.loads((generated / "liquid.execution.json").read_text())["resources"]
+    canvas = [item for item in resources if item.get("source") == "liquid_canvas.png"]
     assert len(canvas) == 1 and canvas[0]["pixel_format"] == "rgb565", canvas
 
     def capture(name, style, palette=5, script=()):
-        env = dict(os.environ, IMU_NATIVE_STYLE=str(style), IMU_NATIVE_PALETTE=str(palette))
+        env = dict(os.environ, LIQUID_NATIVE_STYLE=str(style), LIQUID_NATIVE_PALETTE=str(palette))
         picture = output / f"{name}.png"
         log = run([sys.executable, "-m", "gsp.execute", "--version", args.sim_version,
                    "sim", "--bundle", manifest["bundle"], "--backend-library",
@@ -69,31 +70,27 @@ def main():
     def tank_colors(picture):
         return set(picture.crop((12, 74, 468, 394)).get_flattened_data())
 
-    level = capture("level", 0)
-    assert color_near(level.getpixel((20, 180)), 0xF9FAFB)
     sheet = Image.new("RGB", (8 * 240, 3 * 240))
-    for style in range(1, 4):
-        for palette in range(8):
+    for style in range(3):
+        for palette in ((5,) if args.controls_only else range(8)):
             picture = capture(f"style-{style}-palette-{palette}", style, palette)
             colors = tank_colors(picture)
             assert any(color_near(pixel, BACKGROUND[palette]) for pixel in colors)
             assert len(colors) >= 2, (style, palette, colors)
-            if style == 1:
+            if style == 0:
                 assert len(colors) == 2 and any(color_near(pixel, BRIGHT[palette]) for pixel in colors), colors
             else:
                 assert len(colors) >= 3, (style, palette, colors)
-            sheet.paste(picture.resize((240, 240), Image.Resampling.NEAREST), (palette * 240, (style - 1) * 240))
+            sheet.paste(picture.resize((240, 240), Image.Resampling.NEAREST), (palette * 240, style * 240))
     sheet.save(output / "styles-palettes.png")
-    tap = ("--wait", "5", "--tap", "79", "431", "--wait", "10")
-    pixel = capture("style-tap", 0, script=tap)
-    assert len(tank_colors(pixel)) == 2 and any(color_near(c, BRIGHT[5]) for c in tank_colors(pixel))
-    theme = capture("theme-tap", 1, script=("--wait", "5", "--tap", "248", "431", "--wait", "10"))
+    theme = capture("theme-tap", 0, script=("--wait", "5", "--tap", "176", "431", "--wait", "10"))
     assert any(color_near(c, BRIGHT[6]) for c in tank_colors(theme))
-    back_to_level = capture("style-cycle", 0, script=tap * 4)
-    assert color_near(back_to_level.getpixel((20, 180)), 0xF9FAFB)
-    reset = capture("reset-tap", 3, script=("--wait", "5", "--tap", "408", "431", "--wait", "10"))
+    reset = capture("reset-tap", 2, script=("--wait", "5", "--tap", "408", "431", "--wait", "10"))
     assert len(tank_colors(reset)) >= 3
-    print("PASS: real native IMU rendering, 24 style/palette combinations, touch routing, reset, bounded Canvas frames and delayed release")
+    capture("return-tap", 2, script=("--wait", "5", "--tap", "32", "37", "--wait", "10"))
+    assert "BACK_ROUTE" in (output / "return-tap.log").read_text()
+    print("PASS: native Works liquid rendering, theme/reset/Back touches, bounded Canvas frames and delayed release" +
+          ("; default palettes checked" if args.controls_only else "; all 24 style/palette combinations checked"))
     print(output / "styles-palettes.png")
 
 

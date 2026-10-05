@@ -20,7 +20,7 @@ typedef struct {
 typedef esp_err_t (*mosaic_imu_read_cb_t)(mosaic_imu_sample_t *sample,
                                          void *user_ctx);
 
-/** Screen-plane acceleration in g, positive right/down. */
+/** Screen-plane gravity in g, positive right/down with USB facing down. */
 typedef esp_err_t (*mosaic_imu_accel_read_cb_t)(float *x_g, float *y_g,
                                                void *user_ctx);
 
@@ -32,6 +32,8 @@ typedef struct {
 
 /** Configure the device IMU provider. A NULL provider restores simulation. */
 esp_err_t mosaic_imu_configure(const mosaic_imu_ops_t *ops);
+/** Read the configured gravity provider; host-only fallback is downward. */
+esp_err_t mosaic_imu_get_gravity(float *x_g, float *y_g);
 
 #ifdef __cplusplus
 }

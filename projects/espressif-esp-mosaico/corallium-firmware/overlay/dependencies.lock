@@ -2164,6 +2164,6 @@ direct_dependencies:
 - weather_service
 - wechat_binding_service
 - wifi_manager
-manifest_hash: c5445b8227d623b401a15521d7cd51e2d34dbe242f5c75c444b5e27beca8371d
+manifest_hash: dd475911fe3869a0dd76ae0e6e121fd8ac16d7170fb8378707fff3a95e53eeb1
 target: esp32s31
 version: 3.0.0

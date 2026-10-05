@@ -17,24 +17,38 @@ dispatcher with the same cJSON dependency used by the firmware; hardware service
 are replaced by explicit test doubles. See the README for reproducible commands
 and Python/Clang prerequisites. Covered behavior includes:
 
-- The actual LiquidDuck FLIP solver and native IMU renderer under ASan/UBSan:
+- The actual LiquidDuck FLIP solver and native liquid renderer under ASan/UBSan:
   all eight original palettes, solid/density color rules, 720 steps of rotating
   and shaking gravity per style, constant particle counts, finite positions and
   velocities, wall bounds, invalid-input rejection and padded output guards.
   Pixel particles contribute to exactly one cell. Native GSP renders all 24
-  style/palette combinations through the actual IMU C implementation with an
-  explicit acceleration fixture. Real simulator taps exercise style cycling,
-  palette changes and reset. The actual app catalog keeps all three controls
-  local and routes the distinct shared Back action to Home, preventing Reset's
-  action zero from matching the descriptor's default Back value.
+  style/palette combinations through the actual liquid C implementation with an
+  explicit acceleration fixture. Real simulator taps exercise palette changes
+  and reset. The actual app catalog keeps both controls local and uses an
+  explicit nonzero Return/Back action, preventing Reset's action zero from
+  matching a default Back value. A real simulator tap on the Return button
+  confirms the catalog exit route.
   The Canvas lifetime fixture rejects one submission,
   withholds both frame releases, checks whole-frame hashes remain unchanged under
   backpressure, then delivers delayed callbacks after app teardown. The compiled
-  Canvas is one opaque RGB565 RAW resource in the actual IMU bank.
+  Canvas is one opaque RGB565 RAW resource in the actual liquid bank.
 - The actual IMU platform adapter with a Board Manager device double and the
   firmware's BMI270 sample definitions: Level and acceleration share the device,
-  signed raw samples normalize to g in the screen axes, failed initialization
+  signed raw samples normalize to g in the USB-down screen axes, including
+  the upright `(0, +1 g)` gravity fixture, failed initialization
   respects the retry interval, and read failures preserve caller outputs.
+- The real Works C renderer and GSP input routing with offline catalog doubles:
+  Pixel/Gradient/Water select distinct styles and route to the native liquid app;
+  Lab/Installed paginate native entries and Lua jobs without crossing handlers;
+  Recent retains Lua job behavior, and native entries remain available when the
+  Lua provider fails. The host bridge's missing visibility batch wrapper is
+  adapted to its real individual component setters; this does not test batch
+  atomicity on the device.
+- The actual runtime and catalog with a platform double: a direct Works-to-liquid
+  replacement starts the child's 33 ms package timer, Back restores Works'
+  1,000 ms period, failed replacement reopens the parent with its timer, and Home
+  retains no child timers. This guards the replacement path that previously
+  cleared all timers without scheduling the new package.
 - Fragmented UTF-8; exact 2048-byte frames; overlength, NUL and timed-out frame
   recovery; clearing receive storage; invalid UTF-8 and JSON nesting limits.
 - Version, identifier, envelope and duplicate-field rejection before mutation;
@@ -175,7 +189,7 @@ and Python/Clang prerequisites. Covered behavior includes:
   The packed MMAP image must match staged assets byte for byte. The checker rejects the captured
   failing Hub bundle where shell glob order assigned `font10` to ordinal 2;
   numeric font ordering corrects that mismatch. The linked-build checks cover
-  16 bundles, 124 font references, 265 bitmap/vector references and 17 packed
+  17 bundles, 127 font references, 265 bitmap/vector references and 18 packed
   MMAP assets.
 - `tools/check_system_assets.py` mounts the built SYSTEM filesystem with the
   factory builder's own LittleFS environment without auto-formatting: packed files
@@ -194,7 +208,7 @@ state/color behavior and the encoding change; it does not establish why the
 previous device showed black glyphs or whether the workaround resolves them.
 
 Native GSP screenshots render authored Home/control-center/Settings fixtures and
-the actual IMU C app on the host. They provide evidence for generated geometry,
+the actual liquid and Works C apps on the host. They provide evidence for generated geometry,
 assets and the stated simulated inputs, not hardware runtime, BMI270 direction or
 shake response, live Wi-Fi/weather state or physical panel behavior. Liquid-style
 sensor response, achieved FPS and repeated entry/exit on the board remain unmeasured.
@@ -250,18 +264,21 @@ Captured device frames show Settings/Works/Album in the intended Home order,
 an orange Bluetooth switch, complete Display selector arrows and the same large
 Cloudy dot pattern on Home and Weather. The pull-down covers the 480x480 screen,
 has white control glyphs, omits slider explanations and has two equal-height
-220-pixel top plates. Works Lab contains Dino and Flappy Bird; rejected Fluid
+220-pixel top plates. Works Lab contains Pixel, Gradient, Water, Dino and Flappy Bird; rejected Fluid
 apps are absent from the packed SYSTEM image. These are the device's submitted
 pixels, not optical panel photographs or GRAM readback.
 
-Injected launcher touches activate native IMU. Device captures show Pixel,
-Gradient and Water in Deep Sea, and Water after changing to Toxic; each Canvas
-is populated and its sensor-error status is clear. This supports successful
-finite BMI270 reads through the shared Board Manager driver. Style and palette
-controls stay in IMU, Reset keeps IMU active, and the shared Back returns to Home.
-The frame counter advances and render/runtime error counters remain zero across
-these operations. Physical tilt/shake direction, perceived motion and achieved
-FPS remain unmeasured.
+Injected Works row touches open Pixel, Gradient and Water directly. Device
+captures show their Deep Sea views and Water after changing to Toxic; each
+Canvas is populated and its sensor-error status is clear. Between idle status
+samples in each liquid view, the presentation counter continues to advance,
+supporting active package timers and finite BMI270 reads through the shared
+Board Manager driver. Reset keeps the liquid view active. The top-left Return
+button returns to Works for all three styles; logical Back from Installed
+preserves that tab. Lab's second page retains Flappy Bird. Render/runtime error
+counters remain zero across these operations, and the device is left in Works
+Lab. The USB-down gravity signs are covered by raw-sample fixtures; physical
+tilt/shake direction, perceived motion and achieved FPS remain unmeasured.
 
 First-resume captures omitted Settings list icons and showed black Weather
 forecast rectangles while the user still saw Settings icons on the panel.

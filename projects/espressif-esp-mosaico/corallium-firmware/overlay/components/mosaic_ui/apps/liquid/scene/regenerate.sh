@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 GSP_ROOT="${GSP_ROOT:-$(cd ../../../../../.. && pwd)}"
 export PYTHONPATH="$GSP_ROOT/tools"
 PROFILE="${MOSAIC_SCENE_PROFILE:-$(cd ../../../common && pwd)/mosaic_rgb565_auto.yaml}"
-STEM=imu
+STEM=liquid
 APP_DIR="$(cd .. && pwd)"
 GENERATED_DIR="${MOSAIC_GENERATED_DIR:-$APP_DIR/generated}"
 
@@ -24,7 +24,7 @@ mkdir -p "$GENERATED_DIR"
 python3 "../../../common/bundle_fonts.py" "$GSPC" -o "$GENERATED_DIR/${STEM}.gspb" \
     "$OUT/${STEM}.gsb" \
     "$OUT"/${STEM}_font*.gfb \
-    $(if [[ -f "$OUT/${STEM}_assets.grb" ]]; then echo "$OUT/${STEM}_assets.grb"; fi)
+    "$OUT/${STEM}.grb"
 
 cp "$OUT/${STEM}_binds.h" "$GENERATED_DIR/${STEM}_binds.h"
 cp "$OUT/${STEM}_actions.h" "$GENERATED_DIR/${STEM}_actions.h"

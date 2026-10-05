@@ -138,8 +138,9 @@ static esp_err_t read_acceleration(float *x_g, float *y_g, void *user_ctx)
     if (err != ESP_OK) return err;
     /* Board Manager's setup_imu.c configures this handle for +/-2 g.
      * Use the same owner as Level; the separate BSP sensor is not started. */
-    *x_g = raw.acc.x / BMI270_ACCEL_2G_SCALE;
-    *y_g = -raw.acc.y / BMI270_ACCEL_2G_SCALE;
+    /* With USB facing down, gravity is opposite the measured support force. */
+    *x_g = -raw.acc.x / BMI270_ACCEL_2G_SCALE;
+    *y_g = raw.acc.y / BMI270_ACCEL_2G_SCALE;
     return ESP_OK;
 }
 
