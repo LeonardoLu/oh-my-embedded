@@ -19,7 +19,7 @@ c++ -std=c++17 -Wall -Wextra \
   "$ROOT/projects/shared-libs/ux-components/src/FontLatin24.cpp" \
   "$ROOT/projects/shared-libs/ux-components/src/FontCjk24.cpp" \
   "$OUT/build/lib/liblvgl.a" -o "$OUT/test_lvgl_settings"
-"$OUT/test_lvgl_settings" "$OUT/settings.ppm" "$OUT/editor.ppm" "$OUT/name.ppm"
+"$OUT/test_lvgl_settings" "$OUT/settings.ppm" "$OUT/editor.ppm" "$OUT/name.ppm" "$OUT/choice.ppm"
 c++ -std=c++11 -Wall -Wextra -Werror -I"$PROJECT/include" \
   "$PROJECT/test/test_corallium_time.cpp" -o "$OUT/test_corallium_time"
 "$OUT/test_corallium_time"

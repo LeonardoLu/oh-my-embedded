@@ -2,6 +2,7 @@
 #include "WatchControls.h"
 #include "WatchStrings.h"
 #include <UxText.h>
+#include <cstdio>
 #include <cstring>
 
 extern const ux::Font WatchExtra24;
@@ -44,6 +45,7 @@ const ux::Font& fontFor(uint32_t codepoint) {
     return glyph&&glyph->code==codepoint?ux::Cjk24:WatchExtra24;
 }
 bool glyphDescription(const lv_font_t*, lv_font_glyph_dsc_t* out, uint32_t codepoint, uint32_t) {
+    if(codepoint<32) { memset(out,0,sizeof(*out)); return true; }
     const auto& font=fontFor(codepoint);
     const auto* glyph=ux::glyph(font,codepoint);
     if(!glyph) return false;
@@ -80,6 +82,30 @@ void separator(lv_obj_t* parent,int y,int width) {
     lv_obj_set_pos(obj,0,y); lv_obj_set_size(obj,width,1);
     lv_obj_set_style_bg_color(obj,lv_color_hex(divider),0);
     lv_obj_set_style_bg_opa(obj,LV_OPA_COVER,0);
+}
+void sliderStripes(lv_event_t* e) {
+    if(lv_event_get_code(e)!=LV_EVENT_DRAW_MAIN_END) return;
+    lv_area_t bounds; lv_obj_get_coords(lv_event_get_target(e),&bounds);
+    lv_draw_rect_dsc_t style; lv_draw_rect_dsc_init(&style);
+    style.bg_color=lv_color_hex(background); style.bg_opa=LV_OPA_50;
+    auto* context=lv_event_get_draw_ctx(e);
+    for(lv_coord_t x=bounds.x1+10;x<bounds.x2;x+=10) {
+        lv_area_t stripe={x,bounds.y1,x,bounds.y2};
+        lv_draw_rect(context,&style,&stripe);
+    }
+}
+void styleSlider(lv_obj_t* obj) {
+    clean(obj);
+    lv_obj_clear_flag(obj,LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    lv_obj_set_style_bg_color(obj,lv_color_hex(divider),LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(obj,LV_OPA_COVER,LV_PART_MAIN);
+    lv_obj_set_style_radius(obj,8,LV_PART_MAIN);
+    lv_obj_set_style_bg_color(obj,lv_color_hex(accent),LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(obj,LV_OPA_COVER,LV_PART_INDICATOR);
+    lv_obj_set_style_radius(obj,8,LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(obj,LV_OPA_TRANSP,LV_PART_KNOB);
+    lv_obj_set_style_opa(obj,LV_OPA_50,LV_STATE_DISABLED);
+    lv_obj_add_event_cb(obj,sliderStripes,LV_EVENT_DRAW_MAIN_END,nullptr);
 }
 lv_obj_t* label(lv_obj_t* parent,const char* text,int x,int y,int width,bool literal=false) {
     auto* obj=lv_label_create(parent);
@@ -168,13 +194,58 @@ void WatchLvgl::bind(lv_obj_t* obj,Action action,uint8_t row) {
 void WatchLvgl::event(lv_event_t* e) {
     auto* binding=(Binding*)lv_event_get_user_data(e);
     auto code=lv_event_get_code(e);
-    if(binding->action==Action::Color && code==LV_EVENT_VALUE_CHANGED) {
+    auto* obj=lv_event_get_target(e);
+    auto* self=binding->owner;
+    uint8_t row=binding->row;
+    if(binding->action==Action::SetValue) {
+        if(code==LV_EVENT_PRESSED) self->_handler(Action::Focus,row,0,nullptr);
+        else if(code==LV_EVENT_VALUE_CHANGED) {
+            int value=lv_obj_check_type(obj,&lv_slider_class)?lv_slider_get_value(obj):
+                lv_obj_check_type(obj,&lv_switch_class)?lv_obj_has_state(obj,LV_STATE_CHECKED):
+                self->_minimum[row]+lv_dropdown_get_selected(obj);
+            self->_handler(Action::SetValue,row,value,nullptr);
+        } else if(code==LV_EVENT_RELEASED&&lv_obj_check_type(obj,&lv_dropdown_class)
+                  &&lv_dropdown_is_open(obj)) self->positionChoice(row);
+        else if(code==LV_EVENT_SHORT_CLICKED&&obj==self->_rows[row]) {
+            if(self->_choices[row]) {
+                lv_dropdown_open(self->_choices[row]); self->positionChoice(row);
+            } else if(self->_switches[row]) {
+                self->_handler(Action::SetValue,row,!lv_obj_has_state(self->_switches[row],LV_STATE_CHECKED),nullptr);
+            }
+        }
+    } else if(binding->action==Action::Color && code==LV_EVENT_VALUE_CHANGED) {
         binding->owner->_handler(binding->action,binding->row,lv_slider_get_value(lv_event_get_target(e)),nullptr);
     } else if(binding->action==Action::Name && code==LV_EVENT_VALUE_CHANGED) {
         binding->owner->_handler(binding->action,0,0,lv_textarea_get_text(lv_event_get_target(e)));
     } else if(binding->action!=Action::Name && binding->action!=Action::Color && code==LV_EVENT_SHORT_CLICKED) {
         binding->owner->_handler(binding->action,binding->row,0,nullptr);
     }
+}
+void WatchLvgl::positionChoice(uint8_t row) {
+    auto* list=lv_dropdown_get_list(_choices[row]);
+    lv_obj_set_width(list,312);
+    lv_obj_update_layout(list);
+    int height=lv_obj_get_height(list),y=lv_obj_get_y(list);
+    if(y<104) y=104;
+    if(y+height>382) y=382-height;
+    lv_obj_set_pos(list,72,y);
+}
+void WatchLvgl::updateChoice(uint8_t index,const Row& row) {
+    auto* control=_choices[index];
+    if(_minimum[index]!=row.minimum||_maximum[index]!=row.maximum) {
+        char options[1024]={}; size_t used=0;
+        for(int value=row.minimum;value<=row.maximum;++value) {
+            char number[12]; snprintf(number,sizeof(number),"%d",value);
+            const char* text=row.optionLabel?row.optionLabel((uint8_t)value):number;
+            int length=snprintf(options+used,sizeof(options)-used,"%s%s",used?"\n":"",
+                                row.literal?text:localized(text));
+            if(length<0||(size_t)length>=sizeof(options)-used) break;
+            used+=(size_t)length;
+        }
+        lv_dropdown_set_options(control,options);
+        _minimum[index]=row.minimum; _maximum[index]=row.maximum;
+    }
+    lv_dropdown_set_selected(control,row.number-row.minimum);
 }
 lv_obj_t* WatchLvgl::button(lv_obj_t* parent,const char* text,int x,int y,int w,int h,Action action,uint8_t row) {
     auto* obj=lv_btn_create(parent); clean(obj);
@@ -193,6 +264,8 @@ void WatchLvgl::build(const Model& model) {
     resetPointer(); lv_obj_clean(_root); clean(_root);
     _bindingCount=0; _list=_image=_name=_error=nullptr;
     memset(_rows,0,sizeof(_rows)); memset(_values,0,sizeof(_values)); memset(_switches,0,sizeof(_switches)); memset(_sliders,0,sizeof(_sliders));
+    memset(_choices,0,sizeof(_choices)); memset(_rowSliders,0,sizeof(_rowSliders));
+    for(uint8_t i=0;i<11;++i) { _minimum[i]=INT16_MAX; _maximum[i]=INT16_MIN; }
     _selected=UINT8_MAX;
     lv_obj_set_style_bg_color(_root,lv_color_hex(background),0);
     lv_obj_set_style_bg_opa(_root,LV_OPA_COVER,0);
@@ -253,50 +326,85 @@ void WatchLvgl::build(const Model& model) {
     } else if(model.color) {
         const char* names[]={"HUE","SATURATION","BRIGHTNESS"};
         for(uint8_t i=0;i<3;++i) {
-            label(_list,names[i],12,i*78,320);
+            label(_list,names[i],12,i*100,224);
+            _values[i]=label(_list,"",242,i*100,82);
+            lv_obj_set_style_text_align(_values[i],LV_TEXT_ALIGN_RIGHT,0);
+            lv_obj_set_style_text_color(_values[i],lv_color_hex(muted),0);
             _sliders[i]=lv_slider_create(_list);
-            lv_obj_set_pos(_sliders[i],22,40+i*78); lv_obj_set_size(_sliders[i],296,18);
+            styleSlider(_sliders[i]);
+            lv_obj_set_pos(_sliders[i],22,40+i*100); lv_obj_set_size(_sliders[i],296,40);
             lv_slider_set_range(_sliders[i],0,i?100:359);
-            lv_obj_set_style_bg_color(_sliders[i],lv_color_hex(divider),LV_PART_MAIN);
-            lv_obj_set_style_bg_opa(_sliders[i],LV_OPA_COVER,LV_PART_MAIN);
-            lv_obj_set_style_bg_color(_sliders[i],lv_color_hex(accent),LV_PART_INDICATOR);
-            lv_obj_set_style_bg_color(_sliders[i],lv_color_hex(ink),LV_PART_KNOB);
             bind(_sliders[i],Action::Color,i);
         }
-        button(_list,"USE THEME",65,242,216,48,Action::Theme);
+        button(_list,"USE THEME",65,306,216,48,Action::Theme);
     } else {
+        int rowTop=0;
         for(uint8_t i=0;i<model.count;++i) {
-            const int height=model.editor?98:72;
+            const bool toggle=model.editor&&model.rows[i].kind==RowKind::Toggle;
+            const int height=model.editor&&!toggle?98:72;
             auto* row=lv_obj_create(_list); clean(row); _rows[i]=row;
-            lv_obj_set_pos(row,0,i*height); lv_obj_set_size(row,336,height);
+            lv_obj_set_pos(row,0,rowTop); lv_obj_set_size(row,336,height); rowTop+=height;
             lv_obj_set_style_bg_color(row,lv_color_hex(background),0);
             lv_obj_set_style_bg_opa(row,LV_OPA_COVER,0);
             lv_obj_set_style_bg_color(row,lv_color_hex(card),LV_STATE_PRESSED);
             separator(row,height-1,336);
             if(!model.editor) { lv_obj_add_flag(row,LV_OBJ_FLAG_CLICKABLE); bind(row,Action::Open,i); }
-            label(row,model.rows[i].label,12,model.editor?9:20,model.editor?312:278);
+            label(row,model.rows[i].label,12,model.editor&&!toggle?9:20,toggle?220:model.editor?312:278);
             if(!model.editor) {
                 auto* arrow=label(row,">",306,20,20);
                 lv_obj_set_style_text_color(arrow,lv_color_hex(muted),0);
             }
             if(model.editor) {
                 bool info=model.rows[i].kind==RowKind::Info;
-                _values[i]=label(row,model.rows[i].value,17,49,info?302:191,model.rows[i].literal);
-                lv_obj_set_style_text_color(_values[i],lv_color_hex(muted),0);
+                if(info||model.rows[i].kind==RowKind::Link||model.rows[i].kind==RowKind::Slider) {
+                    bool slider=model.rows[i].kind==RowKind::Slider;
+                    _values[i]=label(row,model.rows[i].value,slider?242:12,slider?9:49,slider?82:302,model.rows[i].literal);
+                    lv_obj_set_style_text_color(_values[i],lv_color_hex(muted),0);
+                    if(slider) lv_obj_set_style_text_align(_values[i],LV_TEXT_ALIGN_RIGHT,0);
+                }
                 if(model.rows[i].kind==RowKind::Toggle) {
                     auto* control=lv_switch_create(row); _switches[i]=control;
-                    lv_obj_set_pos(control,248,45); lv_obj_set_size(control,74,40);
+                    lv_obj_set_pos(control,246,18); lv_obj_set_size(control,78,40);
                     lv_obj_set_style_bg_color(control,lv_color_hex(divider),LV_PART_MAIN);
                     lv_obj_set_style_bg_color(control,lv_color_hex(accent),LV_PART_INDICATOR|LV_STATE_CHECKED);
                     lv_obj_set_style_bg_color(control,lv_color_hex(ink),LV_PART_KNOB);
-                    auto& binding=_bindings[_bindingCount++]; binding={this,Action::More,i};
-                    lv_obj_add_event_cb(control,[](lv_event_t* e) {
-                        auto* binding=(Binding*)lv_event_get_user_data(e);
-                        binding->owner->_handler(Action::More,binding->row,0,nullptr);
-                    },LV_EVENT_VALUE_CHANGED,&binding);
-                } else if(!info) {
-                    if(model.rows[i].kind==RowKind::Setting) button(row,"-",218,42,50,48,Action::Less,i);
-                    button(row,model.rows[i].kind==RowKind::Link?">":"+",276,42,50,48,Action::More,i);
+                    bind(control,Action::SetValue,i); bind(row,Action::SetValue,i);
+                } else if(model.rows[i].kind==RowKind::Slider) {
+                    auto* control=lv_slider_create(row); styleSlider(control); _rowSliders[i]=control;
+                    lv_obj_set_pos(control,18,48); lv_obj_set_size(control,300,40);
+                    bind(control,Action::SetValue,i); bind(row,Action::SetValue,i);
+                } else if(model.rows[i].kind==RowKind::Choice) {
+                    auto* control=lv_dropdown_create(row); clean(control); _choices[i]=control;
+                    lv_obj_set_pos(control,12,42); lv_obj_set_size(control,312,48);
+                    lv_obj_set_style_pad_all(control,8,0);
+                    lv_obj_set_style_text_color(control,lv_color_hex(muted),0);
+                    lv_obj_set_style_bg_color(control,lv_color_hex(card),LV_STATE_PRESSED);
+                    lv_obj_set_style_bg_opa(control,LV_OPA_COVER,LV_STATE_PRESSED);
+                    lv_dropdown_set_symbol(control,nullptr); lv_dropdown_set_dir(control,LV_DIR_TOP);
+                    auto* arrow=label(control,">",288,8,16);
+                    lv_obj_set_style_text_color(arrow,lv_color_hex(muted),0);
+                    auto* choices=lv_dropdown_get_list(control); clean(choices);
+                    lv_obj_add_flag(choices,LV_OBJ_FLAG_SCROLLABLE);
+                    lv_obj_set_scroll_dir(choices,LV_DIR_VER);
+                    lv_obj_set_style_max_height(choices,244,0);
+                    lv_obj_set_style_max_width(choices,312,0);
+                    lv_obj_set_style_pad_all(choices,12,0);
+                    lv_obj_set_style_radius(choices,14,0);
+                    lv_obj_set_style_border_width(choices,1,0);
+                    lv_obj_set_style_border_color(choices,lv_color_hex(divider),0);
+                    lv_obj_set_style_bg_color(choices,lv_color_hex(card),0);
+                    lv_obj_set_style_bg_opa(choices,LV_OPA_COVER,0);
+                    lv_obj_set_style_text_font(choices,&bodyFont,0);
+                    lv_obj_set_style_text_color(choices,lv_color_hex(ink),0);
+                    lv_obj_set_style_text_line_space(choices,12,0);
+                    lv_obj_set_style_bg_color(choices,lv_color_hex(accent),LV_PART_SELECTED);
+                    lv_obj_set_style_bg_opa(choices,LV_OPA_COVER,LV_PART_SELECTED);
+                    lv_obj_set_style_text_color(choices,lv_color_hex(background),LV_PART_SELECTED);
+                    bind(control,Action::SetValue,i); bind(row,Action::SetValue,i);
+                } else if(model.rows[i].kind==RowKind::Link) {
+                    auto* arrow=label(row,">",306,49,20);
+                    lv_obj_set_style_text_color(arrow,lv_color_hex(muted),0);
+                    bind(row,Action::More,i);
                 }
             }
         }
@@ -327,6 +435,14 @@ void WatchLvgl::show(const Model& model) {
             if(model.rows[i].checked) lv_obj_add_state(_switches[i],LV_STATE_CHECKED);
             else lv_obj_clear_state(_switches[i],LV_STATE_CHECKED);
         }
+        if(_choices[i]) updateChoice(i,model.rows[i]);
+        if(_rowSliders[i]) {
+            const auto& row=model.rows[i];
+            lv_slider_set_range(_rowSliders[i],row.minimum,row.maximum);
+            lv_slider_set_value(_rowSliders[i],row.number,LV_ANIM_OFF);
+            if(row.minimum==row.maximum) lv_obj_add_state(_rowSliders[i],LV_STATE_DISABLED);
+            else lv_obj_clear_state(_rowSliders[i],LV_STATE_DISABLED);
+        }
         if(_rows[i]) {
             lv_obj_set_style_border_width(_rows[i],model.keyboardNavigation&&model.selected==i?2:0,0);
             lv_obj_set_style_border_color(_rows[i],lv_color_hex(accent),0);
@@ -339,6 +455,11 @@ void WatchLvgl::show(const Model& model) {
         lv_slider_set_value(_sliders[0],model.hue,LV_ANIM_OFF);
         lv_slider_set_value(_sliders[1],model.saturation,LV_ANIM_OFF);
         lv_slider_set_value(_sliders[2],model.brightness,LV_ANIM_OFF);
+        unsigned values[]={model.hue,model.saturation,model.brightness};
+        for(uint8_t i=0;i<3;++i) {
+            char text[12]; snprintf(text,sizeof(text),i?"%u%%":"%u",values[i]);
+            if(strcmp(lv_label_get_text(_values[i]),text)) lv_label_set_text(_values[i],text);
+        }
     }
     if(model.error) lv_obj_clear_flag(_error,LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(_error,LV_OBJ_FLAG_HIDDEN);
