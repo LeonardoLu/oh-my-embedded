@@ -17,6 +17,20 @@ dispatcher with the same cJSON dependency used by the firmware; hardware service
 are replaced by explicit test doubles. See the README for reproducible commands
 and Python/Clang prerequisites. Covered behavior includes:
 
+- The actual LiquidDuck FLIP solver and native IMU renderer under ASan/UBSan:
+  all eight original palettes, solid/density color rules, 720 steps of rotating
+  and shaking gravity per style, constant particle counts, finite positions and
+  velocities, wall bounds, invalid-input rejection and padded output guards.
+  Pixel particles contribute to exactly one cell. Native GSP renders all 24
+  style/palette combinations through the actual IMU C implementation with an
+  explicit acceleration fixture. Real simulator taps exercise style cycling,
+  palette changes and reset. The actual app catalog keeps all three controls
+  local and routes the distinct shared Back action to Home, preventing Reset's
+  action zero from matching the descriptor's default Back value.
+  The Canvas lifetime fixture rejects one submission,
+  withholds both frame releases, checks whole-frame hashes remain unchanged under
+  backpressure, then delivers delayed callbacks after app teardown. The compiled
+  Canvas is one opaque RGB565 RAW resource in the actual IMU bank.
 - Fragmented UTF-8; exact 2048-byte frames; overlength, NUL and timed-out frame
   recovery; clearing receive storage; invalid UTF-8 and JSON nesting limits.
 - Version, identifier, envelope and duplicate-field rejection before mutation;
@@ -175,14 +189,16 @@ preserve RGB565+A8, adding about 46 KiB to the Hub bundle. This audit supports
 state/color behavior and the encoding change; it does not establish why the
 previous device showed black glyphs or whether the workaround resolves them.
 
-Native GSP screenshots render authored Home/control-center/Settings fixtures on
-the host. They provide evidence for generated geometry and assets, not hardware
-runtime, live Wi-Fi/weather state or physical panel behavior.
+Native GSP screenshots render authored Home/control-center/Settings fixtures and
+the actual IMU C app on the host. They provide evidence for generated geometry,
+assets and the stated simulated inputs, not hardware runtime, BMI270 direction or
+shake response, live Wi-Fi/weather state or physical panel behavior. Liquid-style
+sensor response, achieved FPS and repeated entry/exit on the board remain unmeasured.
 
 The full ESP32-S31 firmware compiled and linked with the pinned ESP-IDF checkout,
 RISC-V toolchain `esp-16.1.0_20260609`, and the official board generator. The build
 disables performance logging. Image generation and partition-size checks passed.
-The application uses approximately 4.01 MiB, with about 49% of the smallest app partition free.
+The application uses approximately 4.02 MiB, with about 49% of the smallest app partition free.
 Inactive vendor helpers can produce unused-function warnings; these are not
 treated as hardware evidence.
 

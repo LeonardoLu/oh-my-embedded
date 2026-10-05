@@ -27,6 +27,13 @@ run([output / "test-audio"])
 run([compiler, *flags, "-I", PROJECT / "overlay/components/mosaic_ui/common",
      PROJECT / "tests/test_weather_art.c", "-o", output / "test-weather-art"])
 run([output / "test-weather-art"])
+imu = PROJECT / "overlay/components/mosaic_ui/apps/imu"
+run([os.environ.get("CXX", "clang++"), "-std=c++11", *flags[1:], "-c",
+     imu / "liquidduck/flip.cpp", "-o", output / "liquidduck-flip.o"])
+run([compiler, *flags, "-c", PROJECT / "tests/test_imu_liquid.c", "-o", output / "test-imu-liquid.o"])
+run([os.environ.get("CXX", "clang++"), "-fsanitize=address,undefined",
+     output / "test-imu-liquid.o", output / "liquidduck-flip.o", "-o", output / "test-imu-liquid"])
+run([output / "test-imu-liquid"])
 run([sys.executable, PROJECT / "tests/test_scene_resource_refs.py"])
 run([sys.executable, PROJECT / "tests/test_device_diagnostics.py"])
 run([sys.executable, PROJECT / "tests/check_diagnostics.py"])
@@ -137,6 +144,8 @@ if args.upstream:
     from gsp.execute import executable_from_environment
     version = (upstream / "managed_components/espressif__esp-gsp/.gspc_version").read_text().strip()
     gspc = executable_from_environment("gspc", version=version)
+    run([sys.executable, PROJECT / "tests/test_imu_native.py", "--upstream", upstream,
+         "--gspc", gspc, "--output", output / "imu-native"])
     run([sys.executable, PROJECT / "tests/test_settings_native.py", "--upstream", upstream,
          "--gspc", gspc, "--output", output / "settings-native"])
     run([sys.executable, PROJECT / "tests/test_hub_drawer.py", "--upstream", upstream,

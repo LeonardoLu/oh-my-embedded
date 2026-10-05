@@ -75,6 +75,13 @@ python3 projects/espressif-esp-mosaico/corallium-firmware/tools/check_host.py --
 python3 projects/espressif-esp-mosaico/corallium-firmware/tools/analyze_performance.py tmp/mosaico/serial.log
 ```
 
+Host checks also exercise the native LiquidDuck solver under ASan/UBSan,
+including rotating/shaking gravity, particle conservation, wall bounds and
+RGB565 output bounds. The native IMU regression renders all 24 style/palette
+combinations, exercises real touch routing, mode cycling and reset, and checks
+Canvas backpressure, rejected submissions and delayed release after app exit.
+Sensor inputs are fixtures; host previews do not establish hardware motion or FPS.
+
 Host checks cover protocol framing/validation, failed persistence, saved local
 states, asynchronous boot ordering, charging telemetry, display idle stages and
 brightness restoration. Generated scene checks cover
@@ -153,3 +160,16 @@ before asynchronous Wi-Fi association and weather fetching. Works provides Lab,
 Recent and Installed views; Lab contains the official Dino and Flappy Bird games.
 The local Lua runtime starts on first opening Works. Flappy sound effects use
 the output-only speaker worker and follow the saved master volume and mute.
+
+Open IMU from the launcher. Its lower-left button cycles **Level → Pixel →
+Gradient → Water → Level**. Pixel, Gradient and Water implement styles 2, 3 and 4
+from [LiquidDuck_ESP32](https://github.com/nongxl/LiquidDuck_ESP32): rounded LED
+cells with a solid bright color, density-colored LED cells, and continuous water.
+The middle button cycles Matrix, Cyberpunk, Amber, Mono, Red, Deep Sea, Toxic and
+Gold; Deep Sea is the initial palette. Reset refills the current tank. Tilt or
+shake the device to move the liquid; the factory Back gesture exits IMU.
+Mode and palette selections are session-local.
+
+The square-screen adaptation uses 14×10 pixel and 28×20 water grids in a native
+456×320 RGB565 Canvas. The solver and palettes retain upstream's PolyForm
+Noncommercial terms; see [source and license notice](overlay/components/mosaic_ui/apps/imu/liquidduck/NOTICE.md).

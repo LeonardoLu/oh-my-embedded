@@ -93,9 +93,52 @@ starting Claw/AI, cloud authentication or an HTTP configuration portal.
 The local bootstrap also initializes the empty tagged-lease registry used by
 Lua job cleanup; it does not start a hardware bridge or acquire device leases.
 
-The experimental Fluid, Dot Fluid and Liquid Toy apps are removed: device
-feedback found their motion too slow and their appearance unsuitable. Their
-private solvers, Lua modules, gravity provider and app assets are not shipped.
+Works does not ship the experimental Fluid, Dot Fluid or Liquid Toy apps, whose
+device feedback found motion too slow and appearance unsuitable. Their Lua
+modules, gravity provider and app assets are absent.
+
+## IMU liquid styles
+
+IMU starts with its Level view and retains Pitch/Roll/Yaw readings. Its bottom
+style button cycles Level, Pixel, Gradient and Water. The latter three implement
+LiquidDuck styles 2, 3 and 4 using the pinned native FLIP solver, independent of
+Works/Lua. Pixel deposits each particle into one 14×10 cell and draws an isolated
+rounded rectangle with a two-pixel inset. Every occupied cell uses the palette's
+fixed bright shade. Gradient uses the same geometry and maps particle count over
+four particles to six color steps; this follows the upstream implementation
+rather than the older specification's density/20 formula. Water uses a 28×20
+grid, gamma-normalized density and bilinear sampling over a continuous Canvas.
+Both grid sizes adapt the original portrait tank to the 456×320 Mosaico viewport.
+
+All three styles share the original eight seven-color palettes: Matrix,
+Cyberpunk, Amber, Mono, Red, Deep Sea, Toxic and Gold. The theme button shows the
+current palette; tapping cycles them. Deep Sea is initially selected. Reset and
+style changes refill the tank, while theme changes preserve the simulation.
+Returning to Level retains the selected palette until exiting IMU. A new app
+session restores Level/Deep Sea. The existing shared Back/idle controls remain
+responsible for exit and display sleep.
+
+The BMI270 BSP supplies acceleration normalized to g with its configured range.
+The screen-plane mapping follows the Level view's existing Roll/-Pitch axes:
+sensor X points right and negative sensor Y points down. Physical direction and
+shake response still require validation on the board. A missing hardware sample
+freezes the simulation and shows IMU unavailable. Host fixtures supply explicit
+acceleration; when no provider exists, the simulator uses downward gravity.
+Finite acceleration is limited to ±2 g, elapsed steps to 50 ms, and each step
+uses two FLIP substeps. The 33 ms app tick is a scheduling target, not measured FPS.
+
+Two native RGB565 producer buffers are allocated only for the liquid views.
+Borrowed frames remain immutable until GSP returns them; when both are busy,
+presentation is skipped while physics can advance. Failed submissions return
+their buffer immediately. Reference counting retains outstanding buffers after
+Level/exit until their release callbacks, so app teardown does not free data
+still used by the renderer. The Canvas owns one opaque, unscaled RAW resource;
+its actual resource bank is included and validated in the IMU bundle.
+
+The unchanged solver and palette provenance are recorded in
+[`liquidduck/NOTICE.md`](../overlay/components/mosaic_ui/apps/imu/liquidduck/NOTICE.md).
+The imported code retains PolyForm Noncommercial License 1.0.0 terms. Factory
+Apache-2.0 notices remain with their original sources.
 
 ## Connections
 
