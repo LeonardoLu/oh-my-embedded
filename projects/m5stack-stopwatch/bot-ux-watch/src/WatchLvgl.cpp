@@ -7,6 +7,37 @@
 extern const ux::Font WatchExtra24;
 namespace {
 lv_font_t bodyFont;
+constexpr uint32_t background=0x000000,card=0x181819,ink=0xFCFCFF;
+constexpr uint32_t muted=0x91919B,divider=0x3B3C3D,accent=0xFF4C01;
+// Names accept only ASCII letters, digits, spaces, '-' and '_'. The native
+// mode/cursor/confirm keys remain, with no keyboard close/cancel key.
+const char* nameLower[]={
+    "1#","q","w","e","r","t","y","u","i","o","p",LV_SYMBOL_BACKSPACE,"\n",
+    "ABC","a","s","d","f","g","h","j","k","l","\n",
+    "_","-","z","x","c","v","b","n","m","\n",
+    LV_SYMBOL_LEFT," ",LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+};
+const char* nameUpper[]={
+    "1#","Q","W","E","R","T","Y","U","I","O","P",LV_SYMBOL_BACKSPACE,"\n",
+    "abc","A","S","D","F","G","H","J","K","L","\n",
+    "_","-","Z","X","C","V","B","N","M","\n",
+    LV_SYMBOL_LEFT," ",LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+};
+const char* nameNumbers[]={
+    "1","2","3","4","5","6","7","8","9","0",LV_SYMBOL_BACKSPACE,"\n",
+    "abc","-","_","\n",LV_SYMBOL_LEFT," ",LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+};
+constexpr lv_btnmatrix_ctrl_t functionKey=LV_KEYBOARD_CTRL_BTN_FLAGS;
+const lv_btnmatrix_ctrl_t nameLetterControls[]={
+    functionKey|5,4,4,4,4,4,4,4,4,4,4,functionKey|7,
+    functionKey|6,3,3,3,3,3,3,3,3,3,
+    3,3,3,3,3,3,3,3,3,
+    functionKey|2,6,functionKey|2,functionKey|2
+};
+const lv_btnmatrix_ctrl_t nameNumberControls[]={
+    1,1,1,1,1,1,1,1,1,1,functionKey|2,
+    functionKey|2,1,1,functionKey|2,6,functionKey|2,functionKey|2
+};
 const ux::Font& fontFor(uint32_t codepoint) {
     if(codepoint<128) return ux::Latin24;
     const auto* glyph=ux::glyph(ux::Cjk24,codepoint);
@@ -42,6 +73,13 @@ const char* localized(const char* text) {
 void clean(lv_obj_t* obj) {
     lv_obj_remove_style_all(obj);
     lv_obj_clear_flag(obj,LV_OBJ_FLAG_SCROLLABLE);
+}
+void separator(lv_obj_t* parent,int y,int width) {
+    auto* obj=lv_obj_create(parent); clean(obj);
+    lv_obj_clear_flag(obj,LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_pos(obj,0,y); lv_obj_set_size(obj,width,1);
+    lv_obj_set_style_bg_color(obj,lv_color_hex(divider),0);
+    lv_obj_set_style_bg_opa(obj,LV_OPA_COVER,0);
 }
 lv_obj_t* label(lv_obj_t* parent,const char* text,int x,int y,int width,bool literal=false) {
     auto* obj=lv_label_create(parent);
@@ -139,14 +177,14 @@ void WatchLvgl::event(lv_event_t* e) {
     }
 }
 lv_obj_t* WatchLvgl::button(lv_obj_t* parent,const char* text,int x,int y,int w,int h,Action action,uint8_t row) {
-    auto* obj=lv_btn_create(parent);
+    auto* obj=lv_btn_create(parent); clean(obj);
     lv_obj_set_pos(obj,x,y); lv_obj_set_size(obj,w,h);
-    lv_obj_set_style_radius(obj,18,0);
-    lv_obj_set_style_bg_color(obj,lv_color_hex(0x253137),0);
-    lv_obj_set_style_bg_color(obj,lv_color_hex(0x576B73),LV_STATE_PRESSED);
-    lv_obj_set_style_shadow_width(obj,0,0);
-    lv_obj_set_style_border_width(obj,0,0);
-    lv_obj_set_style_pad_all(obj,0,0);
+    lv_obj_set_style_radius(obj,14,0);
+    lv_obj_set_style_bg_color(obj,lv_color_hex(card),0);
+    lv_obj_set_style_bg_opa(obj,LV_OPA_COVER,0);
+    lv_obj_set_style_bg_color(obj,lv_color_hex(divider),LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(obj,1,0);
+    lv_obj_set_style_border_color(obj,lv_color_hex(divider),0);
     auto* copy=lv_label_create(obj); lv_label_set_text(copy,localized(text)); lv_obj_center(copy);
     bind(obj,action,row);
     return obj;
@@ -156,18 +194,18 @@ void WatchLvgl::build(const Model& model) {
     _bindingCount=0; _list=_image=_name=_error=nullptr;
     memset(_rows,0,sizeof(_rows)); memset(_values,0,sizeof(_values)); memset(_switches,0,sizeof(_switches)); memset(_sliders,0,sizeof(_sliders));
     _selected=UINT8_MAX;
-    lv_obj_set_style_bg_color(_root,lv_color_hex(0x080D10),0);
+    lv_obj_set_style_bg_color(_root,lv_color_hex(background),0);
     lv_obj_set_style_bg_opa(_root,LV_OPA_COVER,0);
     lv_obj_set_style_text_font(_root,&bodyFont,0);
-    lv_obj_set_style_text_color(_root,lv_color_hex(0xEDF5F4),0);
+    lv_obj_set_style_text_color(_root,lv_color_hex(ink),0);
     auto* title=label(_root,model.title,100,40,266);
     lv_obj_set_style_text_align(title,LV_TEXT_ALIGN_CENTER,0);
+    lv_obj_set_style_text_color(title,lv_color_hex(muted),0);
     if(model.preview) {
         _image=lv_img_create(_root); lv_img_set_src(_image,&_imageDescriptor);
         lv_img_set_zoom(_image,184); lv_obj_set_pos(_image,144,65);
     }
-    const bool canCancel=model.editor&&!model.immediate;
-    const int contentTop=model.preview?218:88,contentBottom=canCancel?346:382;
+    const int contentTop=model.preview?218:model.editor?104:88,contentBottom=382;
     _list=lv_obj_create(_root); clean(_list);
     lv_obj_set_pos(_list,60,contentTop);
     lv_obj_set_size(_list,346,contentBottom-contentTop);
@@ -175,26 +213,43 @@ void WatchLvgl::build(const Model& model) {
     lv_obj_set_scroll_dir(_list,LV_DIR_VER);
     lv_obj_set_scrollbar_mode(_list,LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_style_pad_bottom(_list,8,0);
+    lv_obj_set_style_bg_color(_list,lv_color_hex(divider),LV_PART_SCROLLBAR);
+    lv_obj_set_style_width(_list,3,LV_PART_SCROLLBAR);
     if(model.name) {
         _name=lv_textarea_create(_root); lv_obj_set_pos(_name,90,91); lv_obj_set_size(_name,286,52);
         lv_textarea_set_one_line(_name,true); lv_textarea_set_max_length(_name,16);
         lv_textarea_set_text(_name,model.botName);
         lv_textarea_set_accepted_chars(_name,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_");
-        lv_obj_set_style_bg_color(_name,lv_color_hex(0x253137),0);
+        lv_obj_set_style_bg_color(_name,lv_color_hex(card),0);
+        lv_obj_set_style_text_color(_name,lv_color_hex(ink),0);
+        lv_obj_set_style_border_color(_name,lv_color_hex(divider),0);
+        lv_obj_set_style_border_color(_name,lv_color_hex(accent),LV_STATE_FOCUSED);
+        lv_obj_set_style_border_color(_name,lv_color_hex(accent),LV_PART_CURSOR|LV_STATE_FOCUSED);
+        lv_obj_set_style_radius(_name,14,0);
         bind(_name,Action::Name,0);
         auto* keyboard=lv_keyboard_create(_root);
         lv_obj_set_align(keyboard,LV_ALIGN_TOP_LEFT);
         lv_obj_set_pos(keyboard,65,157); lv_obj_set_size(keyboard,336,contentBottom-157);
+        lv_keyboard_set_map(keyboard,LV_KEYBOARD_MODE_TEXT_LOWER,nameLower,nameLetterControls);
+        lv_keyboard_set_map(keyboard,LV_KEYBOARD_MODE_TEXT_UPPER,nameUpper,nameLetterControls);
+        lv_keyboard_set_map(keyboard,LV_KEYBOARD_MODE_SPECIAL,nameNumbers,nameNumberControls);
         lv_keyboard_set_textarea(keyboard,_name);
         lv_obj_add_event_cb(keyboard,[](lv_event_t* e) {
             auto* self=(WatchLvgl*)lv_event_get_user_data(e);
             self->_handler(Action::Save,0,0,nullptr);
         },LV_EVENT_READY,this);
-        lv_obj_add_event_cb(keyboard,[](lv_event_t* e) {
-            auto* self=(WatchLvgl*)lv_event_get_user_data(e);
-            self->_handler(Action::Cancel,0,0,nullptr);
-        },LV_EVENT_CANCEL,this);
+        lv_obj_set_style_bg_color(keyboard,lv_color_hex(background),0);
+        lv_obj_set_style_border_width(keyboard,0,0);
+        lv_obj_set_style_pad_all(keyboard,4,0);
         lv_obj_set_style_text_font(keyboard,&lv_font_montserrat_14,LV_PART_ITEMS);
+        lv_obj_set_style_text_color(keyboard,lv_color_hex(ink),LV_PART_ITEMS);
+        lv_obj_set_style_text_color(keyboard,lv_color_hex(ink),LV_PART_ITEMS|LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(keyboard,lv_color_hex(ink),LV_PART_ITEMS|LV_STATE_PRESSED);
+        lv_obj_set_style_bg_color(keyboard,lv_color_hex(card),LV_PART_ITEMS);
+        lv_obj_set_style_bg_color(keyboard,lv_color_hex(card),LV_PART_ITEMS|LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(keyboard,lv_color_hex(accent),LV_PART_ITEMS|LV_STATE_PRESSED);
+        lv_obj_set_style_border_color(keyboard,lv_color_hex(divider),LV_PART_ITEMS);
+        lv_obj_set_style_radius(keyboard,10,LV_PART_ITEMS);
     } else if(model.color) {
         const char* names[]={"HUE","SATURATION","BRIGHTNESS"};
         for(uint8_t i=0;i<3;++i) {
@@ -202,26 +257,38 @@ void WatchLvgl::build(const Model& model) {
             _sliders[i]=lv_slider_create(_list);
             lv_obj_set_pos(_sliders[i],22,40+i*78); lv_obj_set_size(_sliders[i],296,18);
             lv_slider_set_range(_sliders[i],0,i?100:359);
+            lv_obj_set_style_bg_color(_sliders[i],lv_color_hex(divider),LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(_sliders[i],LV_OPA_COVER,LV_PART_MAIN);
+            lv_obj_set_style_bg_color(_sliders[i],lv_color_hex(accent),LV_PART_INDICATOR);
+            lv_obj_set_style_bg_color(_sliders[i],lv_color_hex(ink),LV_PART_KNOB);
             bind(_sliders[i],Action::Color,i);
         }
         button(_list,"USE THEME",65,242,216,48,Action::Theme);
     } else {
         for(uint8_t i=0;i<model.count;++i) {
-            const int height=model.editor?98:70;
+            const int height=model.editor?98:72;
             auto* row=lv_obj_create(_list); clean(row); _rows[i]=row;
-            lv_obj_set_pos(row,0,i*(height+8)); lv_obj_set_size(row,336,height);
-            lv_obj_set_style_radius(row,18,0);
-            lv_obj_set_style_bg_color(row,lv_color_hex(0x192328),0);
+            lv_obj_set_pos(row,0,i*height); lv_obj_set_size(row,336,height);
+            lv_obj_set_style_bg_color(row,lv_color_hex(background),0);
             lv_obj_set_style_bg_opa(row,LV_OPA_COVER,0);
+            lv_obj_set_style_bg_color(row,lv_color_hex(card),LV_STATE_PRESSED);
+            separator(row,height-1,336);
             if(!model.editor) { lv_obj_add_flag(row,LV_OBJ_FLAG_CLICKABLE); bind(row,Action::Open,i); }
-            auto* heading=label(row,model.rows[i].label,16,model.editor?9:20,model.editor?302:294);
+            label(row,model.rows[i].label,12,model.editor?9:20,model.editor?312:278);
+            if(!model.editor) {
+                auto* arrow=label(row,">",306,20,20);
+                lv_obj_set_style_text_color(arrow,lv_color_hex(muted),0);
+            }
             if(model.editor) {
-                lv_obj_set_style_text_color(heading,lv_color_hex(0x95A8AC),0);
                 bool info=model.rows[i].kind==RowKind::Info;
                 _values[i]=label(row,model.rows[i].value,17,49,info?302:191,model.rows[i].literal);
+                lv_obj_set_style_text_color(_values[i],lv_color_hex(muted),0);
                 if(model.rows[i].kind==RowKind::Toggle) {
                     auto* control=lv_switch_create(row); _switches[i]=control;
                     lv_obj_set_pos(control,248,45); lv_obj_set_size(control,74,40);
+                    lv_obj_set_style_bg_color(control,lv_color_hex(divider),LV_PART_MAIN);
+                    lv_obj_set_style_bg_color(control,lv_color_hex(accent),LV_PART_INDICATOR|LV_STATE_CHECKED);
+                    lv_obj_set_style_bg_color(control,lv_color_hex(ink),LV_PART_KNOB);
                     auto& binding=_bindings[_bindingCount++]; binding={this,Action::More,i};
                     lv_obj_add_event_cb(control,[](lv_event_t* e) {
                         auto* binding=(Binding*)lv_event_get_user_data(e);
@@ -234,19 +301,19 @@ void WatchLvgl::build(const Model& model) {
             }
         }
     }
-    if(canCancel) button(_root,"CANCEL",166,358,134,40,Action::Cancel);
     const auto bounds=watchcontrols::doneBounds();
     auto* footer=button(_root,"DONE",bounds.x,bounds.y,bounds.w,bounds.h,Action::Save);
     lv_obj_set_style_radius(footer,0,0);
+    lv_obj_set_style_border_width(footer,0,0);
     lv_obj_set_style_bg_opa(footer,LV_OPA_TRANSP,0);
-    lv_obj_set_style_bg_color(footer,lv_color_hex(0x86CFC4),0);
-    lv_obj_set_style_bg_color(footer,lv_color_hex(0xB4E4DB),LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(footer,lv_color_hex(0x080D10),0);
+    lv_obj_set_style_bg_color(footer,lv_color_hex(accent),0);
+    lv_obj_set_style_bg_color(footer,lv_color_hex(0xFF732E),LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(footer,lv_color_hex(background),0);
     lv_obj_add_flag(footer,LV_OBJ_FLAG_ADV_HITTEST);
     lv_obj_add_event_cb(footer,footerEvent,LV_EVENT_ALL,nullptr);
     lv_obj_align(lv_obj_get_child(footer,0),LV_ALIGN_CENTER,0,
         watchcontrols::doneLabelY()-(bounds.y+bounds.h/2));
-    _error=label(_root,"Error",72,365,90);
+    _error=label(_root,"Error",168,70,130);
     lv_obj_set_style_text_color(_error,lv_color_hex(0xFF8A80),0);
     lv_obj_set_style_text_align(_error,LV_TEXT_ALIGN_CENTER,0);
     lv_obj_add_flag(_error,LV_OBJ_FLAG_HIDDEN);
@@ -262,7 +329,7 @@ void WatchLvgl::show(const Model& model) {
         }
         if(_rows[i]) {
             lv_obj_set_style_border_width(_rows[i],model.keyboardNavigation&&model.selected==i?2:0,0);
-            lv_obj_set_style_border_color(_rows[i],lv_color_hex(0x86CFC4),0);
+            lv_obj_set_style_border_color(_rows[i],lv_color_hex(accent),0);
         }
     }
     if(model.keyboardNavigation&&_selected!=model.selected&&model.selected<model.count&&_rows[model.selected])

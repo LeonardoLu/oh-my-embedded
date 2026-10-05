@@ -18,7 +18,35 @@ bool hasLabel(lv_obj_t* parent,const char* text) {
         if(hasLabel(lv_obj_get_child(parent,i),text)) return true;
     return false;
 }
+lv_obj_t* keyboard(lv_obj_t* parent) {
+    if(lv_obj_check_type(parent,&lv_keyboard_class)) return parent;
+    for(uint32_t i=0;i<lv_obj_get_child_cnt(parent);++i)
+        if(auto* obj=keyboard(lv_obj_get_child(parent,i))) return obj;
+    return nullptr;
+}
+void checkNoCancel() {
+    assert(!hasLabel(lv_scr_act(),"CANCEL")&&!hasLabel(lv_scr_act(),"取消"));
+    if(auto* obj=keyboard(lv_scr_act())) {
+        const auto* map=lv_keyboard_get_map_array(obj);
+        for(unsigned i=0;map[i][0];++i)
+            assert(strcmp(map[i],LV_SYMBOL_KEYBOARD)&&strcmp(map[i],LV_SYMBOL_CLOSE));
+        lv_area_t area; lv_obj_get_coords(obj,&area);
+        assert(area.y2==381);
+    }
+}
+void keyboardKey(WatchLvgl& ui,lv_obj_t* obj,const char* key) {
+    auto* matrix=(lv_btnmatrix_t*)obj;
+    for(uint16_t id=0;id<matrix->btn_cnt;++id) {
+        if(strcmp(lv_btnmatrix_get_btn_text(obj,id),key)) continue;
+        const auto& area=matrix->button_areas[id];
+        tap(ui,obj->coords.x1+(area.x1+area.x2)/2,obj->coords.y1+(area.y1+area.y2)/2);
+        return;
+    }
+    assert(false&&"Missing keyboard key");
+}
 void checkFooter(WatchLvgl& ui,const M5Canvas& canvas) {
+    checkNoCancel();
+    const auto background=lv_obj_get_style_bg_color(lv_scr_act(),LV_PART_MAIN).full;
     const auto bounds=watchcontrols::doneBounds();
     auto* footer=lv_obj_get_child(lv_scr_act(),-2); // The error label follows Done.
     lv_area_t area; lv_obj_get_coords(footer,&area);
@@ -29,9 +57,9 @@ void checkFooter(WatchLvgl& ui,const M5Canvas& canvas) {
         assert(lv_obj_hit_test(footer,&point)==inside);
         // Check the rendered curve independently of the label's glyph pixels.
         if(x<180||x>286||y<416||y>448) {
-            if((canvas.pixels[y*466+x]!=lv_color_hex(0x080D10).full)!=inside)
+            if((canvas.pixels[y*466+x]!=background)!=inside)
                 fprintf(stderr,"Footer raster (%d,%d): color %04x, inside %d\n",x,y,canvas.pixels[y*466+x],inside);
-            assert((canvas.pixels[y*466+x]!=lv_color_hex(0x080D10).full)==inside);
+            assert((canvas.pixels[y*466+x]!=background)==inside);
         }
     }
     events.clear();
@@ -59,9 +87,10 @@ void capture(const M5Canvas& canvas,const char* path) {
 int main(int argc,char** argv) {
     WatchLvgl ui; M5Canvas canvas; assert(ui.begin(canvas,action));
     WatchLvgl::Model menu; menu.page=1; menu.count=6;
-    const char* titles[]={"TIME","BOT","DISPLAY","SOUND","POWER","CORALLIUM"};
+    const char* titles[]={"TIME","BOT","DISPLAY","SOUND","POWER","CONNECTION"};
     for(int i=0;i<6;++i) snprintf(menu.rows[i].label,48,"%s",titles[i]);
     ui.show(menu); advance(ui,32);
+    assert(lv_obj_get_style_bg_color(lv_scr_act(),LV_PART_MAIN).full==lv_color_hex(0x000000).full);
     if(argc>1) capture(canvas,argv[1]);
     checkFooter(ui,canvas);
     tap(ui,200,120); assert(events.size()==1&&events.back().action==WatchLvgl::Action::Open&&events.back().row==0);
@@ -79,8 +108,14 @@ int main(int argc,char** argv) {
     checkFooter(ui,canvas);
     tap(ui,360,153); assert(events.size()==1&&events.back().action==WatchLvgl::Action::More&&events.back().row==0);
     tap(ui,292,153); assert(events.size()==2&&events.back().action==WatchLvgl::Action::Less&&events.back().row==0);
-    tap(ui,233,378); assert(events.back().action==WatchLvgl::Action::Cancel);
+    events.clear();
+    tap(ui,233,390); assert(events.empty()); // Removed footer control cannot cancel.
     tap(ui,292,432); assert(events.back().action==WatchLvgl::Action::Save);
+    editor.error=true; ui.show(editor); advance(ui,32);
+    auto* error=lv_obj_get_child(lv_scr_act(),-1);
+    auto* list=lv_obj_get_child(lv_scr_act(),1);
+    lv_area_t errorArea,listArea; lv_obj_get_coords(error,&errorArea); lv_obj_get_coords(list,&listArea);
+    assert(!lv_obj_has_flag(error,LV_OBJ_FLAG_HIDDEN)&&errorArea.y2<listArea.y1);
     events.clear(); ui.pointer(true,292,153); advance(ui,16); ui.resetPointer(); advance(ui,32); assert(events.empty());
     watchstrings::chinese()=true;
     WatchLvgl::Model color; color.page=3; color.editor=color.preview=color.color=true; color.title="BOT COLOR";
@@ -116,7 +151,14 @@ int main(int argc,char** argv) {
     ui.show(name); advance(ui,32); events.clear();
     if(argc>3) capture(canvas,argv[3]);
     checkFooter(ui,canvas);
-    tap(ui,233,378); assert(events.size()==1&&events.back().action==WatchLvgl::Action::Cancel);
+    auto* keys=keyboard(lv_scr_act()); assert(keys);
+    keyboardKey(ui,keys,"q"); assert(!strcmp(ui.name(),"Botq"));
+    keyboardKey(ui,keys,"ABC"); checkNoCancel();
+    keyboardKey(ui,keys,"Q"); assert(!strcmp(ui.name(),"BotqQ"));
+    keyboardKey(ui,keys,"1#"); checkNoCancel();
+    keyboardKey(ui,keys,"9"); assert(!strcmp(ui.name(),"BotqQ9"));
+    keyboardKey(ui,keys,"abc"); checkNoCancel();
+    keyboardKey(ui,keys,LV_SYMBOL_OK); assert(events.back().action==WatchLvgl::Action::Save);
     watchstrings::chinese()=false;
-    puts("PASS LVGL settings: circular footer raster/hits, native pointer, scroll cancellation, +/- rows, save/cancel, wake reset");
+    puts("PASS LVGL settings: circular footer raster/hits, native pointer, scroll cancellation, +/- rows, save, no touch cancel, keyboard modes, wake reset");
 }

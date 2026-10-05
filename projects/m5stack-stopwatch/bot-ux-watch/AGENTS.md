@@ -76,7 +76,9 @@ official bot treatment uses dark pill eyes.
   Power and Connection. Editors use LVGL switches, buttons, sliders or keyboard controls.
   `WatchLvgl` owns draw/hit geometry and click-vs-scroll arbitration. `main.cpp`
   retains screen state, editor snapshots, RTC validation and save/cancel policy.
-  Done/Cancel remain outside scrolling. A opens the selected menu row; B advances
+  Done stays outside scrolling as the bottom circular segment; there is no touch
+  Cancel control, including the name keyboard's close key. A opens the selected
+  menu row; B advances
   and reveals it. In editors A/B change the selected field, Long A cancels and
   Long B saves. Native touching clears the hardware navigation marker.
 - Connection opens BLE explicitly for five minutes; advertise as StopWatch.
@@ -108,7 +110,11 @@ official bot treatment uses dark pill eyes.
   and shows percentage and a gauge on a measured-level green/yellow/red fill;
   charging adds a separate bolt. Rendering and hit testing share its geometry.
 - Settings is the vertical Time, Bot, Display, Sound, Power and Connection hierarchy described
-  in `specs/settings.md`. Time owns time/date/format; Display owns
+  in `specs/settings.md`. Its styling follows Mosaico with a black background,
+  flat rows with 1 px separators, white/gray text and orange controls, while retaining
+  the round display's safe content inset and existing 24 px fonts. Lists and the
+  name keyboard end at y=381; RTC errors appear below the title. Time owns
+  time/date/format; Display owns
   brightness, theme, indicator, button feedback and both layout controls; Sound owns
   master/startup/button/alert switches; Power owns the complete idle and forced-sleep policy.
   Personality includes expression, action, shape, eye style, HSV color, action amount

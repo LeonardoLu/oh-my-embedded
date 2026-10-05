@@ -41,8 +41,11 @@ The watch samples raw display contacts every 8 ms. The face retains its contact
 and gesture state machine; every settings screen uses LVGL 8.4 native pointer
 input, vertical scrolling, buttons, sliders and text entry. A drag never also
 activates a row. The Time, Bot, Display, Sound, Power and Connection entries share
-a vertical card list. Editors keep fixed Cancel/Done buttons outside the list and
-retain live Bot previews. A/B remain shortcuts; Home cancels unsaved edits.
+a flat vertical list with Mosaico's black background, white/gray text, thin
+separators and orange accents, adapted to the round display. Editors retain live
+Bot previews and the fixed bottom circular Done segment. There is no touch Cancel
+button or keyboard close key. A/B remain shortcuts; hold A to discard an editor's
+draft, hold B to save, or press Home to discard unsaved edits and return to the face.
 
 Swipe down from the top edge for battery/charging, or double-tap the visible time
 for settings. Connection → Bluetooth explicitly opens a five-minute BLE window;
