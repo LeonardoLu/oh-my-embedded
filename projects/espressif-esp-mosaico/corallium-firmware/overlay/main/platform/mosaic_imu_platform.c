@@ -10,13 +10,14 @@
 #include <stdbool.h>
 
 #include "bmi2.h"
-#include "bsp/imu.h"
+#include "esp_check.h"
 #include "esp_board_manager.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "mosaic_imu.h"
 
 #define RAD_TO_DEG 57.2957795f
+#define BMI270_ACCEL_2G_SCALE 16384.0f
 #define BMI270_GYRO_500DPS_SCALE 65.536f
 #define IMU_COMPLEMENTARY_ALPHA 0.96f
 #define IMU_INIT_RETRY_INTERVAL_US (5LL * 1000 * 1000)
@@ -132,12 +133,13 @@ static esp_err_t read_acceleration(float *x_g, float *y_g, void *user_ctx)
     void *handle = NULL;
     esp_err_t err = get_imu_handle(&handle);
     if (err != ESP_OK) return err;
-    float ax, ay, az;
-    err = bsp_imu_get_accel(&ax, &ay, &az);
+    struct bmi2_sens_data raw = {0};
+    err = esp_mosaico_imu_read(handle, &raw);
     if (err != ESP_OK) return err;
-    /* Match screen Roll/-Pitch; BSP normalizes the active sensor range to g. */
-    *x_g = ax;
-    *y_g = -ay;
+    /* Board Manager's setup_imu.c configures this handle for +/-2 g.
+     * Use the same owner as Level; the separate BSP sensor is not started. */
+    *x_g = raw.acc.x / BMI270_ACCEL_2G_SCALE;
+    *y_g = -raw.acc.y / BMI270_ACCEL_2G_SCALE;
     return ESP_OK;
 }
 

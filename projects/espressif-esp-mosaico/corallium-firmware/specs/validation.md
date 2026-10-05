@@ -31,6 +31,10 @@ and Python/Clang prerequisites. Covered behavior includes:
   withholds both frame releases, checks whole-frame hashes remain unchanged under
   backpressure, then delivers delayed callbacks after app teardown. The compiled
   Canvas is one opaque RGB565 RAW resource in the actual IMU bank.
+- The actual IMU platform adapter with a Board Manager device double and the
+  firmware's BMI270 sample definitions: Level and acceleration share the device,
+  signed raw samples normalize to g in the screen axes, failed initialization
+  respects the retry interval, and read failures preserve caller outputs.
 - Fragmented UTF-8; exact 2048-byte frames; overlength, NUL and timed-out frame
   recovery; clearing receive storage; invalid UTF-8 and JSON nesting limits.
 - Version, identifier, envelope and duplicate-field rejection before mutation;
@@ -171,7 +175,7 @@ and Python/Clang prerequisites. Covered behavior includes:
   The packed MMAP image must match staged assets byte for byte. The checker rejects the captured
   failing Hub bundle where shell glob order assigned `font10` to ordinal 2;
   numeric font ordering corrects that mismatch. The linked-build checks cover
-  16 bundles, 124 font references, 264 bitmap/vector references and 17 packed
+  16 bundles, 124 font references, 265 bitmap/vector references and 17 packed
   MMAP assets.
 - `tools/check_system_assets.py` mounts the built SYSTEM filesystem with the
   factory builder's own LittleFS environment without auto-formatting: packed files
@@ -217,9 +221,9 @@ enumeration and DTR/RTS reset behavior are separate physical-device checks.
 ## Current physical evidence
 
 The identified ESP32-S31 board reports CoreBoard version 1.2 through eFuse.
-The application/SYSTEM images were written and hash-verified through its ROM
-loader without a firmware backup. Retained boot, partition, OTA-initialization
-and UI images match their verified baseline; NVS is outside the write ranges.
+The bootloader, partition table, OTA initialization, application, UI and SYSTEM
+images match their ROM-loader hash verification. Flashing skipped a firmware
+backup; NVS is outside the write ranges and its before/after MD5 is unchanged.
 
 Factory CDC initialization and startup logs were already present. The local
 Corallium startup did not consume console commands because it did not start the
@@ -249,6 +253,15 @@ has white control glyphs, omits slider explanations and has two equal-height
 220-pixel top plates. Works Lab contains Dino and Flappy Bird; rejected Fluid
 apps are absent from the packed SYSTEM image. These are the device's submitted
 pixels, not optical panel photographs or GRAM readback.
+
+Injected launcher touches activate native IMU. Device captures show Pixel,
+Gradient and Water in Deep Sea, and Water after changing to Toxic; each Canvas
+is populated and its sensor-error status is clear. This supports successful
+finite BMI270 reads through the shared Board Manager driver. Style and palette
+controls stay in IMU, Reset keeps IMU active, and the shared Back returns to Home.
+The frame counter advances and render/runtime error counters remain zero across
+these operations. Physical tilt/shake direction, perceived motion and achieved
+FPS remain unmeasured.
 
 First-resume captures omitted Settings list icons and showed black Weather
 forecast rectangles while the user still saw Settings icons on the panel.

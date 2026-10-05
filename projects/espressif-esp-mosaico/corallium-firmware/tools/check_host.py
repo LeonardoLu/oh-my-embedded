@@ -39,6 +39,13 @@ run([sys.executable, PROJECT / "tests/test_device_diagnostics.py"])
 run([sys.executable, PROJECT / "tests/check_diagnostics.py"])
 if args.upstream:
     upstream = args.upstream.resolve()
+    run([compiler, *flags, "-I", PROJECT / "tests/imu_platform_stubs",
+         "-I", PROJECT / "tests/power_stubs", "-I", PROJECT / "tests/stubs",
+         "-I", upstream / "managed_components/espressif2022__bmi270",
+         "-I", upstream / "main/platform", "-I", PROJECT / "overlay/components/mosaic_ui/include",
+         PROJECT / "tests/test_imu_platform.c", PROJECT / "overlay/main/platform/mosaic_imu_platform.c",
+         "-o", output / "test-imu-platform"])
+    run([output / "test-imu-platform"])
     run([sys.executable, PROJECT / "tests/test_ui_diagnostics.py", "--upstream", upstream])
     run([sys.executable, PROJECT / "tests/test_capture_app_refresh.py", "--upstream", upstream])
     run([sys.executable, PROJECT / "tests/check_diagnostics_open.py", upstream])

@@ -118,7 +118,9 @@ Returning to Level retains the selected palette until exiting IMU. A new app
 session restores Level/Deep Sea. The existing shared Back/idle controls remain
 responsible for exit and display sleep.
 
-The BMI270 BSP supplies acceleration normalized to g with its configured range.
+The Board Manager BMI270 driver supplies raw acceleration from the same handle
+used by Level. Its pinned setup configures ±2 g, so 16,384 counts equal 1 g;
+the separate BSP IMU lifecycle is not used.
 The screen-plane mapping follows the Level view's existing Roll/-Pitch axes:
 sensor X points right and negative sensor Y points down. Physical direction and
 shake response still require validation on the board. A missing hardware sample
