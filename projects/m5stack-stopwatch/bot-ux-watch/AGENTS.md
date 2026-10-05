@@ -73,11 +73,19 @@ official bot treatment uses dark pill eyes.
   seconds. Double-tap the visible time within 420 ms to open settings; panel taps and
   non-tap gestures cancel the pending clock tap.
 - Settings uses LVGL 8.4 native vertical lists for Time, Bot, Display, Sound,
-  Power and Connection. Editors use LVGL switches, buttons, sliders or keyboard controls.
+  Power and Connection. Editors use native dropdowns for choices, thick sliders
+  for small numeric ranges, switches for booleans and a keyboard for names;
+  there are no touch +/- controls. Tapping a choice opens its option panel in the
+  same editor; selecting a value closes the panel and updates the draft, with
+  NVS persistence deferred to Done. Switch rows accept a tap anywhere in the row
+  and emit one change, including taps on the switch itself. Slider gestures and
+  vertical list scrolling are mutually exclusive for the entire contact.
   `WatchLvgl` owns draw/hit geometry and click-vs-scroll arbitration. `main.cpp`
   retains screen state, editor snapshots, RTC validation and save/cancel policy.
-  Done/Cancel remain outside scrolling. A opens the selected menu row; B advances
-  and reveals it. In editors A/B change the selected field, Long A cancels and
+  Done stays outside scrolling as the bottom circular segment; there is no touch
+  Cancel control, including the name keyboard's close key. A opens the selected
+  menu row; B advances
+  and reveals it. In editors A/B change the selected field's value, Long A cancels and
   Long B saves. Native touching clears the hardware navigation marker.
 - Connection opens BLE explicitly for five minutes; advertise as StopWatch.
   Daily device UI must not use the app name. Only the separate protocol page
@@ -108,13 +116,21 @@ official bot treatment uses dark pill eyes.
   and shows percentage and a gauge on a measured-level green/yellow/red fill;
   charging adds a separate bolt. Rendering and hit testing share its geometry.
 - Settings is the vertical Time, Bot, Display, Sound, Power and Connection hierarchy described
-  in `specs/settings.md`. Time owns time/date/format; Display owns
+  in `specs/settings.md`. Its styling follows Mosaico with a black background,
+  flat rows with 1 px separators, white/gray text and orange controls, while retaining
+  the round display's safe content inset and existing 24 px text fonts. Dropdown
+  panels stay in the safe center of the circle; lists and the name keyboard end
+  at y=381. Brightness retains the persisted 1..5 range, and dim brightness cannot
+  exceed normal brightness. RTC errors appear below the title; choosing a date
+  or time value does not write the RTC, and invalid clocks still require explicit
+  confirmation of both date and time before a verified write. Time owns
+  time/date/format; Display owns
   brightness, theme, indicator, button feedback and both layout controls; Sound owns
   master/startup/button/alert switches; Power owns the complete idle and forced-sleep policy.
   Personality includes expression, action, shape, eye style, HSV color, action amount
   and speed, naming, English/Chinese UI, all 1,120 independent combinations and a live
   gaze selector. The native keyboard enters up to 16 ASCII name characters. The HSV sliders
-  previews live and Done persists it.
+  preview live and Done persists the draft.
 - NVS persists 12/24-hour format, seconds, theme, shape, eye style, custom HSV body
   color, expression, animation, wrist response, motion amount/speed, brightness,
   master/startup/button/alert sound, PM status LED, name, language, gaze direction,

@@ -75,6 +75,15 @@ const char* const kPersonalLabels[(uint8_t)PersonalItem::Count] = {
 };
 const char* const kMonths[12] = { "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
                                   "JUL", "AUG", "SEP", "OCT", "NOV", "DEC" };
+const char* monthOption(uint8_t value) { return value>=1&&value<=12?kMonths[value-1]:"?"; }
+const char* formatOption(uint8_t value) { return value?"24 HOUR":"12 HOUR"; }
+const char* layoutOption(uint8_t value) { return value?"TIME":"BOT TEXT"; }
+const char* languageOption(uint8_t value) { return value?"中文":"English"; }
+const char* wakeOption(uint8_t value) { return value==Settings::WAKE_KEYS_ONLY?"KEYS ONLY":"TOUCH + KEYS"; }
+const char* gazeOption(uint8_t value) { return botux::BotUx::gazeDirectionName((botux::BotUx::GazeDirection)value); }
+const char* moodOption(uint8_t value) { return botux::BotUx::moodName((botux::BotUx::Mood)value); }
+const char* expressionOption(uint8_t value) { return botux::BotUx::expressionName((botux::BotUx::Expression)value); }
+const char* animationOption(uint8_t value) { return botux::BotUx::animationName((botux::BotUx::Animation)value); }
 }
 
 M5Canvas canvas(&M5.Display);
@@ -1732,18 +1741,27 @@ static WatchLvgl::Model lvglModel() {
     model.selected=_screen==Screen::Settings?(uint8_t)_menu:
         _screen==Screen::TimeSettings?(uint8_t)_timeItem:
         _screen==Screen::Personalize?(uint8_t)_personal:_editField;
-    auto add=[&](const char* label,const char* value="") {
+    auto add=[&](const char* label,const char* value="") -> WatchLvgl::Row& {
         auto& row=model.rows[model.count++];
         snprintf(row.label,sizeof(row.label),"%s",label);
         snprintf(row.value,sizeof(row.value),"%s",value);
+        return row;
     };
-    auto number=[&](const char* label,unsigned value) {
-        char text[20]; snprintf(text,sizeof(text),"%u",value); add(label,text);
+    auto choice=[&](const char* label,int value,int minimum,int maximum,
+                    const char* (*optionLabel)(uint8_t)=nullptr) -> WatchLvgl::Row& {
+        char text[20]; snprintf(text,sizeof(text),"%d",value);
+        auto& row=add(label,optionLabel?optionLabel((uint8_t)value):text);
+        row.number=value; row.minimum=minimum; row.maximum=maximum;
+        row.optionLabel=optionLabel;
+        return row;
+    };
+    auto slider=[&](const char* label,int value,int minimum,int maximum) {
+        choice(label,value,minimum,maximum).kind=WatchLvgl::RowKind::Slider;
     };
     auto toggle=[&](const char* label,bool value) {
-        add(label,value?"ON":"OFF");
-        model.rows[model.count-1].kind=WatchLvgl::RowKind::Toggle;
-        model.rows[model.count-1].checked=value;
+        auto& row=add(label,value?"ON":"OFF");
+        row.kind=WatchLvgl::RowKind::Toggle; row.checked=value;
+        row.number=value; row.minimum=0; row.maximum=1;
     };
     if(_screen==Screen::Settings) {
         model.title="SETTINGS";
@@ -1758,8 +1776,8 @@ static WatchLvgl::Model lvglModel() {
         switch(_editor) {
             case Editor::Connection: {
                 model.title="CONNECTION"; model.immediate=true;
-                add("BLUETOOTH",companion.windowOpen()?"ON (5 MIN)":"OFF");
-                model.rows[0].kind=WatchLvgl::RowKind::Toggle; model.rows[0].checked=companion.windowOpen();
+                toggle("BLUETOOTH",companion.windowOpen());
+                snprintf(model.rows[0].value,sizeof(model.rows[0].value),"%s",companion.windowOpen()?"ON (5 MIN)":"OFF");
                 add("BLUETOOTH STATUS",companion.connected()?"CONNECTED":companion.windowOpen()?"WAITING":"OFF");
                 model.rows[1].kind=WatchLvgl::RowKind::Info;
                 char remaining[20]; snprintf(remaining,sizeof(remaining),"%lu s",(unsigned long)companion.remainingSeconds());
@@ -1775,52 +1793,153 @@ static WatchLvgl::Model lvglModel() {
                 for(uint8_t i=0;i<model.count;++i) model.rows[i].kind=WatchLvgl::RowKind::Info;
                 break;
             case Editor::Time:
-                model.title="SET TIME"; number("HOUR",_editHour); number("MINUTE",_editMinute); break;
+                model.title="SET TIME"; choice("HOUR",_editHour,0,23); choice("MINUTE",_editMinute,0,59); break;
             case Editor::Date:
-                model.title="SET DATE"; add("MONTH",kMonths[_editMonth-1]); number("DAY",_editDay); number("YEAR",_editYear); break;
+                model.title="SET DATE"; choice("MONTH",_editMonth,1,12,monthOption);
+                choice("DAY",_editDay,1,watchcalendar::daysInMonth(_editYear,_editMonth));
+                choice("YEAR",_editYear,2020,2099); break;
             case Editor::Format:
-                model.title="TIME FORMAT"; add("FORMAT",d.hour24?"24 HOUR":"12 HOUR"); toggle("SECONDS",d.showSeconds); break;
+                model.title="TIME FORMAT"; choice("FORMAT",d.hour24,0,1,formatOption); toggle("SECONDS",d.showSeconds); break;
             case Editor::Expression:
-                model.title="EXPRESSION"; add("EXPRESSION",Settings::expressionName(d.expression)); break;
+                model.title="EXPRESSION"; choice("EXPRESSION",d.expression,0,Settings::EXPRESSION_COUNT-1,Settings::expressionName); break;
             case Editor::Appearance:
-                model.title="APPEARANCE"; add("SHAPE",Settings::appearanceName(d.appearance)); add("EYES",Settings::eyeStyleName(d.eyeStyle)); break;
+                model.title="APPEARANCE"; choice("SHAPE",d.appearance,0,Settings::APPEARANCE_COUNT-1,Settings::appearanceName);
+                choice("EYES",d.eyeStyle,0,Settings::EYE_STYLE_COUNT-1,Settings::eyeStyleName); break;
             case Editor::Motion:
-                model.title="MOTION"; add("ACTION",Settings::animationName(d.animation)); toggle("WRIST",d.motion);
-                number("INTENSITY",d.motionAmount); number("SPEED",d.animationSpeed); break;
+                model.title="MOTION"; choice("ACTION",d.animation,0,Settings::ANIMATION_COUNT-1,Settings::animationName); toggle("WRIST",d.motion);
+                slider("INTENSITY",d.motionAmount,1,5); slider("SPEED",d.animationSpeed,1,5); break;
             case Editor::Color:
                 model.title="BOT COLOR"; model.color=true;
                 model.hue=d.colorHue; model.saturation=d.colorSat; model.brightness=d.colorValue; break;
             case Editor::Display:
-                model.title="DISPLAY"; number("BRIGHTNESS",d.brightness); add("THEME",Settings::themeName(d.theme));
+                model.title="DISPLAY"; slider("BRIGHTNESS",d.brightness,Settings::BRIGHTNESS_MIN,Settings::BRIGHTNESS_MAX);
+                choice("THEME",d.theme,0,Settings::THEME_COUNT-1,Settings::themeName);
                 toggle("INDICATOR",d.indicator); toggle("BUTTON FX",d.buttonFeedback);
-                add("BOT TEXT",d.showDescription?"SHOW":"HIDE"); add("TOP",d.swapLayout?"TIME":"BOT TEXT"); break;
+                toggle("BOT TEXT",d.showDescription); choice("TOP",d.swapLayout,0,1,layoutOption); break;
             case Editor::Sound:
                 model.title="SOUND"; toggle("SOUND",d.sound); toggle("STARTUP SOUND",d.startupSound);
                 toggle("BUTTON SOUND",d.buttonSound); toggle("ALERT SOUND",d.alertSound); break;
             case Editor::Power:
-                model.title="POWER SAVING"; toggle("POWER SAVE",d.powerSaveEnabled); number("DIM LEVEL",d.dimBrightness);
-                add("DIM AFTER",watchpower::timeoutLabel(d.dimTimeout)); add("AUTO OFF",watchpower::timeoutLabel(d.screenOffTimeout));
-                add("WAKE",d.wakeMode==Settings::WAKE_KEYS_ONLY?"KEYS ONLY":"TOUCH + KEYS");
+                model.title="POWER SAVING"; toggle("POWER SAVE",d.powerSaveEnabled);
+                slider("DIM LEVEL",d.dimBrightness,Settings::BRIGHTNESS_MIN,d.brightness);
+                choice("DIM AFTER",d.dimTimeout,0,Settings::TIMEOUT_COUNT-1,watchpower::timeoutLabel);
+                choice("AUTO OFF",d.screenOffTimeout,0,Settings::TIMEOUT_COUNT-1,watchpower::timeoutLabel);
+                choice("WAKE",d.wakeMode,0,Settings::WAKE_MODE_COUNT-1,wakeOption);
                 toggle("CHARGE AWAKE",d.keepAwakeWhileCharging); toggle("FORCED OFF",d.forcedSleepEnabled);
-                number("FROM",d.forcedSleepStartHour); number("UNTIL",d.forcedSleepEndHour); break;
+                choice("FROM",d.forcedSleepStartHour,0,23); choice("UNTIL",d.forcedSleepEndHour,0,23); break;
             case Editor::Name:
                 model.title="BOT NAME"; model.name=true;
                 snprintf(model.botName,sizeof(model.botName),"%s",_nameEditor.text()); break;
             case Editor::Language:
-                model.title="LANGUAGE"; add("LANGUAGE",d.language?"中文":"English"); break;
+                model.title="LANGUAGE"; choice("LANGUAGE",d.language,0,1,languageOption); break;
             case Editor::Layout:
-                model.title="WATCH LAYOUT"; add("BOT TEXT",d.showDescription?"SHOW":"HIDE"); add("TOP",d.swapLayout?"TIME":"BOT TEXT"); break;
+                model.title="WATCH LAYOUT"; toggle("BOT TEXT",d.showDescription); choice("TOP",d.swapLayout,0,1,layoutOption); break;
             case Editor::Gaze:
-                model.title="GAZE"; add("DIRECTION",botux::BotUx::gazeDirectionName((botux::BotUx::GazeDirection)d.gaze,
-                    d.language?botux::BotUx::Language::Chinese:botux::BotUx::Language::English)); break;
+                model.title="GAZE"; choice("DIRECTION",d.gaze,0,botux::BotUx::gazeDirectionCount()-1,gazeOption); break;
             case Editor::Preview:
-                model.title="COMBINATIONS"; add("STATE",botux::BotUx::moodName((botux::BotUx::Mood)_previewMood));
-                add("FACE",botux::BotUx::expressionName((botux::BotUx::Expression)_previewExpression));
-                add("ACTION",botux::BotUx::animationName((botux::BotUx::Animation)_previewAnimation)); break;
+                model.title="COMBINATIONS"; choice("STATE",_previewMood,0,botux::BotUx::moodCount()-1,moodOption);
+                choice("FACE",_previewExpression,0,botux::BotUx::expressionCount()-1,expressionOption);
+                choice("ACTION",_previewAnimation,0,botux::BotUx::animationCount()-1,animationOption); break;
             default: break;
         }
     }
     return model;
+}
+
+static void setEditorValue(uint8_t row,int value) {
+    if(_screen!=Screen::Editor) return;
+    const auto model=lvglModel();
+    if(row>=model.count) return;
+    const auto& field=model.rows[row];
+    using RowKind=WatchLvgl::RowKind;
+    if((field.kind!=RowKind::Choice&&field.kind!=RowKind::Toggle&&field.kind!=RowKind::Slider)
+        ||field.maximum<field.minimum) return;
+    value=value<field.minimum?field.minimum:value>field.maximum?field.maximum:value;
+    _editField=row;
+    const bool manualOverride=_manualPreset
+        &&(_editor==Editor::Expression||(_editor==Editor::Motion&&row==0));
+    if(value==field.number&&!manualOverride) return;
+
+    auto& d=settings.data();
+    bool apply=true;
+    switch(_editor) {
+        case Editor::Connection:
+            if(row==0) {
+                if(value) companion.openWindow(); else companion.closeWindow();
+            }
+            apply=false; break;
+        case Editor::Time:
+            if(row==0) _editHour=value; else _editMinute=value;
+            apply=false; break;
+        case Editor::Date: {
+            if(row==0) _editMonth=value;
+            else if(row==1) _editDay=value;
+            else _editYear=value;
+            const uint8_t maxDay=watchcalendar::daysInMonth(_editYear,_editMonth);
+            if(_editDay>maxDay) _editDay=maxDay;
+            apply=false; break;
+        }
+        case Editor::Format:
+            if(row==0) d.hour24=value!=0; else d.showSeconds=value!=0;
+            break;
+        case Editor::Layout:
+            if(row==0) d.showDescription=value!=0; else d.swapLayout=value!=0;
+            break;
+        case Editor::Gaze:
+            d.gaze=value; break;
+        case Editor::Language:
+            d.language=value; break;
+        case Editor::Preview:
+            if(row==0) _previewMood=value;
+            else if(row==1) _previewExpression=value;
+            else _previewAnimation=value;
+            apply=false; break;
+        case Editor::Expression:
+            _manualPreset=false;
+            face.bot().setTalking(false);
+            d.expression=value; break;
+        case Editor::Appearance:
+            if(row==0) d.appearance=value; else d.eyeStyle=value;
+            break;
+        case Editor::Motion:
+            if(row==0) { _manualPreset=false; d.animation=value; }
+            else if(row==1) d.motion=value!=0;
+            else if(row==2) d.motionAmount=value;
+            else d.animationSpeed=value;
+            break;
+        case Editor::Display:
+            if(row==0) {
+                d.brightness=value;
+                if(d.dimBrightness>d.brightness) d.dimBrightness=d.brightness;
+            } else if(row==1) d.theme=value;
+            else if(row==2) d.indicator=value!=0;
+            else if(row==3) d.buttonFeedback=value!=0;
+            else if(row==4) d.showDescription=value!=0;
+            else d.swapLayout=value!=0;
+            break;
+        case Editor::Sound:
+            if(row==0) d.sound=value!=0;
+            else if(row==1) d.startupSound=value!=0;
+            else if(row==2) d.buttonSound=value!=0;
+            else d.alertSound=value!=0;
+            break;
+        case Editor::Power:
+            if(row==0) d.powerSaveEnabled=value!=0;
+            else if(row==1) d.dimBrightness=value;
+            else if(row==2) d.dimTimeout=value;
+            else if(row==3) d.screenOffTimeout=value;
+            else if(row==4) d.wakeMode=value;
+            else if(row==5) d.keepAwakeWhileCharging=value!=0;
+            else if(row==6) d.forcedSleepEnabled=value!=0;
+            else if(row==7) d.forcedSleepStartHour=value;
+            else d.forcedSleepEndHour=value;
+            break;
+        default: return;
+    }
+    if(apply) applySettings();
+    if(_editor==Editor::Power) _idleScreenPolicy.wakeForUser(millis());
+    _uiDirty=true;
+    if(field.kind!=RowKind::Slider) clickSound();
 }
 
 static void lvglAction(WatchLvgl::Action action,uint8_t row,int value,const char* text) {
@@ -1833,10 +1952,13 @@ static void lvglAction(WatchLvgl::Action action,uint8_t row,int value,const char
         else if(_screen==Screen::Personalize) leavePersonalize();
         else saveEditor();
     } else if(action==Action::Cancel) cancelEditor();
+    else if(action==Action::Focus) { if(_screen==Screen::Editor&&row<lvglModel().count) _editField=row; }
+    else if(action==Action::SetValue) setEditorValue(row,value);
     else if(action==Action::Open) {
         if(_screen==Screen::Settings) { _menu=(MenuItem)row; selectMenuItem(); }
         else if(_screen==Screen::TimeSettings) { _timeItem=(TimeItem)row; selectTimeItem(); }
         else if(_screen==Screen::Personalize) { _personal=(PersonalItem)row; selectPersonalItem(); }
+        else if(_screen==Screen::Editor&&_editor==Editor::Connection&&row==3) enterEditor(Editor::Protocol);
     } else if(action==Action::Less||action==Action::More) {
         _editField=row; changeEditorValue(action==Action::Less?-1:1);
     } else if(action==Action::Name) _nameEditor.begin(text);
