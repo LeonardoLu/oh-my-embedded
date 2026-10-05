@@ -6,13 +6,15 @@
 // persistence and RTC validation; callbacks only express user intent.
 class WatchLvgl {
 public:
-    enum class Action : uint8_t { Open, Less, More, Save, Cancel, Name, Color, Theme };
+    enum class Action : uint8_t { Open, Less, More, Save, Cancel, Name, Color, Theme, SetValue, Focus };
     using Handler = void (*)(Action, uint8_t, int, const char*);
-    enum class RowKind : uint8_t { Setting, Info, Link, Toggle };
+    enum class RowKind : uint8_t { Choice, Info, Link, Toggle, Slider };
     struct Row {
         char label[48] = {}; char value[64] = {};
-        RowKind kind = RowKind::Setting;
+        RowKind kind = RowKind::Choice;
         bool literal = false, checked = false;
+        int16_t number = 0, minimum = 0, maximum = 0;
+        const char* (*optionLabel)(uint8_t) = nullptr;
     };
     struct Model {
         uint16_t page = 0;
@@ -37,6 +39,8 @@ private:
     static void read(lv_indev_drv_t*, lv_indev_data_t*);
     static void event(lv_event_t*);
     void build(const Model&);
+    void positionChoice(uint8_t);
+    void updateChoice(uint8_t, const Row&);
     lv_obj_t* button(lv_obj_t*, const char*, int, int, int, int, Action, uint8_t = 0);
     void bind(lv_obj_t*, Action, uint8_t);
     struct Binding { WatchLvgl* owner; Action action; uint8_t row; };
@@ -54,6 +58,9 @@ private:
     lv_obj_t* _rows[11] = {};
     lv_obj_t* _values[11] = {};
     lv_obj_t* _switches[11] = {};
+    lv_obj_t* _choices[11] = {};
+    lv_obj_t* _rowSliders[11] = {};
+    int16_t _minimum[11] = {}, _maximum[11] = {};
     lv_obj_t* _image = nullptr;
     lv_obj_t* _name = nullptr;
     lv_obj_t* _sliders[3] = {};

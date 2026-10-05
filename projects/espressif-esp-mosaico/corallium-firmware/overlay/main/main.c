@@ -8,6 +8,7 @@
 #include "claw_paths.h"
 #include "corallium.h"
 #include "mosaico_audio.h"
+#include "mosaico_diagnostics_platform.h"
 #include "esp_board_manager_includes.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -70,6 +71,22 @@ void app_main(void) {
     /* Hub subscribes to weather during UI startup. */
     ESP_ERROR_CHECK(weather_service_init(&(weather_service_config_t){
         .user_agent = "ESP-Mosaico/0.1 https://github.com/esp-mosaico/esp-mosaico-claw", .refresh_interval_ms = 3600000, .stale_after_ms = 21600000}));
+    /* Restore local intent before Hub consumes its very first snapshot.
+     * Association and HTTP refresh are queued only after native UI startup. */
+    app_config_t *config = calloc(1, sizeof(*config));
+    ESP_ERROR_CHECK(config ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(app_config_load(config));
+    bool wifi_enabled = true;
+    (void)app_settings_service_get_wifi_enabled(settings, &wifi_enabled);
+    ESP_ERROR_CHECK(wifi_manager_prepare_start(&(wifi_manager_config_t){
+        .sta_ssid = config->wifi_ssid, .sta_password = config->wifi_password,
+        .ap_behavior = "close_on_sta", .start_disabled = !wifi_enabled || !config->wifi_ssid[0]}));
+    memset(config, 0, sizeof(*config));
+    free(config);
+    /* Install the local provisioning callback before interactive commands can
+     * reach the worker; this does not start the radio or wait for a network. */
+    esp_err_t network_err = network_provisioning_service_start(network);
+    corallium_restore_switch();
     ESP_ERROR_CHECK(mosaic_settings_platform_init(&(mosaic_settings_platform_config_t){
         .settings = settings, .network_provisioning = network, .save_config = save_config}));
     if (audio_err == ESP_OK) ESP_ERROR_CHECK(app_settings_service_restore_audio(settings));
@@ -79,19 +96,14 @@ void app_main(void) {
     ESP_ERROR_CHECK(mosaic_settings_platform_start_battery_monitor());
     ESP_ERROR_CHECK(mosaic_button_platform_init());
     ESP_ERROR_CHECK(mosaic_imu_platform_init());
+    const esp_err_t diagnostics_err = mosaico_diagnostics_platform_start(settings);
+    if (diagnostics_err != ESP_OK) ESP_LOGW(TAG, "USB diagnostics unavailable: %s", esp_err_to_name(diagnostics_err));
     ESP_ERROR_CHECK(corallium_start());
     ESP_ERROR_CHECK(wifi_manager_register_event_callback(network_changed, NULL));
-    app_config_t *config = calloc(1, sizeof(*config));
-    ESP_ERROR_CHECK(config ? ESP_OK : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(app_config_load(config));
-    bool wifi_enabled = true;
-    (void)app_settings_service_get_wifi_enabled(settings, &wifi_enabled);
-    ESP_ERROR_CHECK(wifi_manager_start(&(wifi_manager_config_t){
-        .sta_ssid = config->wifi_ssid, .sta_password = config->wifi_password,
-        .ap_behavior = "close_on_sta", .start_disabled = !wifi_enabled || !config->wifi_ssid[0]}));
-    memset(config, 0, sizeof(*config)); free(config);
-    ESP_ERROR_CHECK(network_provisioning_service_start(network));
-    ESP_ERROR_CHECK(weather_service_start());
+    if (network_err == ESP_OK) network_err = wifi_manager_start_prepared();
+    if (network_err != ESP_OK) ESP_LOGW(TAG, "Wi-Fi startup unavailable: %s", esp_err_to_name(network_err));
+    const esp_err_t weather_err = weather_service_start();
+    if (weather_err != ESP_OK) ESP_LOGW(TAG, "Weather refresh unavailable: %s", esp_err_to_name(weather_err));
 #if CONFIG_PM_ENABLE
     /* DFS retains peak render throughput. Light sleep remains disabled until
      * USB, touch wake and panel behavior are measured on the actual revision. */

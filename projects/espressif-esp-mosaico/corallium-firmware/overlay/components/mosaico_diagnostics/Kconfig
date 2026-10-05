@@ -1,0 +1,13 @@
+menu "Mosaico USB diagnostics"
+
+config MOSAICO_USB_DIAGNOSTICS
+    bool "Enable bounded USB CDC diagnostics"
+    depends on TINYUSB_CDC_ENABLED
+    default y
+    help
+        Read the existing USB CDC console without enabling the Claw CLI.
+        Fixed commands expose public status, queued UI input, and a real-frame
+        capture provider when available. Input is never echoed. This debug
+        interface is local USB only; ordinary Corallium BLE is unchanged.
+
+endmenu

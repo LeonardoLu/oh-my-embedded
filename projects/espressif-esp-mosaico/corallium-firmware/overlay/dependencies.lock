@@ -1637,7 +1637,7 @@ dependencies:
     - name: esp_painter
       path: ../../common/esp_painter
     - name: display_service
-      path: ../../common/display_service
+      path: ../../../../../components/display_service
     source:
       path: third-party/esp-claw/components/lua_modules/lua_module_display
       type: local
@@ -1695,7 +1695,7 @@ dependencies:
   lua_module_lvgl:
     dependencies:
     - name: display_service
-      path: ../../common/display_service
+      path: ../../../../../components/display_service
     - name: lvgl/lvgl
       version: ^9.5.0
     - name: espressif/esp_lv_eaf_player
@@ -2089,7 +2089,9 @@ direct_dependencies:
 - claw_utils
 - display_service
 - esp_lvgl_present
+- esp_painter
 - espressif/bq27220
+- espressif/button
 - espressif/cjson
 - espressif/esp-gsp
 - espressif/esp_asrc
@@ -2099,8 +2101,10 @@ direct_dependencies:
 - espressif/esp_lcd_co5300
 - espressif/esp_lcd_touch
 - espressif/esp_lcd_touch_cst9220
+- espressif/esp_lv_eaf_player
 - espressif/esp_mmap_assets
 - espressif/esp_new_jpeg
+- espressif/esp_tinyusb
 - espressif/esp_websocket_client
 - espressif/gmf_io
 - espressif/ramfs
@@ -2160,6 +2164,6 @@ direct_dependencies:
 - weather_service
 - wechat_binding_service
 - wifi_manager
-manifest_hash: 12423b454a4e3be6c8f42e8401f2e9d3c21b0c08bfc5ea2b9c3b7f1833f2b8b0
+manifest_hash: dd475911fe3869a0dd76ae0e6e121fd8ac16d7170fb8378707fff3a95e53eeb1
 target: esp32s31
 version: 3.0.0
