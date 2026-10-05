@@ -45,7 +45,8 @@ const ux::Font& fontFor(uint32_t codepoint) {
     return glyph&&glyph->code==codepoint?ux::Cjk24:WatchExtra24;
 }
 bool glyphDescription(const lv_font_t*, lv_font_glyph_dsc_t* out, uint32_t codepoint, uint32_t) {
-    if(codepoint<32) { memset(out,0,sizeof(*out)); return true; }
+    memset(out,0,sizeof(*out));
+    if(codepoint<32) return true;
     const auto& font=fontFor(codepoint);
     const auto* glyph=ux::glyph(font,codepoint);
     if(!glyph) return false;

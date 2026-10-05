@@ -127,6 +127,9 @@ int main(int argc,char** argv) {
     for(int i=0;i<6;++i) snprintf(menu.rows[i].label,48,"%s",titles[i]);
     ui.show(menu); advance(ui,32);
     assert(lv_obj_get_style_bg_color(lv_scr_act(),LV_PART_MAIN).full==lv_color_hex(0x000000).full);
+    lv_font_glyph_dsc_t dirtyGlyph; memset(&dirtyGlyph,0xff,sizeof(dirtyGlyph));
+    assert(lv_font_get_glyph_dsc(lv_obj_get_style_text_font(lv_scr_act(),LV_PART_MAIN),&dirtyGlyph,'A',0));
+    assert(!dirtyGlyph.is_placeholder&&dirtyGlyph.bpp==4);
     if(argc>1) capture(canvas,argv[1]);
     checkFooter(ui,canvas);
     tap(ui,200,120); assert(events.size()==1&&events.back().action==WatchLvgl::Action::Open&&events.back().row==0);
